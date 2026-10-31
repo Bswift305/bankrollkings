@@ -4,17 +4,27 @@ Persists the Slice-1 domain objects of `services/research_candidate.py` into ONE
 (the Tier-B WAL idiom; see `docs/research_candidate_store_contract.md` Rev 2). This is the 2B scope:
 schema + adapter + synthetic-fixture QC ONLY.
 
+GOVERNED STORE PRINCIPLE (reviewer round 2): the LEDGER itself must enforce its guarantees, not only
+the Python adapter. The database therefore enforces, on its own: write-once records (`BEFORE UPDATE`
+AND `BEFORE DELETE` triggers), a global strictly-unique `record_seq` across every record kind
+(`record_registry` PRIMARY KEY), same-table `supersedes` foreign keys, and exactly-one-current-per-
+lineage with supersede-the-current-tip (transactional `*_current` tables). The Slice-1
+`InMemoryResearchStore` replay adds the *semantic* checks SQLite cannot express (binding, summary
+reconciliation, fail-closed conclusions, pre-event ordering).
+
+PRIVACY (corrected, reviewer round 2): this is **pseudonymous / linkable** data, NOT de-identified.
+`research_candidate.observation_id` joins directly to the private row, and a candidate's domain
+`content_hash` depends on the observer and thesis rehydrated from that private row. The account↔
+observation linkage lives only in `observation_private`; the research tables carry no observer column
+and hold the measurement — but they remain *linkable* to the account via `observation_id`. True
+de-identification (an evidence projection/hash that stays verifiable without reconstructing deleted
+PII) is a FUTURE redesign that must precede any erasure feature; this schema does not provide it.
+
 STRICT 2B BOUNDARY (reviewer, Rev 2 §4):
-  * ONE local SQLite DB with logically separated TABLES — private account/observation linkage vs
-    de-identified research evidence vs the sequence allocator + schema metadata.
-  * The constructor REQUIRES an explicit db path. There is NO default: it never falls back to the
-    checkout, OneDrive, `data/`, or a production runtime path.
-  * NO backup/restore system (that is 2C), NO production path, NO feature flag, NO route, NO UI, NO
-    job, NO deployment, NO deletion/erasure implementation. Deletion requests FAIL CLOSED.
-  * The store adds NO authority/scoring/logic beyond the Slice-1 domain layer. Semantic invariants
-    (binding, lineage, fail-closed conclusions, summary reconciliation, strict monotonic record_seq)
-    are validated by replaying through the Slice-1 `InMemoryResearchStore`; the DB adds storage-level
-    enforcement on top (write-once triggers, UNIQUE idempotency keys, FKs, a persisted allocator).
+  * ONE local SQLite DB; the constructor REQUIRES an explicit path (no default: never the checkout,
+    OneDrive, `data/`, or a production runtime path).
+  * NO backup/restore (2C), production path, feature flag, route, UI, job, deployment, or deletion/
+    erasure implementation. Deletion requests FAIL CLOSED.
 
 Idempotency (Rev 2 §5): every append takes a caller-supplied immutable `idempotency_key`. Exact retry
 (same key + same content_hash) is a no-op returning the existing record; same key + different content
@@ -43,7 +53,7 @@ class ResearchStoreError(Exception):
 
 
 class SchemaVersionError(ResearchStoreError):
-    """The on-disk schema version is not the one this code supports (fail closed)."""
+    """The on-disk schema version is not the one this code supports (fail closed, no mutation)."""
 
 
 class IdempotencyConflict(ResearchStoreError):
@@ -51,11 +61,12 @@ class IdempotencyConflict(ResearchStoreError):
 
 
 class SequenceError(ResearchStoreError):
-    """A record_seq would break the store-wide strictly-monotonic ordering."""
+    """A record_seq would break the store-wide strictly-monotonic/unique ordering."""
 
 
 class StoreIntegrityError(ResearchStoreError):
-    """A stored row failed its content-hash recomputation or an integrity check."""
+    """A stored row failed a content-hash recomputation, integrity_check, foreign_key_check, or the
+    allocator/registry reconcile — the store is disabled (fail closed)."""
 
 
 class DeletionNotPermitted(ResearchStoreError):
@@ -122,6 +133,9 @@ def _evidence(d: Optional[dict]) -> Optional[EvidenceBundle]:
 
 
 # --------------------------------------------------------------------------- schema
+# DB-ENFORCED: global record_seq uniqueness (record_registry PK), same-table supersedes FKs, one
+# current per lineage (*_current PK + supersede-the-tip UPDATE guard), write-once (UPDATE+DELETE
+# triggers). The *_current pointer tables are the only mutable record-domain tables.
 _SCHEMA_SQL = r"""
 CREATE TABLE IF NOT EXISTS schema_meta (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -130,6 +144,13 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 CREATE TABLE IF NOT EXISTS seq_allocator (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   max_claimed INTEGER NOT NULL
+);
+-- the authoritative global sequence ledger: every record of every kind registers its record_seq here
+-- in the SAME transaction, so a record_seq is unique ACROSS tables, not merely per table.
+CREATE TABLE IF NOT EXISTS record_registry (
+  record_seq INTEGER PRIMARY KEY,
+  kind       TEXT NOT NULL CHECK (kind IN ('observation','candidate','outcome','finding')),
+  record_id  TEXT NOT NULL
 );
 
 -- private: account/observation linkage + the observer's authored text (the ONLY place these live)
@@ -149,7 +170,8 @@ CREATE TABLE IF NOT EXISTS observation_private (
   content_hash     TEXT NOT NULL
 );
 
--- de-identified research evidence (NO observer column; observer/thesis are joined from the private table)
+-- pseudonymous/linkable research evidence: NO observer column; observer/thesis rejoin from the private
+-- row via observation_id (so this is LINKABLE, not de-identified).
 CREATE TABLE IF NOT EXISTS research_candidate (
   candidate_id     TEXT PRIMARY KEY,
   idempotency_key  TEXT NOT NULL UNIQUE,
@@ -168,7 +190,7 @@ CREATE TABLE IF NOT EXISTS research_candidate (
   sources_json     TEXT NOT NULL,
   snapshot_json    TEXT NOT NULL,
   acted            INTEGER NOT NULL CHECK (acted IN (0,1)),
-  supersedes       INTEGER,
+  supersedes       INTEGER REFERENCES research_candidate(record_seq),
   content_hash     TEXT NOT NULL
 );
 
@@ -187,7 +209,7 @@ CREATE TABLE IF NOT EXISTS candidate_outcome (
   descriptive_json TEXT NOT NULL,
   receipt_ref      TEXT,
   invalidation_reason TEXT,
-  supersedes       INTEGER,
+  supersedes       INTEGER REFERENCES candidate_outcome(record_seq),
   content_hash     TEXT NOT NULL
 );
 
@@ -202,20 +224,50 @@ CREATE TABLE IF NOT EXISTS evaluated_finding (
   endpoint_json    TEXT NOT NULL,
   bk_captured      TEXT NOT NULL,
   evidence_json    TEXT,
-  supersedes       INTEGER,
+  supersedes       INTEGER REFERENCES evaluated_finding(record_seq),
   content_hash     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_finding_family ON evaluated_finding(family_key_str);
 
--- write-once: records are immutable; corrections are NEW rows, never UPDATEs (only seq_allocator mutates).
-CREATE TRIGGER IF NOT EXISTS observation_private_immutable BEFORE UPDATE ON observation_private
+-- exactly-one-current-per-lineage, maintained transactionally. The PRIMARY KEY enforces one current;
+-- a supersession UPDATE must match the prior current tip (WHERE record_seq = supersedes AND lineage),
+-- so cross-lineage / non-tip supersession has no row to update.
+CREATE TABLE IF NOT EXISTS candidate_current (
+  observation_id TEXT PRIMARY KEY,
+  record_seq     INTEGER NOT NULL UNIQUE REFERENCES research_candidate(record_seq)
+);
+CREATE TABLE IF NOT EXISTS outcome_current (
+  candidate_id TEXT PRIMARY KEY,
+  record_seq   INTEGER NOT NULL UNIQUE REFERENCES candidate_outcome(record_seq),
+  version      INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS finding_current (
+  family_key_str TEXT PRIMARY KEY,
+  record_seq     INTEGER NOT NULL UNIQUE REFERENCES evaluated_finding(record_seq)
+);
+
+-- write-once: records cannot be UPDATEd or DELETEd (corrections are NEW rows). Only the allocator and
+-- the *_current pointer tables are mutable.
+CREATE TRIGGER IF NOT EXISTS observation_private_no_update BEFORE UPDATE ON observation_private
 BEGIN SELECT RAISE(ABORT, 'observation_private is immutable'); END;
-CREATE TRIGGER IF NOT EXISTS research_candidate_immutable BEFORE UPDATE ON research_candidate
+CREATE TRIGGER IF NOT EXISTS observation_private_no_delete BEFORE DELETE ON observation_private
+BEGIN SELECT RAISE(ABORT, 'observation_private is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS research_candidate_no_update BEFORE UPDATE ON research_candidate
 BEGIN SELECT RAISE(ABORT, 'research_candidate is immutable'); END;
-CREATE TRIGGER IF NOT EXISTS candidate_outcome_immutable BEFORE UPDATE ON candidate_outcome
+CREATE TRIGGER IF NOT EXISTS research_candidate_no_delete BEFORE DELETE ON research_candidate
+BEGIN SELECT RAISE(ABORT, 'research_candidate is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS candidate_outcome_no_update BEFORE UPDATE ON candidate_outcome
 BEGIN SELECT RAISE(ABORT, 'candidate_outcome is immutable'); END;
-CREATE TRIGGER IF NOT EXISTS evaluated_finding_immutable BEFORE UPDATE ON evaluated_finding
+CREATE TRIGGER IF NOT EXISTS candidate_outcome_no_delete BEFORE DELETE ON candidate_outcome
+BEGIN SELECT RAISE(ABORT, 'candidate_outcome is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS evaluated_finding_no_update BEFORE UPDATE ON evaluated_finding
 BEGIN SELECT RAISE(ABORT, 'evaluated_finding is immutable'); END;
+CREATE TRIGGER IF NOT EXISTS evaluated_finding_no_delete BEFORE DELETE ON evaluated_finding
+BEGIN SELECT RAISE(ABORT, 'evaluated_finding is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS record_registry_no_update BEFORE UPDATE ON record_registry
+BEGIN SELECT RAISE(ABORT, 'record_registry is immutable'); END;
+CREATE TRIGGER IF NOT EXISTS record_registry_no_delete BEFORE DELETE ON record_registry
+BEGIN SELECT RAISE(ABORT, 'record_registry is append-only'); END;
 """
 
 
@@ -232,29 +284,59 @@ class ResearchCandidateStore:
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path, isolation_level=None, timeout=5.0)
         self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.execute("PRAGMA foreign_keys=ON")
-        self.conn.execute("PRAGMA synchronous=FULL")
-        self.conn.execute("PRAGMA busy_timeout=5000")
-        self._init()
-        row = self.conn.execute("SELECT max_claimed FROM seq_allocator WHERE id=1").fetchone()
-        self._max_allocated = int(row["max_claimed"])
+        try:
+            # session-only pragmas first (no file mutation); WAL is deferred into _init so an
+            # UNSUPPORTED database is never written to before it fails closed.
+            self.conn.execute("PRAGMA foreign_keys=ON")
+            self.conn.execute("PRAGMA busy_timeout=5000")
+            self._init()
+            row = self.conn.execute("SELECT max_claimed FROM seq_allocator WHERE id=1").fetchone()
+            self._max_allocated = int(row["max_claimed"])
+        except Exception:
+            self.conn.close()   # never leave a connection open on a failed init (reviewer #1)
+            raise
 
     # schema ----------------------------------------------------------------
     def _init(self) -> None:
-        self.conn.executescript(_SCHEMA_SQL)
-        row = self.conn.execute("SELECT version FROM schema_meta WHERE id=1").fetchone()
-        if row is None:
+        has_meta = self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'").fetchone()
+        if has_meta is not None:
+            # EXISTING db — validate the version BEFORE any DDL/WAL mutation (reviewer #1).
+            row = self.conn.execute("SELECT version FROM schema_meta WHERE id=1").fetchone()
+            if row is None or int(row["version"]) != SCHEMA_VERSION:
+                raise SchemaVersionError(
+                    f"unsupported schema version {None if row is None else row['version']} "
+                    f"(expected {SCHEMA_VERSION}) — fail closed, no mutation"
+                )
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA synchronous=FULL")
+        else:
+            # NEW db — refuse to initialize over a foreign non-empty database (no mutation).
+            other = self.conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchone()[0]
+            if other:
+                raise SchemaVersionError("database has a foreign schema; refusing to initialize over it")
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA synchronous=FULL")
+            self.conn.executescript(_SCHEMA_SQL)
             self.conn.execute("INSERT INTO schema_meta(id, version) VALUES (1, ?)", (SCHEMA_VERSION,))
-        elif int(row["version"]) != SCHEMA_VERSION:
-            raise SchemaVersionError(
-                f"unsupported schema version {row['version']} (expected {SCHEMA_VERSION}) — fail closed"
-            )
-        if self.conn.execute("SELECT 1 FROM seq_allocator WHERE id=1").fetchone() is None:
             self.conn.execute("INSERT INTO seq_allocator(id, max_claimed) VALUES (1, 0)")
+        self._check_integrity()
+
+    def _check_integrity(self) -> None:
         ic = self.conn.execute("PRAGMA integrity_check").fetchone()[0]
         if ic != "ok":
             raise StoreIntegrityError(f"integrity_check failed: {ic}")
+        fk = self.conn.execute("PRAGMA foreign_key_check").fetchall()
+        if fk:
+            raise StoreIntegrityError(f"foreign_key_check failed: {[tuple(r) for r in fk]}")
+        maxc = int(self.conn.execute("SELECT max_claimed FROM seq_allocator WHERE id=1").fetchone()[0])
+        maxr = int(self.conn.execute(
+            "SELECT COALESCE(MAX(record_seq), 0) FROM record_registry").fetchone()[0])
+        if maxc != maxr:
+            raise StoreIntegrityError(
+                f"allocator max_claimed {maxc} != registry max {maxr} (reconcile failure)")
 
     # sequence --------------------------------------------------------------
     def next_seq(self) -> int:
@@ -262,31 +344,49 @@ class ResearchCandidateStore:
         self._max_allocated = max(self._max_allocated, maxc) + 1
         return self._max_allocated
 
-    def _claim_seq(self, seq: int) -> None:
+    def _claim_seq(self, seq: int, kind: str, record_id: str) -> None:
         maxc = int(self.conn.execute("SELECT max_claimed FROM seq_allocator WHERE id=1").fetchone()[0])
         if seq <= maxc:
             raise SequenceError(f"record_seq {seq} must be > max_claimed {maxc} (strict monotonic)")
+        # the registry PK is the DB-level global-uniqueness backstop (across all record kinds).
+        self.conn.execute("INSERT INTO record_registry(record_seq, kind, record_id) VALUES (?,?,?)",
+                          (seq, kind, record_id))
         self.conn.execute("UPDATE seq_allocator SET max_claimed=? WHERE id=1", (seq,))
         if seq > self._max_allocated:
             self._max_allocated = seq
+
+    # current-tip maintenance (DB-enforced one-current + supersede-the-tip) --
+    def _advance_tip(self, table: str, key_col: str, key_val, new_seq: int,
+                     supersedes: Optional[int], extra_cols=(), extra_vals=()) -> None:
+        if supersedes is None:
+            cols = (key_col, "record_seq") + tuple(extra_cols)
+            vals = (key_val, new_seq) + tuple(extra_vals)
+            placeholders = ",".join("?" for _ in cols)
+            self.conn.execute(f"INSERT INTO {table}({','.join(cols)}) VALUES ({placeholders})", vals)
+        else:
+            sets = "record_seq=?" + "".join(f", {c}=?" for c in extra_cols)
+            cur = self.conn.execute(
+                f"UPDATE {table} SET {sets} WHERE {key_col}=? AND record_seq=?",
+                (new_seq, *extra_vals, key_val, supersedes))
+            if cur.rowcount != 1:
+                raise SequenceError(
+                    f"{table}: supersedes {supersedes} is not the current tip of {key_col}={key_val!r} "
+                    f"(cross-lineage or stale supersession)")
 
     # transactions ----------------------------------------------------------
     def _begin(self) -> None:
         self.conn.execute("BEGIN IMMEDIATE")
 
-    # idempotency -----------------------------------------------------------
     def _idem(self, table: str, key: str, new_hash: str):
-        row = self.conn.execute(
-            f"SELECT * FROM {table} WHERE idempotency_key=?", (key,)).fetchone()
+        row = self.conn.execute(f"SELECT * FROM {table} WHERE idempotency_key=?", (key,)).fetchone()
         if row is None:
             return None
         if row["content_hash"] == new_hash:
-            return row                                   # exact retry -> caller returns noop
+            return row
         raise IdempotencyConflict(
-            f"idempotency_key {key!r} reused with different content on {table} (fail closed)"
-        )
+            f"idempotency_key {key!r} reused with different content on {table} (fail closed)")
 
-    # replay / in-memory validation (Rev 2 §3.9, decision 6) ----------------
+    # replay / in-memory validation (Rev 2 §3.9) ----------------------------
     def _revive_all(self):
         obs = {}
         for r in self.conn.execute("SELECT * FROM observation_private"):
@@ -319,9 +419,9 @@ class ResearchCandidateStore:
         for r in self.conn.execute("SELECT * FROM candidate_outcome"):
             o = CandidateOutcome(
                 outcome_id=r["outcome_id"], candidate_id=r["candidate_id"], version=r["version"],
-                case_state=CaseState(r["case_state"]),
-                bk_captured=_dt(r["bk_captured"]), record_seq=r["record_seq"],
-                observed_endpoint_value=r["observed_value"], baseline_expected_value=r["baseline_value"],
+                case_state=CaseState(r["case_state"]), bk_captured=_dt(r["bk_captured"]),
+                record_seq=r["record_seq"], observed_endpoint_value=r["observed_value"],
+                baseline_expected_value=r["baseline_value"],
                 completeness={k: Completeness(v) for k, v in _u(r["completeness_json"]).items()},
                 covariates=_u(r["covariates_json"]), descriptive=_u(r["descriptive_json"]),
                 measurement_receipt_ref=r["receipt_ref"], invalidation_reason=r["invalidation_reason"],
@@ -341,9 +441,9 @@ class ResearchCandidateStore:
         return obs, cands, outs, finds
 
     def _memory(self) -> InMemoryResearchStore:
-        """Replay stored rows in record_seq order through the Slice-1 engine. This both reconstructs
-        current state for validating the next write AND proves the stored ledger is consistent
-        (ids, hashes, supersession links, current tips)."""
+        """Replay stored rows in record_seq order through the Slice-1 engine — validates the SEMANTIC
+        invariants (binding, summary reconciliation, fail-closed conclusions) the DB cannot express,
+        reconstructs current state for the next write, and verifies every row's content hash."""
         obs, cands, outs, finds = self._revive_all()
         records = ([(o.record_seq, 0, "obs", o) for o in obs.values()]
                    + [(c.temporal.record_seq, 1, "cand", c) for c in cands]
@@ -364,6 +464,7 @@ class ResearchCandidateStore:
 
     def replay_validate(self) -> dict:
         mem = self._memory()
+        self._check_integrity()
         return {"observations": len(mem.observations), "candidates": len(mem.candidates),
                 "max_claimed": int(self.conn.execute(
                     "SELECT max_claimed FROM seq_allocator WHERE id=1").fetchone()[0])}
@@ -377,8 +478,8 @@ class ResearchCandidateStore:
             if hit is not None:
                 self.conn.execute("ROLLBACK")
                 return {"status": "noop", "id": hit["observation_id"], "record_seq": hit["record_seq"]}
-            self._memory().record_observation(obs)      # validate via Slice-1 semantics
-            self._claim_seq(obs.record_seq)
+            self._memory().record_observation(obs)
+            self._claim_seq(obs.record_seq, "observation", obs.observation_id)
             self.conn.execute(
                 "INSERT INTO observation_private VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (obs.observation_id, idempotency_key, obs.record_seq, obs.observer,
@@ -400,18 +501,20 @@ class ResearchCandidateStore:
                 self.conn.execute("ROLLBACK")
                 return {"status": "noop", "id": hit["candidate_id"], "record_seq": hit["record_seq"]}
             self._memory().freeze_candidate(cand)
-            self._claim_seq(cand.temporal.record_seq)
+            seq = cand.temporal.record_seq
+            self._claim_seq(seq, "candidate", cand.candidate_id)
             self.conn.execute(
                 "INSERT INTO research_candidate VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (cand.candidate_id, idempotency_key, cand.temporal.record_seq, cand.observation_id,
-                 cand.category.value, cand.sub_label.value, _j(cand.entity), _j(cand.event),
-                 _j(cand.temporal), _j(cand.baseline),
-                 _j(cand.primary_endpoint) if cand.primary_endpoint else None,
+                (cand.candidate_id, idempotency_key, seq, cand.observation_id, cand.category.value,
+                 cand.sub_label.value, _j(cand.entity), _j(cand.event), _j(cand.temporal),
+                 _j(cand.baseline), _j(cand.primary_endpoint) if cand.primary_endpoint else None,
                  _j(list(cand.assumptions)), _j(list(cand.eligibility_conditions)),
                  _j(list(cand.invalidation_conditions)), _j(list(cand.sources)),
                  _j(cand.pre_event_snapshot), int(cand.acted), cand.supersedes, cand.content_hash))
+            self._advance_tip("candidate_current", "observation_id", cand.observation_id, seq,
+                              cand.supersedes)
             self.conn.execute("COMMIT")
-            return {"status": "recorded", "id": cand.candidate_id, "record_seq": cand.temporal.record_seq}
+            return {"status": "recorded", "id": cand.candidate_id, "record_seq": seq}
         except Exception:
             self.conn.execute("ROLLBACK")
             raise
@@ -425,7 +528,7 @@ class ResearchCandidateStore:
                 self.conn.execute("ROLLBACK")
                 return {"status": "noop", "id": hit["outcome_id"], "record_seq": hit["record_seq"]}
             self._memory().append_outcome(outcome)
-            self._claim_seq(outcome.record_seq)
+            self._claim_seq(outcome.record_seq, "outcome", outcome.outcome_id)
             self.conn.execute(
                 "INSERT INTO candidate_outcome VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (outcome.outcome_id, idempotency_key, outcome.record_seq, outcome.candidate_id,
@@ -434,6 +537,8 @@ class ResearchCandidateStore:
                  _j(outcome.completeness), _j(outcome.covariates), _j(outcome.descriptive),
                  outcome.measurement_receipt_ref, outcome.invalidation_reason, outcome.supersedes,
                  content_hash(outcome)))
+            self._advance_tip("outcome_current", "candidate_id", outcome.candidate_id,
+                              outcome.record_seq, outcome.supersedes, ("version",), (outcome.version,))
             self.conn.execute("COMMIT")
             return {"status": "recorded", "id": outcome.outcome_id, "record_seq": outcome.record_seq}
         except Exception:
@@ -448,8 +553,8 @@ class ResearchCandidateStore:
             if hit is not None:
                 self.conn.execute("ROLLBACK")
                 return {"status": "noop", "id": hit["finding_id"], "record_seq": hit["record_seq"]}
-            self._memory().record_finding(finding)      # reconciles summary + requires a real family
-            self._claim_seq(finding.record_seq)
+            self._memory().record_finding(finding)
+            self._claim_seq(finding.record_seq, "finding", finding.finding_id)
             self.conn.execute(
                 "INSERT INTO evaluated_finding VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (finding.finding_id, idempotency_key, finding.record_seq, finding.family_key.key,
@@ -457,6 +562,8 @@ class ResearchCandidateStore:
                  _j(finding.endpoint), finding.bk_captured.isoformat(),
                  _j(finding.evidence) if finding.evidence else None, finding.supersedes,
                  finding.content_hash))
+            self._advance_tip("finding_current", "family_key_str", finding.family_key.key,
+                              finding.record_seq, finding.supersedes)
             self.conn.execute("COMMIT")
             return {"status": "recorded", "id": finding.finding_id, "record_seq": finding.record_seq}
         except Exception:
@@ -465,12 +572,10 @@ class ResearchCandidateStore:
 
     # reads -----------------------------------------------------------------
     def load_observation(self, observation_id: str) -> Optional[UserObservation]:
-        obs, _, _, _ = self._revive_all()
-        return obs.get(observation_id)
+        return self._revive_all()[0].get(observation_id)
 
     def load_candidate(self, candidate_id: str) -> Optional[ResearchCandidate]:
-        _, cands, _, _ = self._revive_all()
-        return next((c for c in cands if c.candidate_id == candidate_id), None)
+        return next((c for c in self._revive_all()[1] if c.candidate_id == candidate_id), None)
 
     def current_outcome(self, candidate_id: str) -> Optional[CandidateOutcome]:
         return self._memory().current_outcome(candidate_id)
@@ -478,12 +583,12 @@ class ResearchCandidateStore:
     def current_finding(self, family_key: FamilyKey) -> Optional[EvaluatedFinding]:
         return self._memory().current_finding(family_key)
 
-    # deletion is NOT implemented in 2B (Rev 2 §3.8 / decision 3, 8) --------
+    # deletion is NOT implemented in 2B (Rev 2 §3.8 / decisions 3, 8) -------
     def delete_observation(self, *_a, **_k):
         raise DeletionNotPermitted(
             "deletion/erasure is undecided and unimplemented in 2B — a future approved erasure is a "
-            "privileged transaction producing an erasure receipt, never an ordinary repository delete"
-        )
+            "privileged transaction producing an erasure receipt, and requires an evidence projection "
+            "that stays verifiable without reconstructing deleted PII (this schema does not provide it)")
 
     erase = delete_observation
 

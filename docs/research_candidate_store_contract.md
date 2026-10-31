@@ -20,7 +20,7 @@ or deletion implementation (§4).
 
 1. **Engine: SQLite-WAL.** Approved.
 2. **One database file**, with logically separated **tables** (not two DB files): (a) private
-   account/observation linkage, (b) de-identified research evidence, (c) the sequence allocator and
+   account/observation linkage, (b) pseudonymous/linkable research evidence, (c) the sequence allocator and
    schema metadata. One DB preserves a single `BEGIN IMMEDIATE` transaction, foreign keys, correction
    linkage, sequence allocation, consistent `VACUUM INTO` snapshots, and crash recovery. Two independent
    WAL databases **cannot** provide an atomic cross-store write, FK enforcement, or a consistent backup
@@ -29,7 +29,8 @@ or deletion implementation (§4).
 3. **Retention/deletion is UNDECIDED.** Do **not** encode "delete PII but retain tombstone/outcome" as
    approved behavior. In 2B: provide **no** account-erasure API; use **synthetic fixtures only**; document
    the future deletion transaction; **fail closed if deletion is requested.** Legal/privacy must decide
-   whether de-identified measurements may survive account deletion.
+   whether pseudonymous measurements may survive account deletion (they stay linkable to the
+   account via `observation_id` until a future de-identified projection is designed).
 4. **Do not refactor the Decision Journal backup code in 2B.** Backup/restore belongs to **2C**, and 2C
    first audits whether any extraction is behavior-preserving — never risk the existing production ledger
    merely to reduce duplication.
@@ -45,7 +46,10 @@ or deletion implementation (§4).
    production runtime path.
 8. **Privacy erasure vs immutability.** Ordinary records are update/delete-protected (DB triggers). A
    future approved erasure is an explicit **privileged transaction that produces an erasure receipt** —
-   never an ordinary repository delete.
+   never an ordinary repository delete. Because the evidence rows are pseudonymous/linkable (a candidate's hash depends on the observer/
+   thesis rejoined from the private row), erasure also requires a **separately governed redesign**: an
+   evidence projection/hash that stays verifiable WITHOUT reconstructing deleted PII. This schema does
+   not provide that, so 2B fails closed on deletion.
 
 ---
 
@@ -102,11 +106,12 @@ the Slice-1 ones; the store adds **storage-level** enforcement on top.
 - **private (account/observation linkage)** — `observation_private`: the observer (account id), thesis,
   sources, entity/event, `acted`, timestamps, `record_seq`, `content_hash`, `idempotency_key`. This is the
   only place the observer↔observation linkage and the observer's authored text live.
-- **de-identified research evidence** — `research_candidate`, `candidate_outcome`, `evaluated_finding`:
+- **pseudonymous/linkable research evidence** — `research_candidate`, `candidate_outcome`, `evaluated_finding`:
   the measurement (category, sub_label, canonical entity/event ids, temporal, baseline, endpoint,
   eligibility/invalidation, snapshots, states, summaries). These tables carry **no observer column**; a
   candidate references its observation by `observation_id` (the join key) and the observer/thesis are
-  pulled from the private table on load. Findings expose aggregate, de-identified counts only.
+  pulled from the private table on load, so these rows are LINKABLE to the account (pseudonymous,
+  NOT de-identified). Findings expose aggregate counts only.
 
 Mapping to the ten required areas:
 
@@ -128,7 +133,8 @@ Mapping to the ten required areas:
    decision 5: exact retry → noop returning the existing record; same key + different content →
    conflict/fail closed; a correction is a **new** record + explicit `supersedes` with its own key.
 7. **Privacy separation.** The private table holds the account/observation linkage and authored text; the
-   research tables hold only de-identified measurement, joined by `observation_id`. No cross-user join;
+   research tables hold only the measurement (no observer), joined by `observation_id` — pseudonymous/
+   linkable, NOT de-identified. No cross-user join;
    findings are aggregate.
 8. **Retention / deletion (UNDECIDED, Rev-2 decision 3).** 2B provides **no** erasure API and **fails
    closed** if deletion is requested; the future deletion transaction is documented only. No "delete PII,

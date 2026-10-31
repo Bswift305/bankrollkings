@@ -222,9 +222,9 @@ def test_replay_and_corruption():
         store.close()
 
 
-# =========================================================================== G privacy split
+# =========================================================================== G pseudonymous split
 def test_privacy_split():
-    print("\n[G] the research tables hold no observer; identity lives only in the private table")
+    print("\n[G] pseudonymous/linkable split: research tables hold no observer (identity is private)")
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
         store = rcs.ResearchCandidateStore(os.path.join(d, "r.db"))
         e, g = ent("p", "P"), ev("g")
@@ -237,8 +237,167 @@ def test_privacy_split():
               "research_candidate carries neither observer nor thesis")
         reloaded = store.load_candidate("c")
         check(reloaded.observer == "owner" and reloaded.thesis == THESIS,
-              "observer/thesis are rejoined from the private table on load (and the hash verifies)")
+              "observer/thesis are rejoined from the private table on load (linkable, not de-identified)")
         store.close()
+
+
+def seeded_with_finding(path):
+    store, fk = seeded_store(path)
+    summary = rc.summarize_family(fk, store._memory().family_cases(fk))
+    store.record_finding(
+        rc.evaluate_family(finding_id="f0", endpoint=endpoint(), summary=summary,
+                           proposed_status=rc.FindingStatus.INCONCLUSIVE, bk_captured=POST,
+                           record_seq=store.next_seq()), idempotency_key="find-0")
+    return store, fk
+
+
+# =========================================================================== AK unsupported-schema zero mutation
+def test_unsupported_schema_zero_mutation():
+    print("\n[AK] an unsupported-schema open mutates NOTHING before failing closed")
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        path = os.path.join(d, "r.db")
+        rcs.ResearchCandidateStore(path).close()
+        raw = sqlite3.connect(path)
+        raw.execute("UPDATE schema_meta SET version=999 WHERE id=1")
+        raw.commit()
+        before = [r[0] for r in raw.execute(
+            "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY sql")]
+        raw.close()
+        expect_raises(rcs.SchemaVersionError, lambda: rcs.ResearchCandidateStore(path),
+                      "reopening an unsupported-version DB fails closed")
+        raw2 = sqlite3.connect(path)
+        after = [r[0] for r in raw2.execute(
+            "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY sql")]
+        ver = raw2.execute("SELECT version FROM schema_meta WHERE id=1").fetchone()[0]
+        raw2.close()
+        check(before == after and ver == 999,
+              "the failed open altered no schema object and left the version untouched")
+
+
+# =========================================================================== AL direct DELETE rejected
+def test_direct_delete_rejected():
+    print("\n[AL] direct DELETE is rejected on every record table (BEFORE DELETE triggers)")
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        store, _ = seeded_with_finding(os.path.join(d, "r.db"))
+        for t in ("observation_private", "research_candidate", "candidate_outcome", "evaluated_finding"):
+            expect_raises(sqlite3.Error, lambda t=t: store.conn.execute(f"DELETE FROM {t}"),
+                          f"DELETE on {t} is aborted")
+        store.close()
+
+
+# =========================================================================== AM invalid supersession (SQLite)
+def test_invalid_supersession_db_enforced():
+    print("\n[AM] invalid/cross-lineage supersession is rejected by the DB itself")
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        store, _ = seeded_store(os.path.join(d, "r.db"))
+        row = dict(store.conn.execute("SELECT * FROM research_candidate WHERE candidate_id='c0'").fetchone())
+        vals = [row[k] for k in ("candidate_id", "idempotency_key", "record_seq", "observation_id",
+                "category", "sub_label", "entity_json", "event_json", "temporal_json", "baseline_json",
+                "endpoint_json", "assumptions_json", "eligibility_json", "invalidation_json",
+                "sources_json", "snapshot_json", "acted", "supersedes", "content_hash")]
+        vals[0], vals[1], vals[2], vals[17] = "ghost", "ghost-k", 777000, 999999   # supersedes -> nonexistent
+        expect_raises(sqlite3.IntegrityError,
+                      lambda: store.conn.execute(
+                          "INSERT INTO research_candidate VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", vals),
+                      "a supersedes pointing at a nonexistent record_seq is a FK violation")
+        # one-current-per-lineage is DB-enforced: a duplicate current pointer is a PK violation.
+        expect_raises(sqlite3.IntegrityError,
+                      lambda: store.conn.execute(
+                          "INSERT INTO candidate_current(observation_id, record_seq) VALUES ('o0', ?)",
+                          (row["record_seq"],)),
+                      "a second current candidate for one observation is a PK violation")
+        # cross-lineage: a candidate BOUND to o0 that supersedes o1's candidate is rejected (the
+        # Slice-1 lineage guard + the DB current-tip WHERE-observation_id guard both refuse it).
+        c1_seq = store.load_candidate("c1").temporal.record_seq
+        e0, g0 = ent("p0", "P0"), ev("g0")
+        cross = rc.ResearchCandidate(
+            candidate_id="crossc", observation_id="o0", observer="owner",
+            category=rc.Category.PLAYER_MILESTONE_USAGE, sub_label=rc.SubLabel.BIRTHDAY, entity=e0,
+            event=g0, temporal=rc.TemporalFacts(OBSERVED, g0.event_effective, PRE, store.next_seq()),
+            thesis=THESIS, baseline=baseline(), assumptions=("player active",),
+            eligibility_conditions=("player active",), invalidation_conditions=("player_inactive",),
+            primary_endpoint=endpoint(),
+            pre_event_snapshot={"expected_target_share": 0.18, "nested": {"x": [1, 2]}},
+            sources=SOURCES, supersedes=c1_seq)
+        expect_raises(rc.SupersessionError, lambda: store.freeze_candidate(cross, idempotency_key="xk"),
+                      "a candidate bound to o0 that supersedes o1's candidate is rejected (cross-lineage)")
+        store.close()
+
+
+# =========================================================================== AN cross-table seq dup
+def test_cross_table_sequence_unique():
+    print("\n[AN] a record_seq is unique ACROSS record kinds (record_registry PK)")
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        store, _ = seeded_store(os.path.join(d, "r.db"))
+        s = store.conn.execute("SELECT record_seq FROM record_registry LIMIT 1").fetchone()[0]
+        expect_raises(sqlite3.IntegrityError,
+                      lambda: store.conn.execute(
+                          "INSERT INTO record_registry(record_seq, kind, record_id) VALUES (?, 'finding', 'x')",
+                          (s,)),
+                      "reusing a record_seq (even for a different kind) violates the registry PK")
+        store.close()
+
+
+# =========================================================================== AO allocator mismatch on reopen
+def test_allocator_mismatch_on_reopen():
+    print("\n[AO] an allocator/registry mismatch is detected on reopen (fail closed)")
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        path = os.path.join(d, "r.db")
+        store, _ = seeded_store(path)
+        store.conn.execute("UPDATE seq_allocator SET max_claimed=999999 WHERE id=1")
+        store.close()
+        expect_raises(rcs.StoreIntegrityError, lambda: rcs.ResearchCandidateStore(path),
+                      "max_claimed != MAX(record_registry) disables the store on reopen")
+
+
+# =========================================================================== AP two connections, same seq
+def test_two_connections_cannot_share_seq():
+    print("\n[AP] two connections cannot both claim the same record_seq")
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        path = os.path.join(d, "r.db")
+        a_conn = rcs.ResearchCandidateStore(path)
+        b_conn = rcs.ResearchCandidateStore(path)
+        e, g = ent("p", "P"), ev("g")
+        e2, g2 = ent("q", "Q"), ev("g2")
+        sa, sb = a_conn.next_seq(), b_conn.next_seq()
+        check(sa == sb == 1, "both advisory allocations return the same value before any claim")
+        a_conn.record_observation(obs("oa", e, g, sa), idempotency_key="KA")
+        expect_raises((rc.SupersessionError, rcs.SequenceError, sqlite3.IntegrityError),
+                      lambda: b_conn.record_observation(obs("ob", e2, g2, sb), idempotency_key="KB"),
+                      "the second connection cannot claim the sequence the first already took")
+        a_conn.close()
+        b_conn.close()
+
+
+# =========================================================================== AQ foreign_key_check disables
+def test_foreign_key_check_disables_store():
+    print("\n[AQ] a foreign_key_check failure disables the store on reopen")
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+        path = os.path.join(d, "r.db")
+        store, _ = seeded_store(path)
+        row = dict(store.conn.execute("SELECT * FROM research_candidate WHERE candidate_id='c0'").fetchone())
+        vals = [row[k] for k in ("candidate_id", "idempotency_key", "record_seq", "observation_id",
+                "category", "sub_label", "entity_json", "event_json", "temporal_json", "baseline_json",
+                "endpoint_json", "assumptions_json", "eligibility_json", "invalidation_json",
+                "sources_json", "snapshot_json", "acted", "supersedes", "content_hash")]
+        vals[0], vals[1], vals[2], vals[3], vals[17] = "ghostc", "ghost-k", 500000, "GHOST_OBS", None
+        store.conn.execute("PRAGMA foreign_keys=OFF")
+        store.conn.execute("INSERT INTO research_candidate VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", vals)
+        store.close()
+        expect_raises(rcs.StoreIntegrityError, lambda: rcs.ResearchCandidateStore(path),
+                      "an orphaned FK (ghost observation_id) disables the store on reopen")
+
+
+# =========================================================================== AR documentation pseudonymous
+def test_documentation_says_pseudonymous():
+    print("\n[AR] documentation says pseudonymous/linkable, not de-identified")
+    doc = (rcs.__doc__ or "").lower()
+    src = rcs._SCHEMA_SQL.lower()
+    check("pseudonymous" in doc and ("linkable" in doc or "not de-identified" in doc),
+          "module doc states the data is pseudonymous / linkable")
+    check("de-identified research evidence" not in doc and "de-identified research evidence" not in src,
+          "the old 'de-identified research evidence' overclaim is gone from doc + schema")
+    check("pseudonymous" in src or "linkable" in src, "schema comments say pseudonymous/linkable")
 
 
 # =========================================================================== H path safety
@@ -284,7 +443,11 @@ if __name__ == "__main__":
     print("=" * 80)
     for t in (test_round_trip, test_idempotency, test_immutability, test_schema_gate, test_sequence,
               test_replay_and_corruption, test_privacy_split, test_path_safety,
-              test_deletion_fail_closed, test_store_only_persists_inconclusive):
+              test_deletion_fail_closed, test_store_only_persists_inconclusive,
+              test_unsupported_schema_zero_mutation, test_direct_delete_rejected,
+              test_invalid_supersession_db_enforced, test_cross_table_sequence_unique,
+              test_allocator_mismatch_on_reopen, test_two_connections_cannot_share_seq,
+              test_foreign_key_check_disables_store, test_documentation_says_pseudonymous):
         t()
     print("\n" + "=" * 80)
     print("Clean:", not fails)
