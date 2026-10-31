@@ -1,12 +1,16 @@
-# Research Candidate — Idempotency-Intent Registry (DESIGN ONLY — Rev 2, schema v3)
+# Research Candidate — Idempotency-Intent Registry (DESIGN ONLY — Rev 2.1, schema v3)
 
-**Status: DESIGN ONLY — Rev 2. Schema/trigger/API proposal + adversarial QC plan, for approval before any
+**Status: DESIGN ONLY — Rev 2.1. Schema/trigger/API proposal + adversarial QC plan, for approval before any
 code.** Date 2026-10-31. Second 2D1 prerequisite (first = the identity/event adapter,
 `docs/research_candidate_2d1_identity_feasibility.md`). No code, route, flag, schema edit, or deploy.
 
-Rev 2 fixes the nested-transaction impossibility, binds the registry to the real record in the DB, freezes
-the old per-table idempotency constraint, removes unsupported observation-correction semantics, narrows
-the fingerprint to persisted intent, and corrects the privacy wording.
+Rev 2 fixed the nested-transaction impossibility, bound the registry to the real record in the DB, froze
+the old per-table idempotency constraint, removed observation-correction semantics, narrowed the
+fingerprint, and corrected privacy wording. **Rev 2.1** closes the last contradiction: since v3 drops
+`observation_private.idempotency_key`, **every stored observation must have exactly one registry binding**
+— so the raw SQL observation writer becomes internal-only, the registry enforces one key per observation,
+and reopen reconciles observation ↔ registry **both directions** and fails closed on any unbound
+observation.
 
 ## Why a registry (unchanged)
 
@@ -22,10 +26,25 @@ conflicts. Centralized so the rule cannot diverge per call site.
    `record_observation()` (each of which begins its own txn) are **not** called inside the capture txn.
 2. **The registry is bound to the real record in the DB** (composite FK + triggers, below): a registry row
    cannot name a mismatched kind, id, or observer.
-3. **The registry is authoritative; the old per-table idempotency constraint is removed in v3.** The 2B
-   global `observation_private.idempotency_key UNIQUE` is dropped (two observers may legitimately use the
-   same opaque token — the registry scopes by `observer_id`). The `idempotency_key` lives **only** in the
-   registry; record tables no longer carry it.
+3. **The registry is authoritative; the old per-table idempotency constraint is removed in v3 — for
+   `observation_private` ONLY.** The 2B global `observation_private.idempotency_key UNIQUE` is dropped (two
+   observers may legitimately use the same opaque token — the registry scopes by `observer_id`); the
+   `idempotency_key` for observations lives **only** in the registry. The `candidate`/`outcome`/`finding`
+   tables keep their existing `idempotency_key` columns **unchanged** until each is separately migrated to
+   the registry.
+
+**New in Rev 2.1 — every observation is bound exactly once:**
+7. **The raw SQL observation writer is INTERNAL-only.** There is **no public** `record_observation(obs,
+   key)` that could insert an observation without a governed registry binding. The only sanctioned write
+   path is `capture_observation()`, which inserts the observation and its registry row in the **same**
+   transaction. `_insert_observation_in_txn()` is internal.
+8. **One key per observation:** `idempotency_registry` adds **`UNIQUE(bound_record_seq)`** so two keys
+   cannot bind one observation.
+9. **Both-direction reconcile on reopen (fail closed):** every `observation_private` row must have exactly
+   one `idempotency_registry` binding, and every observation registry row must bind an existing
+   `observation_private(observer, id, seq)`. A direct-SQL observation left unbound (or double-bound) is
+   detected on reopen and disables the store. Replay/tests use `capture_observation()`; **replay needs no
+   SQLite writer** (it reconstructs state from reads via the in-memory engine).
 4. **No observation correction semantics.** `UserObservation` has **no** `supersedes` field; a new
    idempotency_key creates a **distinct, independent observation**, not a correction. Observation
    correction/supersession stays **deferred** until its own lineage contract exists.
@@ -75,9 +94,12 @@ CREATE TABLE IF NOT EXISTS idempotency_registry (
   bound_record_id     TEXT NOT NULL,
   created_at          TEXT NOT NULL,                 -- tz-aware UTC
   PRIMARY KEY (record_kind, observer_id, idempotency_key),
+  UNIQUE (bound_record_seq),                          -- one key per observation (Rev 2.1 decision 8)
   FOREIGN KEY (bound_record_seq, record_kind, bound_record_id)
       REFERENCES record_registry(record_seq, kind, record_id)             -- binds kind + id + seq (decision 2)
 );
+-- NOTE (decision 3): v3 drops observation_private.idempotency_key + its UNIQUE; candidate/outcome/finding
+-- keep their idempotency_key columns UNCHANGED until separately migrated.
 
 -- observer binding: for an observation, the bound record must be an observation_private row whose
 -- observer equals this registry row's observer_id. Future record_kinds are refused until they declare a
@@ -119,8 +141,27 @@ One `BEGIN IMMEDIATE` txn:
      bind + tips, no nested BEGIN) → insert the `idempotency_registry` row → return.
 3. A new `idempotency_key` yields a **distinct observation**; it is **not** a correction (decision 4).
 
-`record_observation(obs, idempotency_key)` / `next_seq()` remain as standalone (own-transaction)
-primitives for tests and replay; the governed 2D1 path is `capture_observation`, which never nests them.
+There is **no public raw observation writer** (Rev 2.1 decision 7): `_reserve_seq_in_txn()` and
+`_insert_observation_in_txn()` are internal and transaction-participating, used only by
+`capture_observation`. The old `record_observation(obs, key)` SQL primitive is removed as a public API so
+nothing can insert an observation without a registry binding. `next_seq()` (own-txn) remains for the
+operator/standalone reservation only. **All normal tests use `capture_observation`; replay reconstructs
+state from reads via the in-memory engine and needs no SQLite writer.**
+
+**Reopen reconcile (both directions, fail closed — Rev 2.1 decision 9):**
+```sql
+-- (a) every observation is bound exactly once:
+SELECT COUNT(*) FROM observation_private o
+ WHERE NOT EXISTS (SELECT 1 FROM idempotency_registry r
+                   WHERE r.record_kind='observation' AND r.bound_record_seq=o.record_seq);   -- must be 0
+-- (b) every observation registry row binds a real observation (observer/id/seq):
+SELECT COUNT(*) FROM idempotency_registry r WHERE r.record_kind='observation' AND NOT EXISTS (
+   SELECT 1 FROM observation_private o
+   WHERE o.record_seq=r.bound_record_seq AND o.observation_id=r.bound_record_id
+     AND o.observer=r.observer_id);                                                           -- must be 0
+```
+Either nonzero ⇒ `StoreIntegrityError` (store disabled). `UNIQUE(bound_record_seq)` already prevents two
+keys binding one observation.
 
 ## Adversarial QC plan (implement with the schema, before 2D1 routes)
 
@@ -147,6 +188,13 @@ primitives for tests and replay; the governed 2D1 path is `capture_observation`,
     `SchemaVersionError` with no migration/mutation.
 11. **Concurrency:** two connections racing the same scope+key+fingerprint → exactly one record + one
     binding; both callers get the same bound id (PK + `BEGIN IMMEDIATE` serialize).
+12. **Observation without a registry row (Rev 2.1):** a direct-SQL `observation_private` insert with no
+    matching registry row → reopen reconcile (a) fails closed (`StoreIntegrityError`); no public writer can
+    produce this state.
+13. **Two keys targeting one observation (Rev 2.1):** a second `idempotency_registry` row with the same
+    `bound_record_seq` → `UNIQUE(bound_record_seq)` violation.
+14. **Legacy-key scope (Rev 2.1):** only `observation_private` loses its `idempotency_key` in v3;
+    `candidate`/`outcome`/`finding` retain theirs unchanged (asserted on the v3 schema).
 
 ## Boundaries
 
