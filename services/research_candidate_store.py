@@ -93,6 +93,11 @@ class DeletionNotPermitted(ResearchStoreError):
     """Deletion/erasure is undecided (Rev 2 §3.8) — 2B fails closed on any deletion request."""
 
 
+class RestoreCleanupError(ResearchStoreError):
+    """A restored destination failed post-publication validation AND could not be removed or quarantined.
+    An INVALID database remains at the reported path — surfaced unmistakably rather than swallowed."""
+
+
 # --------------------------------------------------------------------------- (de)serialize helpers
 def _j(obj) -> str:
     return canonical_json(obj)
@@ -776,12 +781,13 @@ class ResearchCandidateStore:
             _publish_no_overwrite(tmp, dest_path)
             published = True
             ResearchCandidateStore.validate_store(dest_path)    # the restored store must validate too
-        except Exception:
-            if published:   # we created dest via the atomic publish -> safe to remove; never a pre-existing one
-                try:
-                    os.remove(dest_path)
-                except OSError:
-                    pass
+        except Exception as exc:
+            # we created dest via the atomic publish (never a pre-existing one) -> quarantine it. If
+            # quarantine ALSO fails, surface the unsafe remaining path instead of swallowing it.
+            if published and not _quarantine(dest_path):
+                raise RestoreCleanupError(
+                    f"restored store failed validation AND the invalid destination could not be removed "
+                    f"or quarantined; an UNSAFE database remains at: {dest_path}") from exc
             raise
         finally:
             if os.path.exists(tmp):
@@ -825,6 +831,38 @@ def _fsync_file(path: str) -> None:
         os.close(fd)
 
 
+def _fsync_dir(path: str) -> None:
+    """Make a directory entry (a just-published or just-removed name) durable. POSIX only: Windows does
+    NOT support fsync on a directory handle, so there it is a documented no-op (best-effort)."""
+    if os.name == "nt":
+        return
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _quarantine(path: str) -> bool:
+    """Remove an invalid published destination, or (if removal fails) atomically rename it to a clearly
+    INVALID name so the published name no longer holds a bad DB. fsyncs the parent dir on success.
+    Returns True iff the path was removed or renamed away; False iff an invalid file still occupies it."""
+    renamed = None
+    try:
+        os.remove(path)
+    except OSError:
+        try:
+            renamed = path + f".INVALID-{uuid.uuid4().hex}"
+            os.replace(path, renamed)
+        except OSError:
+            return False
+    try:
+        _fsync_dir(os.path.dirname(os.path.abspath(path)))
+    except OSError:
+        pass
+    return True
+
+
 def _lock_down(path: str) -> None:
     """0600: ENFORCED + verified on POSIX; BEST-EFFORT on Windows (chmod does not set NTFS ACLs)."""
     try:
@@ -839,12 +877,14 @@ def _lock_down(path: str) -> None:
 
 
 def _publish_no_overwrite(tmp: str, dest_path: str) -> None:
-    """Atomic create-if-absent publish: a hard link fails (FileExistsError) if dest already exists,
-    so a destination created in a race is NEVER overwritten (unlike os.replace)."""
+    """Atomic create-if-absent publish: a hard link fails (FileExistsError) if dest already exists, so a
+    destination created in a race is NEVER overwritten (unlike os.replace). After a successful link the
+    parent directory is fsynced on POSIX so the new name survives a power loss (Windows: best-effort)."""
     try:
         os.link(tmp, dest_path)
     except FileExistsError:
         raise ResearchStoreError("dest already exists; refusing to overwrite (atomic no-overwrite publish)")
+    _fsync_dir(os.path.dirname(os.path.abspath(dest_path)))   # directory-durable publish (POSIX)
 
 
 def _check_key(key) -> None:
@@ -860,4 +900,5 @@ def _verify(recomputed: str, stored: str, kind: str, rid: str) -> None:
 __all__ = [
     "SCHEMA_VERSION", "ResearchCandidateStore", "ResearchStoreError", "SchemaVersionError",
     "IdempotencyConflict", "SequenceError", "StoreIntegrityError", "DeletionNotPermitted",
+    "RestoreCleanupError",
 ]

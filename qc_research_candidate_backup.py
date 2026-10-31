@@ -184,6 +184,69 @@ def test_permissions():
             check(os.path.exists(bkp), "backup exists (0600 is best-effort on Windows ACLs)")
 
 
+# =========================================================================== B5 directory durability
+def test_directory_fsync_after_publish():
+    print("\n[B5] the parent directory is fsynced AFTER publication (durable name), not before")
+    with tmp() as d:
+        live = os.path.join(d, "live.db")
+        dest = os.path.join(d, "snap.db")
+        store, _, _ = seeded_with_gap_and_finding(live)
+        calls = []
+        real = rcs._fsync_dir
+
+        def spy(p):
+            calls.append((os.path.abspath(p), os.path.exists(dest)))   # record dir + whether dest exists yet
+            return real(p)
+
+        rcs._fsync_dir = spy
+        try:
+            store.backup(dest)
+        finally:
+            rcs._fsync_dir = real
+            store.close()
+        check(any(p == os.path.abspath(d) and existed for p, existed in calls),
+              "_fsync_dir was invoked on the parent dir AFTER the dest was published (dest already existed)")
+
+
+# =========================================================================== B6 cleanup failure surfaced
+def test_cleanup_failure_surfaces_unsafe_path():
+    print("\n[B6] a failed quarantine surfaces the unsafe remaining path (never silently swallowed)")
+    check(issubclass(rcs.RestoreCleanupError, rcs.ResearchStoreError),
+          "RestoreCleanupError is a dedicated store error")
+    with tmp() as d:
+        live = os.path.join(d, "live.db")
+        bkp = os.path.join(d, "snap.db")
+        dest = os.path.join(d, "restored.db")
+        store, _, _ = seeded_with_gap_and_finding(live)
+        store.backup(bkp)
+        store.close()
+        real_validate = rcs.ResearchCandidateStore.validate_store
+        real_quar = rcs._quarantine
+        n = {"c": 0}
+
+        def flaky(path):
+            n["c"] += 1
+            if n["c"] >= 2:                       # pass the pre-copy backup check; fail post-publish dest
+                raise rcs.StoreIntegrityError("forced post-publication validation failure")
+            return real_validate(path)
+
+        rcs.ResearchCandidateStore.validate_store = staticmethod(flaky)
+        rcs._quarantine = lambda path: False      # force both removal and rename to fail
+        try:
+            try:
+                rcs.ResearchCandidateStore.restore(bkp, dest)
+                check(False, "expected RestoreCleanupError")
+            except rcs.RestoreCleanupError as e:
+                check(dest in str(e), "the RestoreCleanupError names the unsafe remaining path")
+            except Exception as e:  # noqa: BLE001
+                check(False, f"expected RestoreCleanupError, got {type(e).__name__}: {e}")
+        finally:
+            rcs.ResearchCandidateStore.validate_store = real_validate
+            rcs._quarantine = real_quar
+            if os.path.exists(dest):
+                os.remove(dest)                   # quarantine was forced to fail -> clean up for the tmpdir
+
+
 # =========================================================================== C fail closed on bad backups
 def test_fail_closed_bad_backups():
     print("\n[C] validation fails closed on corrupt/truncated/foreign/wrong-version/empty backups")
@@ -272,7 +335,8 @@ if __name__ == "__main__":
     print("RESEARCH CANDIDATE STORE — SLICE 2C QC (backup / restore / validation, local-only)")
     print("=" * 80)
     for t in (test_backup_restore_round_trip, test_never_overwrites, test_validation_is_read_only,
-              test_post_publish_validation_quarantines, test_permissions, test_fail_closed_bad_backups,
+              test_post_publish_validation_quarantines, test_permissions, test_directory_fsync_after_publish,
+              test_cleanup_failure_surfaces_unsafe_path, test_fail_closed_bad_backups,
               test_fail_closed_semantic, test_no_journal_coupling):
         t()
     print("\n" + "=" * 80)
