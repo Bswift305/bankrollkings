@@ -145,6 +145,59 @@ def _check_only_result(season: int, want_week):
     return 2, f"season {season} {where} < completed week {want_week}"
 
 
+# ---- identity sanitation (RC 2D1 roster correction) -------------------------------------------------
+# nflverse stats_player_week includes a few TEAM-ATTRIBUTED aggregate rows with NO player identity at all
+# (every identity column null). They are legitimate upstream non-player rows, but a downstream governed
+# roster consumer (the dark Research Candidate adapter) must never see a null identity. Remove ONLY those
+# unmistakable all-null aggregates here, at the producer boundary. Never infer, synthesize, or backfill an
+# id/name; fail closed on a player-like row that has SOME identity but a null GOVERNED identity.
+IDENTITY_COLS = ("player_id", "player_display_name", "player_name")
+GOVERNED_IDENTITY_COLS = ("player_id", "player_display_name")
+
+
+def _null_or_blank(col):
+    return col.isna() | (col.astype(str).str.strip() == "")
+
+
+def _all_identity_null_mask(df):
+    present = [c for c in IDENTITY_COLS if c in df.columns]
+    if not present:
+        return pd.Series(False, index=df.index)
+    m = pd.Series(True, index=df.index)
+    for c in present:
+        m = m & _null_or_blank(df[c])
+    return m
+
+
+def _governed_null_mask(df):
+    m = pd.Series(False, index=df.index)
+    for c in GOVERNED_IDENTITY_COLS:
+        if c in df.columns:
+            m = m | _null_or_blank(df[c])
+    return m
+
+
+def sanitize_player_identities(df):
+    """Drop ONLY unmistakable non-player aggregate rows (EVERY identity column null/blank). Returns
+    (clean_df, removed_count). Fails closed (ValueError) on a player-like row with SOME identity but a
+    null/blank GOVERNED identity (player_id / player_display_name) -- never inferring or backfilling -- and
+    if any null governed identity would survive. The caller preserves the existing artifact on failure."""
+    for c in GOVERNED_IDENTITY_COLS:
+        if c not in df.columns:
+            raise ValueError(f"missing required identity column {c!r} -- fail closed")
+    all_null = _all_identity_null_mask(df)
+    partial = _governed_null_mask(df) & ~all_null
+    n_partial = int(partial.sum())
+    if n_partial:
+        raise ValueError(
+            f"{n_partial} player-like row(s) have a null/blank governed identity "
+            f"(player_id/player_display_name) but are not all-null aggregates -- fail closed, no inference")
+    clean = df[~all_null].copy()
+    if bool(_governed_null_mask(clean).any()):
+        raise ValueError("a null governed identity survived sanitation -- fail closed")
+    return clean, int(all_null.sum())
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Fetch current-season nflverse weekly player stats.")
     ap.add_argument("--season", type=int, default=None, help="Override the season (default: current).")
@@ -203,6 +256,18 @@ def main() -> int:
     if df.empty:
         print(f"[fetch_nfl_player_week] season {season}: empty feed; left existing file untouched")
         return 0
+
+    # RC 2D1 roster correction: drop upstream non-player aggregate rows (all identity columns null) at the
+    # producer boundary; fail closed (preserve the existing file) on any partial-null player identity.
+    try:
+        df, _removed_agg = sanitize_player_identities(df)
+    except ValueError as exc:
+        print(f"[fetch_nfl_player_week] season {season}: identity sanitation FAILED, NOT writing "
+              f"(existing file preserved): {exc}")
+        return 1
+    if _removed_agg:
+        print(f"[fetch_nfl_player_week] season {season}: removed {_removed_agg} non-player aggregate "
+              f"row(s) with all identity columns null")
 
     weeks = sorted(int(w) for w in pd.to_numeric(df.get("week"), errors="coerce").dropna().unique())
     have = _max_week(df)
