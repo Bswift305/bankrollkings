@@ -31395,33 +31395,25 @@ _NFL_HOTHAND_CACHE = {}
 # anchor: add each new season's opener here. Missing season -> the calendar freshness gate
 # degrades safely (returns None = "unknown"), and the board falls back to the per-player
 # recency + through-week disclosures, which need no calendar.
-NFL_SEASON_WEEK1_THURSDAY = {
-    2025: datetime(2025, 9, 4).date(),
-    2026: datetime(2026, 9, 10).date(),
-}
+# NFL season calendar — SINGLE SOURCE in services/nfl_season_contract.py (pure: no app/Flask/pandas/IO),
+# so the dark research-candidate adapter/store can consume the same contract without importing this
+# monolith. `_nfl_expected_completed_week` stays here as the compatibility wrapper for existing callers.
+from services.nfl_season_contract import (                       # noqa: E402
+    NFL_SEASON_WEEK1_THURSDAY,
+    expected_completed_week as _nfl_expected_completed_week_core,
+)
 
 
 def _nfl_expected_completed_week(today=None):
     """How many NFL weeks SHOULD be final as of `today` (Eastern). Returns (week, season).
 
-    A week's slate runs Thu->Mon; it is not 'complete' until its games finalize, so we only
-    count a week once its Tuesday (ET) has passed. week=0 means the season hasn't started;
-    (None, season) means we have no configured Week-1 anchor for that season and therefore
-    make no staleness claim. Regular season only (capped at 18) -- the hot-hand board is a
-    regular-season player-prop surface."""
+    Compatibility wrapper (behavior unchanged): supplies the shared Eastern 'today'
+    (`sports_today_date()`) when `today` is omitted, then delegates to the pure season contract
+    (`services/nfl_season_contract.py`). A week's slate runs Thu->Mon; it is counted complete only once
+    its Tuesday (ET) passes. week=0 = season not started; (None, season) = no configured Week-1 anchor for
+    that season (no staleness claim). Regular season only (capped at 18)."""
     today = today or sports_today_date()
-    # NFL season N spans Sep N -> Feb N+1, so Jan/Feb belong to the prior season label.
-    season = today.year if today.month >= 3 else today.year - 1
-    wk1 = NFL_SEASON_WEEK1_THURSDAY.get(season)
-    if wk1 is None:
-        return None, season
-    if today < wk1:
-        return 0, season
-    days = (today - wk1).days
-    cur_week = days // 7 + 1          # 1-based week the slate is currently in
-    day_in_week = days % 7           # 0=Thu .. 4=Mon, 5=Tue (games final), 6=Wed
-    completed = cur_week if day_in_week >= 5 else cur_week - 1
-    return max(0, min(completed, 18)), season
+    return _nfl_expected_completed_week_core(today)
 
 
 # NFL injury-report freshness budget. NFL injury designations publish through the game week; past
