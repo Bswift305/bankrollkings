@@ -241,8 +241,15 @@ route/flag/boundary/unit:
    round-trip + reopen invariants (incl. owner-only fingerprint recompute) and reserved-scheme owner-source
    rejection; `SCHEMA_VERSION`→4 rejects v1/v2/v3; the domain/store/backup/idempotency QC capture **with**
    evidence (domain 128, store 73, backup 50, idempotency 56).
-3. **The resolver module** (`services/nfl_identity_event_adapter.py`, name TBD) + its abstain/health/binding
-   QC.
+3. **The resolver module — BUILT** (dark/local): `services/nfl_identity_event_adapter.py` —
+   `NflIdentityEventAdapter(props_path, roster_path, clock=…).resolve(player_ref, event_id)` returns a
+   `ResolvedObservationInput` (RESOLVED `EntityIdentity` + UTC `EventIdentity` + `ResolutionEvidence`) or
+   exactly one `Abstention(reason_code, dimension)`. Single-snapshot reads (bytes+sha+fstat from one fd),
+   pure season contract, declared props freshness + bound-row `SourceUpdatedAtUTC`, board-row binding,
+   exact unique name→`player_id` with per-build collision audit, embedded roster season, cache keyed on
+   `(props_sha256, roster_sha256, season, resolver_version)`. QC `qc_nfl_identity_event_adapter.py` (36):
+   success + every abstention code + wrong-event + TOCTOU + cache invalidation + collision-on-refresh +
+   stale/schema-invalid + UTC kickoff + end-to-end capture/provenance. No route/flag/UI/unit/deploy.
 
 **No paid fetch** (persisted artifacts only), **zero authority**, **abstains** rather than guess. 2D1
 production routing stays blocked until all three are **designed → approved → built** and wired behind the
