@@ -31392,33 +31392,25 @@ _NFL_HOTHAND_CACHE = {}
 # anchor: add each new season's opener here. Missing season -> the calendar freshness gate
 # degrades safely (returns None = "unknown"), and the board falls back to the per-player
 # recency + through-week disclosures, which need no calendar.
-NFL_SEASON_WEEK1_THURSDAY = {
-    2025: datetime(2025, 9, 4).date(),
-    2026: datetime(2026, 9, 10).date(),
-}
+# NFL season calendar — SINGLE SOURCE in services/nfl_season_contract.py (pure: no app/Flask/pandas/IO),
+# so the dark research-candidate adapter/store can consume the same contract without importing this
+# monolith. `_nfl_expected_completed_week` stays here as the compatibility wrapper for existing callers.
+from services.nfl_season_contract import (                       # noqa: E402
+    NFL_SEASON_WEEK1_THURSDAY,
+    expected_completed_week as _nfl_expected_completed_week_core,
+)
 
 
 def _nfl_expected_completed_week(today=None):
     """How many NFL weeks SHOULD be final as of `today` (Eastern). Returns (week, season).
 
-    A week's slate runs Thu->Mon; it is not 'complete' until its games finalize, so we only
-    count a week once its Tuesday (ET) has passed. week=0 means the season hasn't started;
-    (None, season) means we have no configured Week-1 anchor for that season and therefore
-    make no staleness claim. Regular season only (capped at 18) -- the hot-hand board is a
-    regular-season player-prop surface."""
+    Compatibility wrapper (behavior unchanged): supplies the shared Eastern 'today'
+    (`sports_today_date()`) when `today` is omitted, then delegates to the pure season contract
+    (`services/nfl_season_contract.py`). A week's slate runs Thu->Mon; it is counted complete only once
+    its Tuesday (ET) passes. week=0 = season not started; (None, season) = no configured Week-1 anchor for
+    that season (no staleness claim). Regular season only (capped at 18)."""
     today = today or sports_today_date()
-    # NFL season N spans Sep N -> Feb N+1, so Jan/Feb belong to the prior season label.
-    season = today.year if today.month >= 3 else today.year - 1
-    wk1 = NFL_SEASON_WEEK1_THURSDAY.get(season)
-    if wk1 is None:
-        return None, season
-    if today < wk1:
-        return 0, season
-    days = (today - wk1).days
-    cur_week = days // 7 + 1          # 1-based week the slate is currently in
-    day_in_week = days % 7           # 0=Thu .. 4=Mon, 5=Tue (games final), 6=Wed
-    completed = cur_week if day_in_week >= 5 else cur_week - 1
-    return max(0, min(completed, 18)), season
+    return _nfl_expected_completed_week_core(today)
 
 
 # NFL injury-report freshness budget. NFL injury designations publish through the game week; past
@@ -50339,6 +50331,122 @@ def prewarm_caches():
         except Exception as exc:  # never let prewarm abort startup
             print(f"[PREWARM] {name} failed: {exc}")
     return warmed
+
+
+# ==================================================================================================
+# RESEARCH CANDIDATE — 2D1 observation-only capture (DARK). Behind BK_RESEARCH_CANDIDATE_ENABLED, default
+# OFF -> the route 404s and NOTHING research-candidate (store/adapter/pandas/sqlite) is imported, opened,
+# or written. Owner-only; is_admin ALONE is NOT sufficient; unauthorized is also 404 (never reveal it).
+# The observation is RESEARCH_ONLY with ZERO authority and is never promoted into any board. All store +
+# adapter work happens in services/research_candidate_boundary.py, imported LAZILY on the ON path only.
+# Observation capture ONLY — no candidate freeze/outcome/evaluation/thesis-generation/deletion/promotion.
+# ==================================================================================================
+RESEARCH_CANDIDATE_ENABLED = (os.environ.get('BK_RESEARCH_CANDIDATE_ENABLED', '') or '').strip().lower() \
+    in ('1', 'true', 'yes', 'on')
+
+
+def _research_candidate_is_owner(user):
+    """Owner-only predicate for the dark 2D1 route: OWNER_EMAILS or role=='owner'. is_admin ALONE is
+    deliberately insufficient (stricter than is_owner_user, which also admits admins)."""
+    if not user:
+        return False
+    email = str(user.get('email', '') or user.get('Email', '') or '').strip().lower()
+    role = str(user.get('role', '') or user.get('Role', '') or '').strip().lower()
+    return email in OWNER_EMAILS or role == 'owner'
+
+
+@app.route('/research-candidate/observe', methods=['POST'])
+def research_candidate_observe():
+    # OFF (default) -> the feature does not exist. This is the FIRST executable statement, so an OFF request
+    # does ZERO work (no correlation id generated, nothing imported). CSRF is enforced globally.
+    if not RESEARCH_CANDIDATE_ENABLED:
+        abort(404)
+    import uuid as _uuid
+    corr = _uuid.uuid4().hex[:12]
+
+    def _rclog(status, code=''):
+        # observability: correlation id + op kind + coarse status + sanitized code ONLY — never the
+        # thesis/identity/email/sources or the record id.
+        try:
+            app.logger.info('research_candidate op=observe corr=%s status=%s code=%s', corr, status, code)
+        except Exception:
+            pass
+
+    user = get_current_user()
+    if not _research_candidate_is_owner(user):      # unauthorized is ALSO 404 (dark); is_admin alone -> 404
+        _rclog(404, 'not_owner')
+        abort(404)
+    clen = request.content_length                   # bound the RAW body BEFORE parsing
+    if clen is None or clen > 8192:
+        _rclog(413, 'body_size')
+        return jsonify({'ok': False, 'error': 'request too large'}), 413
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        _rclog(422, 'not_json')
+        return jsonify({'ok': False, 'error': 'JSON body required'}), 422
+    allowed = {'player_ref', 'event_id', 'thesis', 'idempotency_key', 'acted', 'sources'}
+    if set(data.keys()) - allowed:                  # reject keys outside the frozen observation-input set
+        _rclog(422, 'unknown_field')
+        return jsonify({'ok': False, 'error': 'unknown field'}), 422
+    # STRICT types: never str()-coerce a number/dict/list into a governed field.
+    for fld in ('player_ref', 'event_id', 'thesis', 'idempotency_key'):
+        if not isinstance(data.get(fld), str):
+            _rclog(422, 'bad_type')
+            return jsonify({'ok': False, 'error': f'{fld} must be a string'}), 422
+    player_ref = data['player_ref'].strip()
+    event_id = data['event_id'].strip()
+    thesis = data['thesis'].strip()
+    idempotency_key = data['idempotency_key'].strip()
+    acted = data.get('acted', False)
+    sources_in = data.get('sources', [])
+    if not (player_ref and event_id and thesis and idempotency_key):
+        _rclog(422, 'missing')
+        return jsonify({'ok': False, 'error': 'missing required fields'}), 422
+    if len(player_ref) > 200 or len(event_id) > 200 or len(thesis) > 2000 or len(idempotency_key) > 200:
+        _rclog(422, 'too_large')
+        return jsonify({'ok': False, 'error': 'field too large'}), 422
+    if not isinstance(acted, bool):      # strict: no truthy coercion (matches the store contract)
+        _rclog(422, 'acted_type')
+        return jsonify({'ok': False, 'error': 'acted must be a boolean'}), 422
+    if not isinstance(sources_in, (list, tuple)):
+        _rclog(422, 'sources_type')
+        return jsonify({'ok': False, 'error': 'sources must be a list'}), 422
+    if any(not isinstance(s, str) for s in sources_in):   # each source must ALREADY be a string
+        _rclog(422, 'source_type')
+        return jsonify({'ok': False, 'error': 'each source must be a string'}), 422
+    sources = [s.strip() for s in sources_in]
+    if len(sources) > 20 or any((not s or len(s) > 500) for s in sources):
+        _rclog(422, 'sources_invalid')
+        return jsonify({'ok': False, 'error': 'invalid sources'}), 422
+    observer_id = (user or {}).get('user_id')           # server-derived immutable account id
+    if not isinstance(observer_id, str) or not observer_id.strip():
+        _rclog(422, 'no_account')
+        return jsonify({'ok': False, 'error': 'no account id'}), 422
+    try:                                                 # guard the lazy import -> ImportError becomes 503
+        from services import research_candidate_boundary as rcb
+    except Exception:
+        _rclog(503, 'import')
+        return jsonify({'ok': False, 'error': 'unavailable'}), 503
+    try:
+        result = rcb.capture(observer_id=observer_id.strip(), player_ref=player_ref, event_id=event_id,
+                             thesis=thesis, sources=sources, acted=acted, idempotency_key=idempotency_key,
+                             correlation_id=corr)
+    except rcb.Conflict:
+        _rclog(409, 'conflict')
+        return jsonify({'ok': False, 'error': 'conflict'}), 409
+    except rcb.InvalidInput as exc:                     # user-selection abstention / input rejection -> 422
+        code = (exc.args[0] if exc.args else 'invalid')
+        _rclog(422, str(code))
+        return jsonify({'ok': False, 'reason': str(code)}), 422
+    except rcb.BoundaryError as exc:                    # ConfigError / Unavailable (incl. artifact-health) -> 503
+        code = (exc.args[0] if exc.args else exc.__class__.__name__)
+        _rclog(503, str(code))
+        return jsonify({'ok': False, 'error': 'unavailable'}), 503
+    except Exception:                                   # any other unexpected failure -> sanitized 503, never 500
+        _rclog(503, 'unexpected')
+        return jsonify({'ok': False, 'error': 'unavailable'}), 503
+    _rclog(200, result.get('status'))
+    return jsonify({'ok': True, 'status': result['status'], 'id': result['id']}), 200
 
 
 if __name__ == '__main__':

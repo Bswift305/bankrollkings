@@ -1,0 +1,537 @@
+"""QC: Research Candidate 2D1 observation-only dark route + boundary (LOCAL ONLY).
+
+Proves the owner-only, flag-gated dark capture route and its dependency-free boundary:
+  * OFF (default) in a FRESH interpreter -> importing app pulls in NO research-candidate store/adapter/
+    boundary, and hitting the route (even with a valid CSRF token) 404s and STILL imports nothing;
+  * ON: owner-only (is_admin alone -> 404); unauthorized -> 404 (dark); CSRF enforced; input/size limits;
+    server-derived observer id; success records; exact retry no-ops; changed intent -> 409; a governed
+    adapter abstention -> 422; a misconfigured (out-of-root) DB path -> calm 503.
+
+Temp artifacts only; no production enablement, deployment, UI, or schema change. The ON tests set the flag
++ paths BEFORE importing app (the flag is read at import); the OFF zero-import proof runs in a subprocess.
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timedelta, timezone
+
+import pandas as pd
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+
+fails = []
+
+
+def check(cond, msg):
+    print(("  [ok] " if cond else "  [FAIL] ") + msg)
+    if not cond:
+        fails.append(msg)
+
+
+UTC = timezone.utc
+NOW = datetime.now(UTC)
+FUTURE = (NOW + timedelta(days=30)).isoformat()
+SU_OK = (NOW - timedelta(hours=1)).isoformat()
+
+# current NFL season from the SAME pure contract the adapter/store use
+from services.nfl_season_contract import expected_completed_week   # noqa: E402
+from services.timeutils import DISPLAY_TZ                          # noqa: E402
+_week, SEASON = expected_completed_week(NOW.astimezone(DISPLAY_TZ).date() if DISPLAY_TZ else NOW.date())
+
+# One persistent temp workspace for the whole run (approved root + artifacts).
+TD = tempfile.mkdtemp(prefix="rc2d1_")
+ROOT = os.path.realpath(TD)
+DB = os.path.join(ROOT, "store.db")
+PROPS = os.path.join(ROOT, "NFL_Props.csv")
+ROSTER = os.path.join(ROOT, "roster.parquet")
+
+
+def _write_artifacts():
+    pd.DataFrame([("Josh Allen", "evt1", FUTURE, SU_OK)],
+                 columns=["Player", "EventId", "EventCommenceAtUTC", "SourceUpdatedAtUTC"]).to_csv(PROPS, index=False)
+    ts = NOW.timestamp() - 3600.0
+    os.utime(PROPS, (ts, ts))
+    pd.DataFrame([("00-001", "Josh Allen", SEASON)],
+                 columns=["player_id", "player_display_name", "season"]).to_parquet(ROSTER)
+
+
+OWNER = {"user_id": "owner-uuid-0001", "email": "nobody@example.test", "role": "owner"}
+ADMIN_NOT_OWNER = {"user_id": "admin-uuid", "email": "admin@example.test", "role": "member", "is_admin": "1"}
+
+
+def _body(**over):
+    b = {"player_ref": "Josh Allen", "event_id": "evt1", "thesis": "usage may rise",
+         "sources": ["https://x/bio"], "acted": False, "idempotency_key": "K"}
+    b.update(over)
+    return b
+
+
+def _post(client, body, csrf="tok", user=OWNER):
+    import app as appmod
+    appmod.get_current_user = lambda: user
+    headers = {}
+    if csrf is not None:
+        headers["X-CSRFToken"] = csrf
+    return client.post("/research-candidate/observe", data=json.dumps(body),
+                       content_type="application/json", headers=headers)
+
+
+# =========================================================================== OFF: zero import + 404 (subprocess)
+def test_off_zero_import_and_404():
+    print("\n[A] OFF (fresh interpreter): import app pulls in NO rc modules; the route 404s, still nothing")
+    code = r"""
+import os, sys, json
+os.environ.pop('BK_RESEARCH_CANDIDATE_ENABLED', None)
+os.environ.setdefault('SECRET_KEY', 'qc-off')
+import app as a
+MODS = ('services.research_candidate_store', 'services.nfl_identity_event_adapter',
+        'services.research_candidate_boundary')
+at_load = [m for m in MODS if m in sys.modules]
+c = a.app.test_client()
+with c.session_transaction() as s:
+    s['_csrf_token'] = 't'
+r = c.post('/research-candidate/observe', data=json.dumps({'player_ref':'x'}),
+           content_type='application/json', headers={'X-CSRFToken': 't'})
+after = [m for m in MODS if m in sys.modules]
+print('RESULT', json.dumps({'at_load': at_load, 'status': r.status_code, 'after': after}))
+"""
+    env = dict(os.environ)
+    env.pop("BK_RESEARCH_CANDIDATE_ENABLED", None)
+    env.setdefault("SECRET_KEY", "qc-off")
+    out = subprocess.run([sys.executable, "-c", code], cwd=HERE, env=env,
+                         capture_output=True, text=True, timeout=300)
+    line = next((ln for ln in out.stdout.splitlines() if ln.startswith("RESULT ")), None)
+    if line is None:
+        check(False, f"subprocess produced a RESULT line (stderr tail: {out.stderr[-400:]})")
+        return
+    data = json.loads(line[len("RESULT "):])
+    check(data["at_load"] == [], "importing app with the flag OFF imports NO research-candidate module")
+    check(data["status"] == 404, "the dark route 404s when OFF (even with a valid CSRF token)")
+    check(data["after"] == [], "hitting the OFF route still imports no store/adapter/boundary")
+
+
+# =========================================================================== ON: owner/CSRF/tiers
+def _on_client():
+    os.environ["BK_RESEARCH_CANDIDATE_ENABLED"] = "1"
+    os.environ["BK_RESEARCH_CANDIDATE_ROOT"] = ROOT
+    os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = DB
+    os.environ["BK_RESEARCH_CANDIDATE_PROPS"] = PROPS
+    os.environ["BK_RESEARCH_CANDIDATE_ROSTER"] = ROSTER
+    os.environ.setdefault("SECRET_KEY", "qc-on")
+    import app as appmod
+    appmod.RESEARCH_CANDIDATE_ENABLED = True   # ensure ON even if import order varied
+    c = appmod.app.test_client()
+    with c.session_transaction() as s:
+        s["_csrf_token"] = "tok"
+    return appmod, c
+
+
+def test_on_success_idempotency_conflict():
+    print("\n[B] ON: owner capture records; exact retry no-ops; changed intent conflicts")
+    _write_artifacts()
+    appmod, c = _on_client()
+    r1 = _post(c, _body())
+    check(r1.status_code == 200 and r1.get_json().get("status") == "recorded",
+          f"owner success records (got {r1.status_code} {r1.get_json()})")
+    rid = r1.get_json().get("id")
+    r2 = _post(c, _body())
+    check(r2.status_code == 200 and r2.get_json().get("status") == "noop" and r2.get_json().get("id") == rid,
+          "an exact retry (same key + intent) no-ops to the same record")
+    r3 = _post(c, _body(thesis="a different thesis"))
+    check(r3.status_code == 409, "same key + different intent -> 409 conflict")
+
+
+def test_on_authz_and_csrf():
+    print("\n[C] ON: owner-only (is_admin alone -> 404), unauthorized -> 404, CSRF enforced, OFF flag -> 404")
+    _write_artifacts()
+    appmod, c = _on_client()
+    r_admin = _post(c, _body(idempotency_key="K2"), user=ADMIN_NOT_OWNER)
+    check(r_admin.status_code == 404, "an is_admin-only (non-owner) caller -> 404 (admin alone insufficient)")
+    r_anon = _post(c, _body(idempotency_key="K3"), user=None)
+    check(r_anon.status_code == 404, "an unauthenticated caller -> 404 (dark)")
+    r_nocsrf = _post(c, _body(idempotency_key="K4"), csrf=None)
+    check(r_nocsrf.status_code == 400, "a POST without a CSRF token -> 400 (global CSRF hook)")
+    appmod.RESEARCH_CANDIDATE_ENABLED = False
+    try:
+        r_off = _post(c, _body(idempotency_key="K5"))
+        check(r_off.status_code == 404, "flag OFF -> 404 even for an owner with a valid CSRF token")
+    finally:
+        appmod.RESEARCH_CANDIDATE_ENABLED = True
+
+
+def test_on_input_and_abstain_tiers():
+    print("\n[D] ON: input/size limits -> 422; a governed adapter abstention -> 422 with a reason code")
+    _write_artifacts()
+    appmod, c = _on_client()
+    check(_post(c, _body(acted="true", idempotency_key="I1")).status_code == 422,
+          "acted as a string (not bool) -> 422 (no coercion)")
+    check(_post(c, _body(thesis="", idempotency_key="I2")).status_code == 422, "missing thesis -> 422")
+    check(_post(c, _body(sources="http://x", idempotency_key="I3")).status_code == 422,
+          "sources as a bare string -> 422")
+    check(_post(c, _body(thesis="x" * 5000, idempotency_key="I4")).status_code == 422,
+          "oversized thesis -> 422")
+    r_ab = _post(c, _body(event_id="not-on-board", idempotency_key="I5"))
+    jb = r_ab.get_json()
+    check(r_ab.status_code == 422 and "EVENT_NOT_FOUND" in str(jb.get("reason", "")),
+          "an off-board event -> 422 with the governed abstention reason (EVENT_NOT_FOUND)")
+    r_mis = _post(c, _body(player_ref="Nobody Here", idempotency_key="I6"))
+    check(r_mis.status_code == 422 and "PLAYER_EVENT_MISMATCH" in str(r_mis.get_json().get("reason", "")),
+          "a valid event with an unpaired player -> 422 PLAYER_EVENT_MISMATCH")
+
+
+def test_on_misconfig_503():
+    print("\n[E] ON: a DB path outside the approved root fails closed as a calm 503")
+    _write_artifacts()
+    appmod, c = _on_client()
+    outside = os.path.join(tempfile.mkdtemp(prefix="rc2d1_out_"), "escape.db")
+    saved = os.environ.get("BK_RESEARCH_CANDIDATE_DB_PATH")
+    os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = outside
+    try:
+        r = _post(c, _body(idempotency_key="M1"))
+        check(r.status_code == 503, "an out-of-root DB path -> 503 (containment fails closed)")
+        check("escape" not in json.dumps(r.get_json()), "the 503 body is sanitized (no path leaked)")
+    finally:
+        os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = saved
+
+
+def test_on_artifact_health_503():
+    print("\n[F] ON: artifact-health abstentions (platform availability) map to calm 503, not 422")
+    appmod, c = _on_client()
+    # wrong-season roster -> ROSTER_SEASON_MISMATCH (dimension 'artifact')
+    pd.DataFrame([("Josh Allen", "evt1", FUTURE, SU_OK)],
+                 columns=["Player", "EventId", "EventCommenceAtUTC", "SourceUpdatedAtUTC"]).to_csv(PROPS, index=False)
+    ts = NOW.timestamp() - 3600.0
+    os.utime(PROPS, (ts, ts))
+    pd.DataFrame([("00-001", "Josh Allen", SEASON - 1)],
+                 columns=["player_id", "player_display_name", "season"]).to_parquet(ROSTER)
+    r = _post(c, _body(idempotency_key="H1"))
+    check(r.status_code == 503, "ROSTER_SEASON_MISMATCH -> 503 (platform availability, not a 422)")
+    # stale props (file age beyond the declared CLOCK-B contract) -> PROPS_STALE
+    _write_artifacts()
+    os.utime(PROPS, (NOW.timestamp() - 40 * 3600.0, NOW.timestamp() - 40 * 3600.0))
+    r2 = _post(c, _body(idempotency_key="H2"))
+    check(r2.status_code == 503, "PROPS_STALE -> 503")
+    _write_artifacts()
+
+
+def test_on_invalid_json_types_422():
+    print("\n[G] ON: governed fields are NOT str()-coerced — wrong JSON types -> 422, nothing persisted")
+    _write_artifacts()
+    appmod, c = _on_client()
+    check(_post(c, _body(player_ref=123, idempotency_key="T1")).status_code == 422, "numeric player_ref -> 422")
+    check(_post(c, _body(thesis={"x": 1}, idempotency_key="T2")).status_code == 422, "dict thesis -> 422")
+    check(_post(c, _body(event_id=["evt1"], idempotency_key="T3")).status_code == 422, "list event_id -> 422")
+    check(_post(c, _body(sources=["ok", 5], idempotency_key="T4")).status_code == 422,
+          "a non-string source element -> 422 (not coerced)")
+    check(_post(c, _body(idempotency_key=99)).status_code == 422, "numeric idempotency_key -> 422")
+
+
+def test_on_unexpected_error_503():
+    print("\n[H] ON: an unexpected store/filesystem error becomes a sanitized 503 (never a 500)")
+    _write_artifacts()
+    appmod, c = _on_client()
+    bad_dir = os.path.join(ROOT, "not_a_db_dir")
+    os.makedirs(bad_dir, exist_ok=True)      # a DIRECTORY at the DB path -> sqlite can't open it
+    saved = os.environ.get("BK_RESEARCH_CANDIDATE_DB_PATH")
+    os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = bad_dir
+    try:
+        r = _post(c, _body(idempotency_key="U1"))
+        check(r.status_code == 503, "an unexpected store-open failure -> calm 503")
+        check(r.get_json() == {'ok': False, 'error': 'unavailable'}, "the 503 body is generic/sanitized")
+    finally:
+        os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = saved
+
+
+def test_on_permissions():
+    print("\n[I] ON: approved dir created/verified 0700 and DB 0600 (POSIX); best-effort on Windows")
+    _write_artifacts()
+    appmod, c = _on_client()
+    # a fresh DB (set AFTER _on_client, which resets the DB path env) so first-use secure creation runs
+    import uuid as _uuid
+    db = os.path.join(ROOT, f"perm_{_uuid.uuid4().hex}.db")
+    saved = os.environ.get("BK_RESEARCH_CANDIDATE_DB_PATH")
+    os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = db
+    try:
+        r = _post(c, _body(idempotency_key="P1"))
+        check(r.status_code == 200, "capture against a fresh contained DB succeeds")
+        import stat as _st
+        if os.name != "nt":
+            dmode = _st.S_IMODE(os.stat(os.path.dirname(db)).st_mode)
+            fmode = _st.S_IMODE(os.stat(db).st_mode)
+            check(dmode == 0o700, f"approved directory is 0700 (got {oct(dmode)})")
+            check(fmode == 0o600, f"DB file is 0600 (got {oct(fmode)})")
+        else:
+            check(os.path.exists(db), "DB created (0600/0700 are best-effort on Windows ACLs)")
+    finally:
+        os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = saved
+
+
+def test_logs_no_sensitive_values():
+    print("\n[J] ON: logs carry corr/op/status/code ONLY — never thesis, observer id, or record id")
+    import logging
+    _write_artifacts()
+    appmod, c = _on_client()
+    records = []
+
+    class _Cap(logging.Handler):
+        def emit(self, rec):
+            records.append(rec.getMessage())
+
+    h = _Cap()
+    appmod.app.logger.addHandler(h)
+    appmod.app.logger.setLevel(logging.INFO)
+    try:
+        ok = _post(c, _body(thesis="SECRET_THESIS_ZZZ", idempotency_key="L1"))
+        _post(c, _body(event_id="nope", idempotency_key="L2"))   # a failure path also logs
+    finally:
+        appmod.app.logger.removeHandler(h)
+    rid = ok.get_json().get("id", "")
+    blob = "||".join(records)
+    check(any("op=observe" in m for m in records), "a sanitized structured line is logged")
+    check("SECRET_THESIS_ZZZ" not in blob, "the thesis never appears in logs")
+    check(OWNER["user_id"] not in blob, "the observer account id never appears in logs")
+    check(rid and rid not in blob, "the full record id never appears in logs")
+
+
+def test_route_level_concurrency():
+    print("\n[K] ON: two genuinely concurrent clients racing one key -> one record, same id")
+    import threading
+    _write_artifacts()
+    appmod, _ = _on_client()
+    appmod.get_current_user = lambda: OWNER
+    body = _body(idempotency_key="CONC")
+    barrier = threading.Barrier(2)
+    results = {}
+
+    def worker(name):
+        cl = appmod.app.test_client()
+        with cl.session_transaction() as s:
+            s["_csrf_token"] = "tok"
+        barrier.wait(timeout=10)
+        r = cl.post("/research-candidate/observe", data=json.dumps(body),
+                    content_type="application/json", headers={"X-CSRFToken": "tok"})
+        results[name] = (r.status_code, r.get_json())
+
+    ta, tb = threading.Thread(target=worker, args=("a",)), threading.Thread(target=worker, args=("b",))
+    ta.start(); tb.start(); ta.join(); tb.join()
+    check(results["a"][0] == 200 and results["b"][0] == 200, "both concurrent owner captures return 200")
+    statuses = sorted([results["a"][1]["status"], results["b"][1]["status"]])
+    check(statuses == ["noop", "recorded"], "exactly one records and the other no-ops under the race")
+    check(results["a"][1]["id"] == results["b"][1]["id"], "both return the same bound record id")
+
+
+def test_off_no_corr_generation():
+    print("\n[L] OFF: the route does ZERO work before the flag check (no correlation id generated)")
+    import uuid as _uuid
+    _write_artifacts()
+    appmod, c = _on_client()
+    calls = {"n": 0}
+    real = _uuid.uuid4
+    _uuid.uuid4 = lambda: (calls.__setitem__("n", calls["n"] + 1) or real())
+    try:
+        appmod.RESEARCH_CANDIDATE_ENABLED = False
+        r_off = _post(c, _body(idempotency_key="Z1"))
+        off_calls = calls["n"]
+        appmod.RESEARCH_CANDIDATE_ENABLED = True
+        before = calls["n"]
+        r_on = _post(c, _body(idempotency_key="Z2"))
+    finally:
+        _uuid.uuid4 = real
+        appmod.RESEARCH_CANDIDATE_ENABLED = True
+    check(r_off.status_code == 404 and off_calls == 0,
+          "an OFF request 404s and NEVER generates a correlation id (uuid4 not called)")
+    check(r_on.status_code == 200 and calls["n"] > before,
+          "an ON request does generate a correlation id (the spy is wired)")
+
+
+def test_on_body_and_unknown_field_limits():
+    print("\n[M] ON: an oversized raw body -> 413 (bounded before parsing); an unknown field -> 422")
+    _write_artifacts()
+    appmod, c = _on_client()
+    r_big = _post(c, _body(thesis="x" * 9000, idempotency_key="B1"))
+    check(r_big.status_code == 413, "a raw body over the limit -> 413 (before JSON parsing)")
+    bad = _body(idempotency_key="B2")
+    bad["surprise"] = 1
+    r_unk = _post(c, bad)
+    check(r_unk.status_code == 422 and "unknown" in str(r_unk.get_json()).lower(),
+          "a key outside the frozen observation-input set -> 422")
+
+
+def test_on_unexpected_capture_error_503():
+    print("\n[N] ON: an unexpected boundary/capture error is contained as a sanitized 503 (never 500)")
+    import services.research_candidate_boundary as rcb
+    _write_artifacts()
+    appmod, c = _on_client()
+    saved = rcb.capture
+    rcb.capture = lambda **k: (_ for _ in ()).throw(RuntimeError("unexpected"))
+    try:
+        r = _post(c, _body(idempotency_key="N1"))
+    finally:
+        rcb.capture = saved
+    check(r.status_code == 503 and r.get_json() == {"ok": False, "error": "unavailable"},
+          "an unexpected error -> sanitized 503, never a 500")
+
+
+def test_close_failure_logged_with_corr():
+    print("\n[O] ON: a store close() failure logs corr/op/status/type, preserves the result, leaks no content")
+    import logging
+    import services.research_candidate_store as rcs_store
+    _write_artifacts()
+    appmod, c = _on_client()
+    records = []
+
+    class _Cap(logging.Handler):
+        def emit(self, rec):
+            records.append(rec.getMessage())
+
+    lg = logging.getLogger("research_candidate.boundary")
+    h = _Cap()
+    lg.addHandler(h)
+    lg.setLevel(logging.WARNING)
+    saved = rcs_store.ResearchCandidateStore.close
+    rcs_store.ResearchCandidateStore.close = lambda self: (_ for _ in ()).throw(OSError("close boom"))
+    try:
+        r = _post(c, _body(thesis="SECRET_CLOSE_THESIS", idempotency_key="O1"))
+    finally:
+        rcs_store.ResearchCandidateStore.close = saved
+        lg.removeHandler(h)
+    check(r.status_code == 200, "the committed result is preserved despite the close failure")
+    blob = "||".join(records)
+    check("status=close_failed" in blob and "op=observe" in blob and "corr=" in blob,
+          "the close failure is logged with corr + op + coarse status + error type")
+    check("SECRET_CLOSE_THESIS" not in blob, "the close-failure log carries no content")
+
+
+def test_permissions_live_sidecars():
+    print("\n[P] ON: live WAL sidecars (-wal/-shm) are also 0600 on POSIX (re-locked after the write)")
+    import sqlite3
+    import stat as _st
+    import uuid as _uuid
+    _write_artifacts()
+    appmod, c = _on_client()
+    db = os.path.join(ROOT, f"side_{_uuid.uuid4().hex}.db")
+    saved = os.environ.get("BK_RESEARCH_CANDIDATE_DB_PATH")
+    os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = db
+    hold = None
+    try:
+        r1 = _post(c, _body(idempotency_key="S1"))      # creates the DB (WAL)
+        check(r1.status_code == 200, "first capture creates the DB")
+        hold = sqlite3.connect(db)                       # keep a connection so -wal/-shm persist
+        hold.execute("PRAGMA journal_mode=WAL")
+        hold.execute("SELECT 1 FROM schema_meta")
+        r2 = _post(c, _body(idempotency_key="S2"))      # a second write; sidecars live + re-locked
+        check(r2.status_code == 200, "second capture writes with the WAL held open")
+        if os.name != "nt":
+            present = [db + s for s in ("", "-wal", "-shm") if os.path.exists(db + s)]
+            check(any(p.endswith("-wal") or p.endswith("-shm") for p in present),
+                  "at least one live WAL sidecar is present during the check")
+            offenders = [p for p in present if _st.S_IMODE(os.stat(p).st_mode) != 0o600]
+            check(not offenders, f"every present DB/WAL/SHM file is 0600 (offenders: {offenders})")
+        else:
+            check(os.path.exists(db), "DB present (sidecar perms are best-effort on Windows)")
+    finally:
+        if hold is not None:
+            hold.close()
+        os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = saved
+
+
+def test_lockdown_sidecar_failures():
+    print("\n[Q] POSIX: a sidecar chmod failure OR a wrong sidecar mode fails closed (ConfigError)")
+    import services.research_candidate_boundary as rcb
+    if os.name == "nt":
+        check(True, "sidecar 0600 enforcement is POSIX-only (best-effort on Windows) — skipped")
+        return
+    import uuid as _uuid
+    base = os.path.join(ROOT, f"lk_{_uuid.uuid4().hex}")
+    db, wal, shm = base + ".db", base + ".db-wal", base + ".db-shm"
+    for p in (db, wal, shm):
+        open(p, "wb").close()
+        os.chmod(p, 0o600)
+    real_chmod = rcb.os.chmod
+    # (a) chmod FAILS on the -wal sidecar -> ConfigError (not silently ignored)
+    def chmod_fail(p, mode):
+        if str(p).endswith("-wal"):
+            raise OSError("forced chmod failure")
+        return real_chmod(p, mode)
+    rcb.os.chmod = chmod_fail
+    try:
+        try:
+            rcb._lock_down_db(db); ok_a = False
+        except rcb.ConfigError:
+            ok_a = True
+    finally:
+        rcb.os.chmod = real_chmod
+    check(ok_a, "a sidecar chmod failure raises ConfigError")
+    # (b) chmod is a NO-OP so the -shm sidecar keeps a wrong (0644) mode -> verification fails
+    os.chmod(shm, 0o644)
+    rcb.os.chmod = lambda p, mode: None
+    try:
+        try:
+            rcb._lock_down_db(db); ok_b = False
+        except rcb.ConfigError:
+            ok_b = True
+    finally:
+        rcb.os.chmod = real_chmod
+    check(ok_b, "a sidecar whose mode is not 0600 fails verification (ConfigError)")
+
+
+def test_post_commit_relock_503():
+    print("\n[R] a post-commit relock failure -> 503 while the record IS committed; a later retry no-ops")
+    import services.research_candidate_boundary as rcb
+    import services.research_candidate_store as rcs_store
+    import uuid as _uuid
+    _write_artifacts()
+    appmod, c = _on_client()
+    fresh = os.path.join(ROOT, f"relock_{_uuid.uuid4().hex}.db")
+    saved = os.environ.get("BK_RESEARCH_CANDIDATE_DB_PATH")
+    os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = fresh
+    real = rcb._lock_down_db
+    state = {"n": 0}
+
+    def wrap(p):
+        state["n"] += 1
+        if state["n"] >= 2:                 # 1st (pre-write) succeeds; 2nd (post-commit) fails
+            raise rcb.ConfigError("forced post-commit relock failure")
+        return real(p)
+
+    rcb._lock_down_db = wrap
+    try:
+        r = _post(c, _body(idempotency_key="RL1"))
+        check(r.status_code == 503, "the post-commit relock failure returns 503 (not a false success)")
+    finally:
+        rcb._lock_down_db = real
+    s = rcs_store.ResearchCandidateStore(fresh)
+    try:
+        n = s.conn.execute("SELECT COUNT(*) FROM observation_private").fetchone()[0]
+    finally:
+        s.close()
+    check(n == 1, "exactly one observation was committed despite the 503 (idempotency makes it honest)")
+    r2 = _post(c, _body(idempotency_key="RL1"))
+    check(r2.status_code == 200 and r2.get_json().get("status") == "noop",
+          "a later retry (permissions healthy) no-ops to the committed record")
+    os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = saved
+
+
+if __name__ == "__main__":
+    print("=" * 80)
+    print("RESEARCH CANDIDATE — 2D1 OBSERVATION ROUTE + BOUNDARY QC (dark, local)")
+    print("=" * 80)
+    for t in (test_off_zero_import_and_404, test_off_no_corr_generation,
+              test_on_success_idempotency_conflict, test_on_authz_and_csrf,
+              test_on_input_and_abstain_tiers, test_on_misconfig_503, test_on_artifact_health_503,
+              test_on_invalid_json_types_422, test_on_body_and_unknown_field_limits,
+              test_on_unexpected_error_503, test_on_unexpected_capture_error_503,
+              test_on_permissions, test_permissions_live_sidecars, test_lockdown_sidecar_failures,
+              test_post_commit_relock_503, test_close_failure_logged_with_corr,
+              test_logs_no_sensitive_values, test_route_level_concurrency):
+        t()
+    print("\n" + "=" * 80)
+    print("Clean:", not fails)
+    if fails:
+        print("FAILURES:")
+        for f in fails:
+            print("  -", f)
+    sys.exit(1 if fails else 0)
