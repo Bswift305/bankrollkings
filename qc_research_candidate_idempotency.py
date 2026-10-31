@@ -66,6 +66,17 @@ def max_res(store):
     return store.conn.execute("SELECT COALESCE(MAX(record_seq),0) FROM seq_reservation").fetchone()[0]
 
 
+def _cap(st, *, entity, event, idempotency_key, evidence=None, observer="owner", thesis=None,
+         sources=sq.SOURCES, acted=False):
+    """capture_observation with evidence auto-filled from (entity, event) unless overridden — evidence is
+    excluded from the fingerprint, so any valid bound evidence serves these idempotency tests."""
+    return st.capture_observation(
+        observer_id=observer, entity=entity, event=event,
+        thesis=sq.THESIS if thesis is None else thesis, sources=sources, acted=acted,
+        evidence=evidence if evidence is not None else sq.evidence_for(entity, event),
+        idempotency_key=idempotency_key)
+
+
 # 1 =========================================================================
 def test_no_nested_transaction():
     print("\n[1] capture_observation runs in ONE transaction; its internals issue no BEGIN")
@@ -91,12 +102,35 @@ def test_exact_retry_true_noop():
         e, g = sq.ent("p", "P"), sq.ev("g")
         r1, _ = sq.cap(store, e, g, "K")
         before = max_res(store)
-        r2 = store.capture_observation(observer_id="owner", entity=e, event=g, thesis=sq.THESIS,
-                                       sources=sq.SOURCES, idempotency_key="K")
+        r2 = _cap(store, entity=e, event=g, idempotency_key="K")   # fresh evidence, same owner intent
         check(r2["status"] == "noop" and r2["id"] == r1["id"] and r2["record_seq"] == r1["record_seq"],
               "retry returns the ORIGINAL id + seq")
         check(max_res(store) == before, "no new reservation was consumed by the retry")
         check(n_obs(store) == 1 and n_idem(store) == 1, "exactly one observation + one binding")
+        store.close()
+
+
+# 2d ========================================================================
+def test_retry_discards_new_evidence():
+    print("\n[2d] a retry with DIFFERENT evidence (same intent+key) -> noop; ORIGINAL provenance kept")
+    with tmp() as d:
+        store = mk(os.path.join(d, "r.db"))
+        e, g = sq.ent("p", "P"), sq.ev("g")
+        season = rcs._current_nfl_season(datetime.now(UTC))
+        ev1 = rc.ResolutionEvidence(resolver_id="nfl_identity_event_adapter", resolver_version="v1",
+            props_sha256="a" * 64, roster_sha256="b" * 64, roster_season=season,
+            event_id=g.canonical_id, player_id=e.canonical_id, resolved_at=datetime.now(UTC))
+        r1, o1 = sq.cap(store, e, g, "K", evidence=ev1)
+        orig = sorted(s for s in o1.sources if s.startswith("bkres:v1:"))
+        ev2 = rc.ResolutionEvidence(resolver_id="nfl_identity_event_adapter", resolver_version="v2",
+            props_sha256="c" * 64, roster_sha256="d" * 64, roster_season=season,
+            event_id=g.canonical_id, player_id=e.canonical_id, resolved_at=datetime.now(UTC))
+        r2 = _cap(store, entity=e, event=g, evidence=ev2, idempotency_key="K")
+        check(r2["status"] == "noop" and r2["id"] == r1["id"],
+              "a retry with changed artifact fingerprints is a no-op (evidence excluded from the fp)")
+        kept = sorted(s for s in store.load_observation(r1["id"]).sources if s.startswith("bkres:v1:"))
+        check(kept == orig and ("bkres:v1:props-sha256=" + "a" * 64) in kept,
+              "the ORIGINAL evidence is retained unchanged; the newly-resolved evidence was discarded")
         store.close()
 
 
@@ -107,20 +141,20 @@ def test_input_coercion_rejected():
         store = mk(os.path.join(d, "r.db"))
         e, g = sq.ent("p", "P"), sq.ev("g")
         before = max_res(store)
-        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
-            observer_id="owner", entity=e, event=g, thesis="t", sources="http://x", idempotency_key="k1"),
+        expect_raises(rcs.ResearchStoreError, lambda: _cap(
+            store, entity=e, event=g, thesis="t", sources="http://x", idempotency_key="k1"),
             "a bare string as sources is rejected (not iterated char by char)")
-        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
-            observer_id="owner", entity=e, event=g, thesis="t", sources=[123], idempotency_key="k2"),
+        expect_raises(rcs.ResearchStoreError, lambda: _cap(
+            store, entity=e, event=g, thesis="t", sources=[123], idempotency_key="k2"),
             "a non-string source is rejected")
-        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
-            observer_id="owner", entity=e, event=g, thesis="t", sources=[""], idempotency_key="k2b"),
+        expect_raises(rcs.ResearchStoreError, lambda: _cap(
+            store, entity=e, event=g, thesis="t", sources=[""], idempotency_key="k2b"),
             "an empty-string source is rejected")
-        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
-            observer_id="owner", entity=e, event=g, thesis="t", acted="false", idempotency_key="k3"),
+        expect_raises(rcs.ResearchStoreError, lambda: _cap(
+            store, entity=e, event=g, thesis="t", acted="false", idempotency_key="k3"),
             "acted='false' (a string) is rejected (no truthy coercion)")
-        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
-            observer_id="owner", entity=e, event=g, thesis="t", acted=1, idempotency_key="k4"),
+        expect_raises(rcs.ResearchStoreError, lambda: _cap(
+            store, entity=e, event=g, thesis="t", acted=1, idempotency_key="k4"),
             "acted=1 (an int) is rejected")
         check(max_res(store) == before and n_obs(store) == 0, "no rejected input consumed a reservation")
         store.close()
@@ -133,18 +167,17 @@ def test_canonical_sources_and_nfc_equivalence():
         store = mk(os.path.join(d, "r.db"))
         e, g = sq.ent("p", "P"), sq.ev("g")
         r1, o1 = sq.cap(store, e, g, "K", sources=("https://x/b", "https://x/a", "https://x/a"))
-        check(tuple(o1.sources) == ("https://x/a", "https://x/b"),
-              "stored sources are NFC + sorted + de-duplicated (canonical tuple)")
-        r2 = store.capture_observation(observer_id="owner", entity=e, event=g, thesis=sq.THESIS,
-                                       sources=["https://x/a", "https://x/b", "https://x/b"],
-                                       idempotency_key="K")
+        owner = tuple(s for s in o1.sources if not s.startswith("bkres:"))
+        check(owner == ("https://x/a", "https://x/b"),
+              "stored OWNER sources are NFC + sorted + de-duplicated (canonical tuple)")
+        r2 = _cap(store, entity=e, event=g,
+                  sources=["https://x/a", "https://x/b", "https://x/b"], idempotency_key="K")
         check(r2["status"] == "noop" and r2["id"] == r1["id"],
               "a reordered + duplicated sources retry hashes equal -> noop")
         nfc = unicodedata.normalize("NFC", "café")   # café, composed
         nfd = unicodedata.normalize("NFD", "café")  # café, decomposed
         ra, _ = sq.cap(store, sq.ent("q", "Q"), g, "T", thesis=nfc)
-        rb = store.capture_observation(observer_id="owner", entity=sq.ent("q", "Q"), event=g,
-                                       thesis=nfd, sources=sq.SOURCES, idempotency_key="T")
+        rb = _cap(store, entity=sq.ent("q", "Q"), event=g, thesis=nfd, idempotency_key="T")
         check(rb["status"] == "noop" and rb["id"] == ra["id"],
               "an NFD vs NFC thesis hashes equal -> noop (thesis NFC-normalized once)")
         store.close()
@@ -158,12 +191,12 @@ def test_capture_eligibility_gate():
         store = mk(os.path.join(d, "r.db"))
         e, g = sq.ent("p", "P"), sq.ev("g")
         before = max_res(store)
-        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
-            observer_id="owner", entity=rc.EntityIdentity("p", "P", nonres), event=g, thesis="t",
+        expect_raises(rcs.ResearchStoreError, lambda: _cap(
+            store, entity=rc.EntityIdentity("p", "P", nonres), event=g, thesis="t",
             idempotency_key="k1"), "an unresolved/ambiguous entity is refused")
         past = rc.EventIdentity("gp", datetime.now(UTC) - timedelta(hours=1))
-        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
-            observer_id="owner", entity=e, event=past, thesis="t", idempotency_key="k2"),
+        expect_raises(rcs.ResearchStoreError, lambda: _cap(
+            store, entity=e, event=past, thesis="t", idempotency_key="k2"),
             "an event whose effective time is not in the future is refused")
         check(max_res(store) == before and n_obs(store) == 0,
               "a refused capture consumed NO reservation and wrote no record")
@@ -185,9 +218,8 @@ def test_capture_time_taken_inside_lock():
             try:
                 w = mk(path)                   # the worker's own connection, opened IN this thread
                 try:
-                    result["r"] = w.capture_observation(
-                        observer_id="owner", entity=sq.ent("p", "P"), event=ev_near, thesis="t",
-                        idempotency_key="k")
+                    result["r"] = _cap(w, entity=sq.ent("p", "P"), event=ev_near, thesis="t",
+                                       idempotency_key="k")
                 finally:
                     w.close()
             except Exception as ex:  # noqa: BLE001
@@ -217,9 +249,8 @@ def test_event_offset_canonicalization():
         r1, o1 = sq.cap(store, sq.ent("p", "P"), rc.EventIdentity("g", inst_utc), "K")
         check(o1.event.event_effective.utcoffset() == timedelta(0),
               "the stored event_effective is zero-offset UTC")
-        r2 = store.capture_observation(observer_id="owner", entity=sq.ent("p", "P"),
-                                       event=rc.EventIdentity("g", inst_off), thesis=sq.THESIS,
-                                       sources=sq.SOURCES, idempotency_key="K")
+        r2 = _cap(store, entity=sq.ent("p", "P"), event=rc.EventIdentity("g", inst_off),
+                  idempotency_key="K")
         check(r2["status"] == "noop" and r2["id"] == r1["id"],
               "the same instant at a -05:00 offset hashes equal -> noop (no fingerprint drift)")
         store.close()
@@ -245,9 +276,7 @@ def test_different_fingerprint_conflicts():
         e, g = sq.ent("p", "P"), sq.ev("g")
         sq.cap(store, e, g, "K")
         expect_raises(rcs.IdempotencyConflict,
-                      lambda: store.capture_observation(observer_id="owner", entity=e, event=g,
-                                                        thesis="CHANGED", sources=sq.SOURCES,
-                                                        idempotency_key="K"),
+                      lambda: _cap(store, entity=e, event=g, thesis="CHANGED", idempotency_key="K"),
                       "a changed payload under the same key conflicts")
         check(n_obs(store) == 1 and n_idem(store) == 1, "the conflict wrote no new record or binding")
         store.close()
@@ -337,7 +366,7 @@ def test_no_cleartext_pii():
 
 # 10 ========================================================================
 def test_write_once_and_v3_gate():
-    print("\n[10] the registry is write-once; a v2 store is rejected with no migration/mutation")
+    print("\n[10] the registry is write-once; a v3 store is rejected with no migration/mutation")
     with tmp() as d:
         store = mk(os.path.join(d, "r.db"))
         sq.cap(store, sq.ent("p", "P"), sq.ev("g"), "K")
@@ -351,16 +380,16 @@ def test_write_once_and_v3_gate():
         path = os.path.join(d, "r.db")
         mk(path).close()
         raw = sqlite3.connect(path)
-        raw.execute("UPDATE schema_meta SET version=2 WHERE id=1")
+        raw.execute("UPDATE schema_meta SET version=3 WHERE id=1")   # a prior (v3) store
         raw.commit()
         before = [r[0] for r in raw.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY sql")]
         raw.close()
-        expect_raises(rcs.SchemaVersionError, lambda: mk(path), "a v2 store is rejected (no migration)")
+        expect_raises(rcs.SchemaVersionError, lambda: mk(path), "a v3 store is rejected (no migration)")
         raw2 = sqlite3.connect(path)
         after = [r[0] for r in raw2.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY sql")]
         v = raw2.execute("SELECT version FROM schema_meta WHERE id=1").fetchone()[0]
         raw2.close()
-        check(before == after and v == 2, "the rejected v2 open mutated nothing")
+        check(before == after and v == 3, "the rejected v3 open mutated nothing")
 
 
 # 11 ========================================================================
@@ -377,9 +406,8 @@ def test_concurrency_one_record():
                 st = mk(path)                 # own connection, opened in this thread
                 try:
                     barrier.wait(timeout=10)  # both threads call capture at the same instant
-                    results[name] = st.capture_observation(
-                        observer_id="owner", entity=sq.ent("p", "P"), event=sq.ev("g"),
-                        thesis=sq.THESIS, sources=sq.SOURCES, idempotency_key="K")
+                    results[name] = _cap(st, entity=sq.ent("p", "P"), event=sq.ev("g"),
+                                         idempotency_key="K")
                 finally:
                     st.close()
             except Exception as ex:  # noqa: BLE001
@@ -457,7 +485,8 @@ if __name__ == "__main__":
     print("=" * 80)
     print("RESEARCH CANDIDATE — IDEMPOTENCY REGISTRY (schema v3) — 14 adversarial cases")
     print("=" * 80)
-    for t in (test_no_nested_transaction, test_exact_retry_true_noop, test_input_coercion_rejected,
+    for t in (test_no_nested_transaction, test_exact_retry_true_noop, test_retry_discards_new_evidence,
+              test_input_coercion_rejected,
               test_canonical_sources_and_nfc_equivalence, test_capture_eligibility_gate,
               test_capture_time_taken_inside_lock, test_event_offset_canonicalization,
               test_clocks_and_seq_excluded, test_different_fingerprint_conflicts,

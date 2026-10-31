@@ -24,7 +24,7 @@ Validation matrix:
 import operator
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import services.research_candidate as rc  # noqa: E402
@@ -848,6 +848,31 @@ def test_baseline_and_eligible_removal_guards():
                   "an ineligible post-event correction cannot supersede an eligible candidate")
 
 
+def test_resolution_evidence_strict():
+    print("\n[RE] ResolutionEvidence is frozen + strict (hashes, version, int season, UTC time)")
+    good = dict(resolver_id="nfl_identity_event_adapter", resolver_version="v1",
+                props_sha256="a" * 64, roster_sha256="b" * 64, roster_season=2026,
+                event_id="evt1", player_id="00-0012345", resolved_at=datetime(2026, 11, 1, tzinfo=UTC))
+    ev = rc.ResolutionEvidence(**good)
+    check(ev.canonical_dict()["resolved_at"].endswith("+00:00"), "a valid evidence object constructs")
+    expect_raises(Exception, lambda: setattr(ev, "roster_season", 1),
+                  "ResolutionEvidence is frozen (attributes cannot be reassigned)")
+
+    def bad(**over):
+        d = dict(good); d.update(over); return lambda: rc.ResolutionEvidence(**d)
+    expect_raises(rc.TypeStrictError, bad(props_sha256="A" * 64), "uppercase sha rejected (lowercase hex only)")
+    expect_raises(rc.TypeStrictError, bad(roster_sha256="b" * 63), "wrong-length sha rejected")
+    expect_raises(rc.TypeStrictError, bad(resolver_version="1.0"), "version without leading v rejected")
+    expect_raises(rc.TypeStrictError, bad(roster_season=True), "boolean season rejected (strict int)")
+    expect_raises(rc.TypeStrictError, bad(roster_season="2026"), "string season rejected (no coercion)")
+    expect_raises(rc.TypeStrictError, bad(event_id=""), "empty event_id rejected")
+    expect_raises((rc.TemporalError, rc.TypeStrictError), bad(resolved_at=datetime(2026, 11, 1)),
+                  "naive resolved_at rejected")
+    expect_raises(rc.TemporalError,
+                  bad(resolved_at=datetime(2026, 11, 1, tzinfo=timezone(timedelta(hours=-5)))),
+                  "non-UTC resolved_at rejected (zero offset required)")
+
+
 if __name__ == "__main__":
     print("=" * 80)
     print("RESEARCH CANDIDATE CONTRACT — SLICE 1 QC (domain model + validators, dark/local)")
@@ -866,7 +891,8 @@ if __name__ == "__main__":
               test_summarize_pairing_binding, test_contract_cleanups,
               test_store_seq_strictly_monotonic, test_single_current_candidate_per_lineage,
               test_finding_provenance_reconciled, test_observation_supersession_forbidden,
-              test_baseline_and_eligible_removal_guards, test_finding_requires_existing_family):
+              test_baseline_and_eligible_removal_guards, test_finding_requires_existing_family,
+              test_resolution_evidence_strict):
         t()
     print("\n" + "=" * 80)
     print("Clean:", not fails)

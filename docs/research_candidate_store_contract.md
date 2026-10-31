@@ -1,7 +1,18 @@
 # Research Candidate — Dark-Store Contract (SLICE 2A → Rev 2; 2B AUTHORIZED)
 
-**Status: Rev 2 — reviewer decisions frozen; 2B/2C BUILT; schema advanced to v3.** Date 2026-10-27
-(v3 addendum 2026-10-31). **v3 addendum:** observation idempotency moved from the per-table
+**Status: Rev 2 — reviewer decisions frozen; 2B/2C BUILT; schema advanced to v4.** Date 2026-10-27
+(v3 + v4 addenda 2026-10-31). **v4 addendum:** every governed observation must carry exactly one complete,
+strict `ResolutionEvidence` set (resolver id/version, props+roster SHA-256, roster season, event+player ids,
+resolved-at UTC), serialized by the store into reserved `bkres:v1:` references in the observation's sources.
+`capture_observation` REQUIRES evidence, validates the registered resolver id + player/event binding +
+capture-time current-season equality (season derived from the captured instant via the shared Eastern zone
++ the pure NFL season calendar, never importing app.py), and the request fingerprint covers OWNER sources
+ONLY so newly-resolved evidence never perturbs idempotency. Owner sources may not enter the reserved
+scheme. On reopen the store parses each observation's evidence back to exactly one complete set bound to its
+entity/event AND recomputes the owner-only fingerprint to equal the registry's; historical `roster_season`
+is NOT pinned to today (prior-season observations stay valid as the calendar advances). `SCHEMA_VERSION`=4
+rejects v1/v2/v3 with no migration. See `docs/research_candidate_identity_event_adapter_design.md` (Rev 2.2)
+and `qc_research_candidate_store.py` (AV/AW/AX) + `qc_research_candidate_idempotency.py`. **v3 addendum:** observation idempotency moved from the per-table
 `observation_private.idempotency_key UNIQUE` to the governed `idempotency_registry` keyed on a REQUEST
 FINGERPRINT (persisted intent, excluding seq/clocks), written only through `capture_observation`;
 `observation_private` lost its legacy key; candidate/outcome/finding keep theirs; reopen reconciles

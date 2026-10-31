@@ -47,6 +47,7 @@ import enum
 import hashlib
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
@@ -311,6 +312,52 @@ class EventIdentity:
     def canonical_dict(self) -> dict:
         return {"canonical_id": self.canonical_id,
                 "event_effective": self.event_effective.isoformat()}
+
+
+_HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+_RESOLVER_VERSION_RE = re.compile(r"^v\d+(\.\d+)*$")
+
+
+@dataclass(frozen=True)
+class ResolutionEvidence:
+    """Governed, non-forgeable provenance of a resolved observation (adapter Step-2 contract). It records
+    HOW an owner's board selection was resolved to authoritative identity/event — the resolver + the exact
+    artifact fingerprints + the bound ids + the resolution instant — so a stored observation can be audited
+    and replayed. Strict + frozen: formats are validated here; the STORE additionally validates the
+    registered resolver id, the player/event binding, and capture-time current-season equality, and is the
+    only thing that serializes this into reserved references. It carries NO authority."""
+    resolver_id: str
+    resolver_version: str
+    props_sha256: str
+    roster_sha256: str
+    roster_season: int
+    event_id: str
+    player_id: str
+    resolved_at: datetime
+
+    def __post_init__(self) -> None:
+        _check_nonempty_str(self.resolver_id, "resolver_id")
+        _check_nonempty_str(self.resolver_version, "resolver_version")
+        if not _RESOLVER_VERSION_RE.match(self.resolver_version):
+            raise TypeStrictError(r"resolver_version must match ^v\d+(\.\d+)*$")
+        for nm, h in (("props_sha256", self.props_sha256), ("roster_sha256", self.roster_sha256)):
+            _check_nonempty_str(h, nm)
+            if not _HEX64_RE.match(h):
+                raise TypeStrictError(f"{nm} must be 64 lowercase hex characters")
+        _check_type(self.roster_season, int, "roster_season")   # _check_type rejects bool
+        _check_nonempty_str(self.event_id, "event_id")
+        _check_nonempty_str(self.player_id, "player_id")
+        _check_aware(self.resolved_at, "resolved_at")
+        if self.resolved_at.utcoffset().total_seconds() != 0:
+            raise TemporalError("resolved_at must be UTC (zero offset)")
+
+    def canonical_dict(self) -> dict:
+        return {
+            "resolver_id": self.resolver_id, "resolver_version": self.resolver_version,
+            "props_sha256": self.props_sha256, "roster_sha256": self.roster_sha256,
+            "roster_season": self.roster_season, "event_id": self.event_id,
+            "player_id": self.player_id, "resolved_at": self.resolved_at.isoformat(),
+        }
 
 
 @dataclass(frozen=True)
@@ -1165,7 +1212,7 @@ __all__ = [
     "BindingError",
     "Category", "SubLabel", "Direction", "SourceUpdatedStatus", "Resolution", "Completeness",
     "CaseTrackState", "CaseState", "FamilyState", "FindingStatus",
-    "EntityIdentity", "EventIdentity", "TemporalFacts", "PrimaryEndpoint", "BaselineMethod",
+    "EntityIdentity", "EventIdentity", "ResolutionEvidence", "TemporalFacts", "PrimaryEndpoint", "BaselineMethod",
     "FamilyKey", "UserObservation", "ResearchCandidate", "supersede_candidate",
     "bind_candidate_to_observation", "CandidateOutcome", "FamilySummary", "summarize_family",
     "EvidenceBundle", "EvaluatedFinding", "evaluate_family", "InMemoryResearchStore",

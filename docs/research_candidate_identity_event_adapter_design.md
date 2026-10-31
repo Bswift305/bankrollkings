@@ -236,9 +236,11 @@ route/flag/boundary/unit:
 
 1. **Extract `services/nfl_season_contract.py`** (pure, side-effect-free) + the app parity QC; `app.py`
    delegates to it. No behavior change.
-2. **Store schema-v4 refinement:** mandatory `evidence: ResolutionEvidence`, the `bkres:v1:` serialize/parse
-   with the round-trip + reopen invariants, reserved-namespace owner-source rejection, `SCHEMA_VERSION`→4
-   rejecting v3; migrate the existing store/backup/idempotency QC fixtures to capture **with** evidence.
+2. **Store schema-v4 refinement — BUILT** (dark/local): `ResolutionEvidence` added to the domain; mandatory
+   `evidence` on `capture_observation`; the store generates/parses the `bkres:v1:` references with the
+   round-trip + reopen invariants (incl. owner-only fingerprint recompute) and reserved-scheme owner-source
+   rejection; `SCHEMA_VERSION`→4 rejects v1/v2/v3; the domain/store/backup/idempotency QC capture **with**
+   evidence (domain 128, store 73, backup 50, idempotency 56).
 3. **The resolver module** (`services/nfl_identity_event_adapter.py`, name TBD) + its abstain/health/binding
    QC.
 

@@ -52,6 +52,18 @@ and clocks — so an exact retry is a true no-op (no sequence consumed) and a ch
 reconciles observation<->registry in BOTH directions on reopen (every observation bound exactly once).
 There is NO public raw observation writer. candidate/outcome/finding keep their per-table
 `idempotency_key` UNCHANGED until each is separately migrated to the registry.
+
+RESOLUTION EVIDENCE (schema v4): every governed observation must carry exactly one complete, strict
+`ResolutionEvidence` set (resolver id/version, props+roster SHA-256, roster season, event+player ids,
+resolved-at UTC). `capture_observation` REQUIRES it, validates the registered resolver id, the player/event
+binding, and capture-time current-season equality (derived from the captured instant via the shared
+Eastern zone + the pure NFL season calendar — never importing app.py), then serializes it into canonical
+reserved `bkres:v1:` references that are persisted in the observation's sources (callers never handcraft
+them). Owner sources may not enter the reserved namespace. The request fingerprint covers OWNER sources
+ONLY, so newly-resolved evidence never perturbs idempotency. On reopen the store parses each observation's
+evidence back to exactly one complete set bound to its entity/event, and recomputes the owner-only
+fingerprint to equal the registry's — historical seasons are NOT pinned to today, so prior-season
+observations stay valid as the calendar advances.
 """
 from __future__ import annotations
 
@@ -65,20 +77,37 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote, unquote
 
 from services.research_candidate import (
     BaselineMethod, CandidateOutcome, CaseState, Category, Completeness, Direction, EntityIdentity,
     EvaluatedFinding, EventIdentity, EvidenceBundle, FamilyKey, FamilySummary, FindingStatus,
-    InMemoryResearchStore, PrimaryEndpoint, ResearchCandidate, Resolution, SourceUpdatedStatus,
-    SubLabel, TemporalFacts, UserObservation, canonical_json, content_hash,
+    InMemoryResearchStore, PrimaryEndpoint, ResearchCandidate, Resolution, ResolutionEvidence,
+    SourceUpdatedStatus, SubLabel, TemporalFacts, UserObservation, canonical_json, content_hash,
 )
+# PURE shared contracts (no app/Flask import): the Eastern zone + the NFL season calendar.
+from services.timeutils import DISPLAY_TZ
+from services.nfl_season_contract import expected_completed_week as _nfl_expected_completed_week
 
-SCHEMA_VERSION = 3   # v3 = the governed idempotency_registry (every observation bound exactly once via
-#                      capture_observation), observation_private loses its legacy idempotency_key, and
-#                      record_registry gains the composite UNIQUE the registry FK binds to. v1/v2 stores
-#                      are structurally incompatible and fail closed on open (nothing is deployed, so no
-#                      migration is provided). candidate/outcome/finding keep their idempotency_key
-#                      columns UNCHANGED until each is separately migrated to the registry.
+# The resolver ids the store will accept on a ResolutionEvidence. An allow-list, not "any non-empty id":
+# an unregistered resolver cannot write governed provenance. (The NFL identity/event adapter — Step 3 —
+# registers its id here when it is built.)
+REGISTERED_RESOLVER_IDS = frozenset({"nfl_identity_event_adapter"})
+
+_BKRES_SCHEME = "bkres:"      # the whole reserved scheme — owners are barred from ALL of it
+_BKRES_PREFIX = "bkres:v1:"   # the grammar version this store emits + parses
+_BKRES_FIELDS = ("resolver", "props-sha256", "roster-sha256", "roster-season", "event", "player",
+                 "resolved-at")
+
+SCHEMA_VERSION = 4   # v4 = every governed observation carries exactly one complete ResolutionEvidence set
+#                      (serialized as reserved bkres:v1: references in its sources; validated + bound at
+#                      capture, reconciled on reopen). capture_observation now REQUIRES evidence; the
+#                      request fingerprint is computed over OWNER sources only (reserved references
+#                      excluded). v3 = the governed idempotency_registry (every observation bound once via
+#                      capture_observation), observation_private without its legacy idempotency_key,
+#                      record_registry composite UNIQUE. v1/v2/v3 stores are structurally incompatible and
+#                      fail closed on open (nothing is deployed, so no migration is provided).
+#                      candidate/outcome/finding keep their idempotency_key columns UNCHANGED.
 
 
 # --------------------------------------------------------------------------- errors
@@ -573,6 +602,29 @@ class ResearchCandidateStore:
         if orphan_idem:
             raise StoreIntegrityError(
                 f"{orphan_idem} observation idempotency row(s) with no matching observation")
+        # v4: every observation carries EXACTLY ONE complete ResolutionEvidence set (its reserved refs
+        # parse back, bound to the stored entity/event), AND its recomputed OWNER-ONLY request fingerprint
+        # equals the registry's (a syntactically valid but altered intent fails closed). Historical
+        # roster_season is NOT compared to the current season — prior-season observations stay valid as the
+        # calendar advances; current-season equality is a capture-time gate only.
+        for r in self.conn.execute(
+                "SELECT o.observation_id, o.observer, o.entity_json, o.event_json, o.thesis, "
+                "o.sources_json, o.acted, i.request_fingerprint "
+                "FROM observation_private o JOIN idempotency_registry i "
+                "ON i.record_kind='observation' AND i.bound_record_seq=o.record_seq"):
+            ent_obj = _entity(_u(r["entity_json"]))
+            evt_obj = _event(_u(r["event_json"]))
+            owner_sources, system_refs = _partition_sources(_u(r["sources_json"]))
+            ev = _refs_to_evidence(system_refs)          # exactly one complete set, else StoreIntegrityError
+            if ev.event_id != evt_obj.canonical_id or ev.player_id != ent_obj.canonical_id:
+                raise StoreIntegrityError(
+                    f"observation {r['observation_id']}: evidence event/player id not bound to the record")
+            recomputed = _request_fingerprint(r["observer"], ent_obj, evt_obj, r["thesis"],
+                                               owner_sources, bool(r["acted"]))
+            if recomputed != r["request_fingerprint"]:
+                raise StoreIntegrityError(
+                    f"observation {r['observation_id']}: recomputed request fingerprint != the registry's "
+                    f"(stored intent altered)")
 
     # durable sequence reservation -----------------------------------------
     def next_seq(self) -> int:
@@ -697,12 +749,15 @@ class ResearchCandidateStore:
                     "SELECT max_claimed FROM seq_allocator WHERE id=1").fetchone()[0])}
 
     # writes (triggers maintain tips + bind registry; no Python tip maintenance) --------
-    # OBSERVATIONS (v3): there is NO public raw observation writer. The ONLY sanctioned path is
+    # OBSERVATIONS (v4): there is NO public raw observation writer. The ONLY sanctioned path is
     # capture_observation(), which inserts the observation AND its registry binding in ONE transaction,
-    # so every stored observation is bound exactly once. The server owns the observation_id, the clocks
-    # and the sequence; the caller supplies only the governed intent + an opaque idempotency_key.
+    # so every stored observation is bound exactly once AND carries exactly one complete ResolutionEvidence
+    # set (serialized as reserved bkres: references in its sources). The server owns the observation_id, the
+    # clocks and the sequence; the caller supplies the governed intent, an opaque idempotency_key, and the
+    # resolver's evidence (which the store validates and serializes — callers never handcraft references).
     def capture_observation(self, *, observer_id: str, entity: EntityIdentity, event: EventIdentity,
-                            thesis: str, sources=(), acted: bool = False, idempotency_key: str) -> dict:
+                            thesis: str, evidence: ResolutionEvidence, sources=(), acted: bool = False,
+                            idempotency_key: str) -> dict:
         # NOTE: 2D1 captures carry NO acted_journal_ref — Decision-Journal linkage is out of scope here, and
         # a persisted-but-unfingerprinted field could vary invisibly under one key. It is always None.
         _check_key(idempotency_key)
@@ -712,6 +767,8 @@ class ResearchCandidateStore:
             raise ResearchStoreError("entity must be a governed EntityIdentity")
         if not isinstance(event, EventIdentity):
             raise ResearchStoreError("event must be a governed EventIdentity")
+        if not isinstance(evidence, ResolutionEvidence):
+            raise ResearchStoreError("evidence (a governed ResolutionEvidence) is required")
         # Canonicalize the event instant to zero-offset UTC so two equivalent instants expressed with
         # different offsets cannot produce different fingerprints or different stored event JSON.
         event = EventIdentity(event.canonical_id, event.event_effective.astimezone(timezone.utc))
@@ -728,10 +785,14 @@ class ResearchCandidateStore:
         for s in src_items:
             if not isinstance(s, str) or not s.strip():
                 raise ResearchStoreError("each source must be a non-empty string")
-        # Canonicalize ONCE: NFC thesis + NFC, sorted, de-duplicated sources. The SAME canonical values are
-        # both fingerprinted and persisted, so fingerprinted intent == stored intent (no invisible drift).
+            if _is_reserved_source(s):
+                raise ResearchStoreError(
+                    "owner sources may not use the reserved 'bkres:' namespace (resolver evidence only)")
+        # Canonicalize ONCE: NFC thesis + NFC, sorted, de-duplicated OWNER sources. The SAME canonical
+        # OWNER values are both fingerprinted and persisted; the request fingerprint covers owner sources
+        # ONLY (reserved evidence references are excluded), so fingerprinted intent == stored owner intent.
         canon_thesis = _nfc(thesis)
-        canon_sources = tuple(sorted({_nfc(s) for s in src_items}))
+        canon_sources = _canon_sources(src_items)
         fp = _request_fingerprint(observer_id, entity, event, canon_thesis, canon_sources, acted)
         self._begin()
         try:
@@ -760,11 +821,26 @@ class ResearchCandidateStore:
             if event.event_effective <= now:
                 raise ResearchStoreError(
                     "event_effective is not in the future at capture time — observation refused")
+            # Evidence validation at the SOLE writer (not just a future route), all BEFORE reserving a
+            # sequence (a rejection consumes none): registered resolver, player/event binding, and
+            # capture-time current-season equality (derived from THIS captured instant via the shared
+            # Eastern zone + the pure season calendar). Hash/version/UTC format is already enforced by the
+            # frozen ResolutionEvidence object.
+            if evidence.resolver_id not in REGISTERED_RESOLVER_IDS:
+                raise ResearchStoreError(f"unregistered resolver_id {evidence.resolver_id!r}")
+            if evidence.event_id != event.canonical_id or evidence.player_id != entity.canonical_id:
+                raise ResearchStoreError("evidence event/player id does not match the resolved identity")
+            if evidence.roster_season != _current_nfl_season(now):
+                raise ResearchStoreError(
+                    "evidence roster_season != the governed current NFL season at capture time")
             seq = self._reserve_seq_in_txn()           # durable reservation, no nested BEGIN
+            # Persist owner sources + the store-generated reserved evidence references as one canonical
+            # tuple; the fingerprint above covered owner sources only, so the evidence never perturbs it.
+            stored_sources = _canon_sources(list(canon_sources) + _evidence_to_refs(evidence))
             obs = UserObservation(
                 observation_id=uuid.uuid4().hex, observer=observer_id, entity=entity, event=event,
                 thesis=canon_thesis, observed_at=now, bk_captured=now, record_seq=seq,
-                sources=canon_sources, acted=acted, acted_journal_ref=None)
+                sources=stored_sources, acted=acted, acted_journal_ref=None)
             self._memory().record_observation(obs)     # Slice-1 semantic validation + hash re-verify
             self._insert_observation_in_txn(obs)        # registry bind + reservation claim + record insert
             self.conn.execute(
@@ -1099,9 +1175,11 @@ def _request_fingerprint(observer_id: str, entity: EntityIdentity, event: EventI
     conflicts. category/sub_label are NOT part of the observation contract and are excluded.
 
     Inputs are already canonical: `capture_observation` NFC-normalizes the thesis, NFC-normalizes +
-    sorts + de-duplicates the sources, and verifies `acted` is a real bool, ONCE — the same canonical
+    sorts + de-duplicates the OWNER sources, and verifies `acted` is a real bool, ONCE — the same canonical
     values it then persists — so this function neither re-normalizes nor coerces (persisted intent ==
-    fingerprinted intent). It is a 64-hex sha256, never cleartext thesis/email."""
+    fingerprinted intent). `sources` here are OWNER sources ONLY; the reserved `bkres:` resolution-evidence
+    references are excluded, so an exact retry whose only difference is newly-resolved evidence still hashes
+    equal. It is a 64-hex sha256, never cleartext thesis/email."""
     payload = {
         "record_kind": "observation",
         "observer_id": observer_id,
@@ -1114,13 +1192,97 @@ def _request_fingerprint(observer_id: str, entity: EntityIdentity, event: EventI
     return content_hash(payload)
 
 
+def _enc(s: str) -> str:
+    """Percent-encode everything outside the unreserved set so reserved refs parse unambiguously."""
+    return quote(s, safe="")
+
+
+def _is_reserved_source(s: str) -> bool:
+    """True if an OWNER source tries to enter the reserved SCHEME — checked after trim -> NFC -> casefold,
+    so `BKRES:`, `  bkres: …`, any `bkres:` version, and whitespace variants are all caught."""
+    return unicodedata.normalize("NFC", s.strip()).casefold().startswith(_BKRES_SCHEME)
+
+
+def _canon_sources(items) -> tuple:
+    """NFC-normalize, de-duplicate, and sort a source sequence into the ONE canonical tuple used for both
+    the fingerprint and persistence."""
+    return tuple(sorted({unicodedata.normalize("NFC", s) for s in items}))
+
+
+def _partition_sources(sources):
+    """Split stored sources into (owner canonical tuple, reserved reference list) on the reserved SCHEME,
+    so any `bkres:` entry is treated as system (a tampered non-v1 one then fails closed in parsing)."""
+    owner, system = [], []
+    for s in sources:
+        (system if s.startswith(_BKRES_SCHEME) else owner).append(s)
+    return _canon_sources(owner), system
+
+
+def _evidence_to_refs(ev: ResolutionEvidence) -> list:
+    """STORE-generated canonical reserved references for one evidence set (fixed field order). Callers
+    never handcraft these."""
+    return [
+        f"{_BKRES_PREFIX}resolver={_enc(ev.resolver_id)}@{_enc(ev.resolver_version)}",
+        f"{_BKRES_PREFIX}props-sha256={ev.props_sha256}",
+        f"{_BKRES_PREFIX}roster-sha256={ev.roster_sha256}",
+        f"{_BKRES_PREFIX}roster-season={ev.roster_season}",
+        f"{_BKRES_PREFIX}event={_enc(ev.event_id)}",
+        f"{_BKRES_PREFIX}player={_enc(ev.player_id)}",
+        f"{_BKRES_PREFIX}resolved-at={_enc(ev.resolved_at.isoformat())}",
+    ]
+
+
+def _refs_to_evidence(refs) -> ResolutionEvidence:
+    """Parse reserved references back into EXACTLY ONE complete ResolutionEvidence. Rejects a missing,
+    duplicate, or extra field, a malformed entry, or an unparseable value (fail closed). Re-runs the
+    domain object's strict validation on the way out."""
+    fields = {}
+    for r in refs:
+        if not r.startswith(_BKRES_PREFIX):
+            raise StoreIntegrityError(f"not a reserved reference: {r!r}")
+        key, sep, val = r[len(_BKRES_PREFIX):].partition("=")
+        if not sep:
+            raise StoreIntegrityError(f"malformed reserved reference (no '='): {r!r}")
+        if key in fields:
+            raise StoreIntegrityError(f"duplicate reserved field {key!r}")
+        fields[key] = val
+    if set(fields) != set(_BKRES_FIELDS):
+        raise StoreIntegrityError(
+            f"reserved evidence set is not complete-and-exact (have {sorted(fields)}, "
+            f"want {sorted(_BKRES_FIELDS)})")
+    try:
+        enc_id, sep, enc_ver = fields["resolver"].partition("@")
+        if not sep:
+            raise StoreIntegrityError("malformed resolver reference (no '@')")
+        return ResolutionEvidence(
+            resolver_id=unquote(enc_id), resolver_version=unquote(enc_ver),
+            props_sha256=fields["props-sha256"], roster_sha256=fields["roster-sha256"],
+            roster_season=int(fields["roster-season"]), event_id=unquote(fields["event"]),
+            player_id=unquote(fields["player"]),
+            resolved_at=datetime.fromisoformat(unquote(fields["resolved-at"])))
+    except StoreIntegrityError:
+        raise
+    except Exception as exc:   # malformed value / failed domain validation -> fail closed
+        raise StoreIntegrityError(f"reserved evidence failed to parse: {exc}") from exc
+
+
+def _current_nfl_season(now_utc: datetime) -> int:
+    """The current NFL season label at `now_utc`, via the SHARED Eastern zone (services.timeutils
+    DISPLAY_TZ) + the pure season calendar — never app.py. Fail closed if the governed zone is absent."""
+    if DISPLAY_TZ is None:
+        raise ResearchStoreError("governed Eastern zone (services.timeutils.DISPLAY_TZ) unavailable")
+    eastern_date = now_utc.astimezone(DISPLAY_TZ).date()
+    _week, season = _nfl_expected_completed_week(eastern_date)
+    return season
+
+
 def _verify(recomputed: str, stored: str, kind: str, rid: str) -> None:
     if recomputed != stored:
         raise StoreIntegrityError(f"{kind} {rid}: content hash mismatch (corruption/tamper)")
 
 
 __all__ = [
-    "SCHEMA_VERSION", "ResearchCandidateStore", "ResearchStoreError", "SchemaVersionError",
-    "IdempotencyConflict", "SequenceError", "StoreIntegrityError", "DeletionNotPermitted",
-    "CleanupError", "RestoreCleanupError",
+    "SCHEMA_VERSION", "REGISTERED_RESOLVER_IDS", "ResearchCandidateStore", "ResolutionEvidence",
+    "ResearchStoreError", "SchemaVersionError", "IdempotencyConflict", "SequenceError",
+    "StoreIntegrityError", "DeletionNotPermitted", "CleanupError", "RestoreCleanupError",
 ]

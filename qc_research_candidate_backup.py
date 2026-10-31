@@ -82,7 +82,9 @@ def test_backup_restore_round_trip():
         check(res is not None and int(res["claimed"]) == 0, "the unclaimed-reservation GAP is preserved")
         check(r.next_seq() == gap + 2, "next_seq on the restored store skips the gap (no reissue)")
         noop = r.capture_observation(observer_id="owner", entity=sq.ent("p0", "P0"), event=sq.ev("g0"),
-                                     thesis=sq.THESIS, sources=sq.SOURCES, idempotency_key="obs-0")
+                                     thesis=sq.THESIS, sources=sq.SOURCES,
+                                     evidence=sq.evidence_for(sq.ent("p0", "P0"), sq.ev("g0")),
+                                     idempotency_key="obs-0")
         check(noop["status"] == "noop", "idempotency preserved (same key+intent -> noop) after restore")
         check(r.replay_validate()["candidates"] == 2, "restored store fully replays + reconciles")
         r.close()

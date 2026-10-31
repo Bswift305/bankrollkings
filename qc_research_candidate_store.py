@@ -71,10 +71,21 @@ def ev(cid):
     return rc.EventIdentity(cid, EVENT)
 
 
-def cap(store, e, g, key, observer="owner", thesis=THESIS, sources=SOURCES, acted=False):
-    """Capture an observation through the ONLY sanctioned v3 path and return (result, stored obs)."""
+def evidence_for(e, g, resolver="nfl_identity_event_adapter"):
+    """A valid ResolutionEvidence bound to entity `e` + event `g`, with the SAME current season the store
+    derives at capture (so the capture-time season gate passes). resolved_at is fresh each call, which is
+    exactly why idempotent retries must ignore it."""
+    return rc.ResolutionEvidence(
+        resolver_id=resolver, resolver_version="v1", props_sha256="a" * 64, roster_sha256="b" * 64,
+        roster_season=rcs._current_nfl_season(datetime.now(UTC)),
+        event_id=g.canonical_id, player_id=e.canonical_id, resolved_at=datetime.now(UTC))
+
+
+def cap(store, e, g, key, observer="owner", thesis=THESIS, sources=SOURCES, acted=False, evidence=None):
+    """Capture an observation through the ONLY sanctioned v4 path and return (result, stored obs)."""
     r = store.capture_observation(observer_id=observer, entity=e, event=g, thesis=thesis,
-                                  sources=sources, acted=acted, idempotency_key=key)
+                                  sources=sources, acted=acted,
+                                  evidence=evidence or evidence_for(e, g), idempotency_key=key)
     return r, store.load_observation(r["id"])
 
 
@@ -174,17 +185,18 @@ def test_idempotency():
         r1, _ = cap(store, e, g, "K")
         check(r1["status"] == "recorded", "first capture recorded")
         r2 = store.capture_observation(observer_id="owner", entity=e, event=g, thesis=THESIS,
-                                       sources=SOURCES, idempotency_key="K")
+                                       sources=SOURCES, evidence=evidence_for(e, g), idempotency_key="K")
         check(r2["status"] == "noop" and r2["record_seq"] == r1["record_seq"]
-              and r2["id"] == r1["id"], "exact retry -> noop (same bound record)")
+              and r2["id"] == r1["id"], "exact retry (fresh evidence) -> noop (same bound record)")
         expect_raises(rcs.IdempotencyConflict,
                       lambda: store.capture_observation(observer_id="owner", entity=e, event=g,
                                                         thesis="different", sources=SOURCES,
-                                                        idempotency_key="K"),
+                                                        evidence=evidence_for(e, g), idempotency_key="K"),
                       "same key + different intent -> conflict (fail closed)")
         expect_raises(rcs.ResearchStoreError,
                       lambda: store.capture_observation(observer_id="owner", entity=e, event=g,
-                                                        thesis=THESIS, idempotency_key="  "),
+                                                        thesis=THESIS, evidence=evidence_for(e, g),
+                                                        idempotency_key="  "),
                       "a blank idempotency_key is rejected")
         check(store.conn.execute("SELECT COUNT(*) FROM observation_private").fetchone()[0] == 1,
               "no extra observation row from the noop / conflict / blank-key attempts")
@@ -446,11 +458,11 @@ def test_replay_and_tamper():
         store.close()
 
 
-# =========================================================================== AT schema version bump (v1/v2 rejected)
+# =========================================================================== AT schema version bump (v1/v2/v3 rejected)
 def test_v_prior_schema_rejected():
-    print("\n[AT] SCHEMA_VERSION bumped: earlier v1/v2 stores are rejected without mutation")
-    check(rcs.SCHEMA_VERSION >= 3, "SCHEMA_VERSION advanced to 3 for the registry schema change")
-    for prior in (1, 2):
+    print("\n[AT] SCHEMA_VERSION bumped: earlier v1/v2/v3 stores are rejected without mutation")
+    check(rcs.SCHEMA_VERSION >= 4, "SCHEMA_VERSION advanced to 4 for the evidence invariant")
+    for prior in (1, 2, 3):
         with tmp() as d:
             path = os.path.join(d, "r.db")
             rcs.ResearchCandidateStore(path).close()
@@ -485,16 +497,125 @@ def test_reservation_integrity_bidirectional():
                       "a registry row without a claimed reservation is caught on reopen")
 
 
+# =========================================================================== AV evidence required + validated
+def test_evidence_required_and_validated():
+    print("\n[AV] capture REQUIRES a valid ResolutionEvidence; bad evidence fails closed (no reservation)")
+    with tmp() as d:
+        store = rcs.ResearchCandidateStore(os.path.join(d, "r.db"))
+        e, g = ent("p", "P"), ev("g")
+        season = rcs._current_nfl_season(datetime.now(UTC))
+
+        def mkev(**over):
+            base = dict(resolver_id="nfl_identity_event_adapter", resolver_version="v1",
+                        props_sha256="a" * 64, roster_sha256="b" * 64, roster_season=season,
+                        event_id=g.canonical_id, player_id=e.canonical_id, resolved_at=datetime.now(UTC))
+            base.update(over)
+            return rc.ResolutionEvidence(**base)
+
+        def capev(evid, key, sources=SOURCES):
+            return store.capture_observation(observer_id="owner", entity=e, event=g, thesis=THESIS,
+                                             sources=sources, evidence=evid, idempotency_key=key)
+        expect_raises(rcs.ResearchStoreError, lambda: capev(None, "k0"), "evidence=None is rejected")
+        expect_raises(rcs.ResearchStoreError, lambda: capev(mkev(resolver_id="rogue"), "k1"),
+                      "an unregistered resolver_id is rejected")
+        expect_raises(rcs.ResearchStoreError, lambda: capev(mkev(event_id="WRONG"), "k2"),
+                      "evidence event id != resolved event -> rejected")
+        expect_raises(rcs.ResearchStoreError, lambda: capev(mkev(player_id="WRONG"), "k2b"),
+                      "evidence player id != resolved entity -> rejected")
+        expect_raises(rcs.ResearchStoreError, lambda: capev(mkev(roster_season=1999), "k3"),
+                      "evidence roster_season != current season -> rejected")
+        expect_raises(rc.TypeStrictError, lambda: mkev(roster_season=True),
+                      "a boolean roster_season is rejected by the frozen object")
+        expect_raises(rc.TypeStrictError, lambda: mkev(props_sha256="A" * 64),
+                      "an uppercase (non-lowercase-hex) sha is rejected by the frozen object")
+        expect_raises(rcs.ResearchStoreError,
+                      lambda: capev(mkev(), "k4", sources=("BKRES:forged",)),
+                      "an owner source in the reserved namespace is rejected")
+        check(store.conn.execute("SELECT COUNT(*) FROM observation_private").fetchone()[0] == 0
+              and store.conn.execute("SELECT COALESCE(MAX(record_seq),0) FROM seq_reservation").fetchone()[0] == 0,
+              "every rejected capture consumed NO reservation and wrote no record")
+        _, o = cap(store, e, g, "ok")
+        refs = [s for s in o.sources if s.startswith("bkres:v1:")]
+        check(len(refs) == 7, "a successful capture persists the 7 reserved evidence references in sources")
+        store.close()
+
+
+# =========================================================================== AW reopen evidence + fingerprint parity
+def test_reopen_evidence_and_fingerprint():
+    print("\n[AW] reopen fails closed on incomplete evidence OR an altered intent fingerprint")
+
+    def craft(path, *, drop_season=False, bad_fp=False):
+        store = rcs.ResearchCandidateStore(path)
+        _, o = cap(store, ent("p", "P"), ev("g"), "K")
+        base = dict(store.conn.execute(
+            "SELECT * FROM observation_private WHERE observation_id=?", (o.observation_id,)).fetchone())
+        srcs = list(rcs._u(base["sources_json"]))
+        if drop_season:
+            srcs = [s for s in srcs if not s.startswith("bkres:v1:roster-season=")]
+        s = store.next_seq()
+        store.conn.execute("INSERT INTO record_registry(record_seq,kind,record_id) VALUES (?, 'observation','tamp')", (s,))
+        store.conn.execute("UPDATE seq_reservation SET claimed=1 WHERE record_seq=?", (s,))
+        raw_insert(store, "observation_private", base, observation_id="tamp", record_seq=s,
+                   sources_json=rcs._j(srcs), content_hash="x")
+        fp = "0" * 64 if bad_fp else None
+        if fp is None:    # recompute the correct fp so ONLY the dropped field is the defect
+            owner, _system = rcs._partition_sources(srcs)
+            fp = rcs._request_fingerprint(base["observer"], rcs._entity(rcs._u(base["entity_json"])),
+                                          rcs._event(rcs._u(base["event_json"])), base["thesis"],
+                                          owner, bool(base["acted"]))
+        store.conn.execute(
+            "INSERT INTO idempotency_registry(record_kind,observer_id,idempotency_key,"
+            "request_fingerprint,bound_record_seq,bound_record_id,created_at) "
+            "VALUES ('observation','owner','tk',?,?, 'tamp', ?)", (fp, s, "2026-10-31T00:00:00+00:00"))
+        store.close()
+
+    with tmp() as d:
+        p = os.path.join(d, "r.db")
+        craft(p, drop_season=True)
+        expect_raises(rcs.StoreIntegrityError, lambda: rcs.ResearchCandidateStore(p),
+                      "an incomplete evidence set (missing a reserved field) fails closed on reopen")
+    with tmp() as d:
+        p = os.path.join(d, "r.db")
+        craft(p, bad_fp=True)
+        expect_raises(rcs.StoreIntegrityError, lambda: rcs.ResearchCandidateStore(p),
+                      "a stored intent whose recomputed fingerprint != the registry's fails closed on reopen")
+
+
+# =========================================================================== AX calendar advancement
+def test_calendar_advancement():
+    print("\n[AX] a prior-season observation stays valid when the calendar advances (reopen season-agnostic)")
+    with tmp() as d:
+        path = os.path.join(d, "r.db")
+        store = rcs.ResearchCandidateStore(path)
+        cap(store, ent("pa", "PA"), ev("ga"), "A")      # captured under the real current season S
+        store.close()
+        real = rcs._current_nfl_season
+        try:
+            rcs._current_nfl_season = lambda now: real(now) + 1   # simulate the calendar advancing a year
+            s2 = rcs.ResearchCandidateStore(path)                 # reopen: the season-S obs must NOT invalidate
+            check(s2.replay_validate()["observations"] == 1, "prior-season observation reopens + replays cleanly")
+            cap(s2, ent("pb", "PB"), ev("gb"), "B")               # a new capture requires the advanced season
+            check(s2.conn.execute("SELECT COUNT(*) FROM observation_private").fetchone()[0] == 2,
+                  "a new-season capture is accepted alongside the retained prior-season one")
+            s2.close()
+            s3 = rcs.ResearchCandidateStore(path)
+            check(s3.replay_validate()["observations"] == 2, "both seasons validate on reopen (no season pinning)")
+            s3.close()
+        finally:
+            rcs._current_nfl_season = real
+
+
 if __name__ == "__main__":
     print("=" * 80)
-    print("RESEARCH CANDIDATE STORE — SLICE 2B/v3 QC (DB-enforced ledger, synthetic fixtures)")
+    print("RESEARCH CANDIDATE STORE — SLICE 2B/v4 QC (DB-enforced ledger, synthetic fixtures)")
     print("=" * 80)
     for t in (test_round_trip, test_idempotency, test_immutability, test_schema_gate,
               test_current_tips_db_maintained, test_unsupported_schema_zero_mutation,
               test_registry_binding, test_lineage_and_one_current_db_enforced, test_reopen_reconcile,
               test_foreign_key_check_disables_store, test_durable_reservation,
               test_pseudonymous_and_guards, test_replay_and_tamper, test_v_prior_schema_rejected,
-              test_reservation_integrity_bidirectional):
+              test_reservation_integrity_bidirectional, test_evidence_required_and_validated,
+              test_reopen_evidence_and_fingerprint, test_calendar_advancement):
         t()
     print("\n" + "=" * 80)
     print("Clean:", not fails)
