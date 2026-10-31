@@ -1,8 +1,11 @@
-# Research Candidate — Idempotency-Intent Registry (DESIGN ONLY — Rev 2.1, schema v3)
+# Research Candidate — Idempotency-Intent Registry (Rev 2.1 — BUILT local schema v3)
 
-**Status: DESIGN ONLY — Rev 2.1. Schema/trigger/API proposal + adversarial QC plan, for approval before any
-code.** Date 2026-10-31. Second 2D1 prerequisite (first = the identity/event adapter,
-`docs/research_candidate_2d1_identity_feasibility.md`). No code, route, flag, schema edit, or deploy.
+**Status: BUILT (schema v3), LOCAL ONLY. Approved Rev 2.1 implemented in `services/research_candidate_store.py`
+with QC in `qc_research_candidate_idempotency.py` (14/14) + migrated `qc_research_candidate_store.py` /
+`qc_research_candidate_backup.py`.** Date 2026-10-31. Still a 2D1 prerequisite satisfied at the STORE layer
+only — no route, flag, boundary, unit file, UI, or deploy; the identity/event adapter
+(`docs/research_candidate_2d1_identity_feasibility.md`) remains the other, still-blocked, prerequisite. The
+sections below are the as-built contract.
 
 Rev 2 fixed the nested-transaction impossibility, bound the registry to the real record in the DB, froze
 the old per-table idempotency constraint, removed observation-correction semantics, narrowed the
@@ -203,4 +206,10 @@ per-table idempotency column, the composite FK + observer-bind triggers, the int
 `capture_observation` API, and the adversarial QC) to be approved and landed **before** any 2D1 route,
 flag, boundary, or unit file. No deletion/erasure implied. `SUPPORTED`/`UNSUPPORTED` remain unconstructible.
 
-**STOP — returned for review.** No code, schema edit, route, flag, or deployment has been made.
+**BUILT (local schema v3).** Implemented in `services/research_candidate_store.py` (SCHEMA_VERSION=3,
+`idempotency_registry` + observer-bind/write-once triggers, `capture_observation` + the internal
+`_reserve_seq_in_txn`/`_insert_observation_in_txn`, `_request_fingerprint`, both-direction reopen
+reconcile; `observation_private` lost its legacy `idempotency_key`; candidate/outcome/finding unchanged).
+QC: `qc_research_candidate_idempotency.py` runs all fourteen cases green; `qc_research_candidate_store.py`
+and `qc_research_candidate_backup.py` were migrated to `capture_observation` and pass. No route, flag,
+boundary, unit file, UI, or deployment was made; v1/v2 stores fail closed with no migration.

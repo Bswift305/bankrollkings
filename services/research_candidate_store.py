@@ -39,9 +39,19 @@ the research tables carry no observer column but remain LINKABLE to the account 
 True de-identification (a verifiable projection that does not reconstruct deleted PII) is a FUTURE
 redesign that must precede any erasure feature; this schema does not provide it.
 
-STRICT 2B BOUNDARY: ONE local SQLite DB; the constructor REQUIRES an explicit path (no default). NO
-backup/restore (2C), production path, feature flag, route, UI, job, deployment, or deletion/erasure.
-Deletion requests FAIL CLOSED. Idempotency uses a caller-supplied immutable `idempotency_key`.
+STRICT LOCAL BOUNDARY: ONE local SQLite DB; the constructor REQUIRES an explicit path (no default). NO
+production path, feature flag, route, UI, job, deployment, or deletion/erasure. Deletion requests FAIL
+CLOSED.
+
+OBSERVATION IDEMPOTENCY (schema v3): observations are written ONLY through `capture_observation()`,
+which in ONE transaction records the observation and a governed `idempotency_registry` row keyed on
+`(observation, observer_id, idempotency_key)`. The key maps to a REQUEST FINGERPRINT over the persisted
+intent (observer, canonical entity/event, NFC thesis + sources, acted) and EXCLUDES the server sequence
+and clocks — so an exact retry is a true no-op (no sequence consumed) and a changed payload conflicts.
+`observation_private` carries no `idempotency_key` column; the registry is authoritative and the DB
+reconciles observation<->registry in BOTH directions on reopen (every observation bound exactly once).
+There is NO public raw observation writer. candidate/outcome/finding keep their per-table
+`idempotency_key` UNCHANGED until each is separately migrated to the registry.
 """
 from __future__ import annotations
 
@@ -50,8 +60,9 @@ import os
 import shutil
 import sqlite3
 import stat
+import unicodedata
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -62,9 +73,12 @@ from services.research_candidate import (
     SubLabel, TemporalFacts, UserObservation, canonical_json, content_hash,
 )
 
-SCHEMA_VERSION = 2   # v2 = durable reservation + composite lineage FKs + bind/tip triggers + registry
-#                      constraints. v1 stores are structurally incompatible and fail closed on open
-#                      (nothing is deployed, so no migration is provided).
+SCHEMA_VERSION = 3   # v3 = the governed idempotency_registry (every observation bound exactly once via
+#                      capture_observation), observation_private loses its legacy idempotency_key, and
+#                      record_registry gains the composite UNIQUE the registry FK binds to. v1/v2 stores
+#                      are structurally incompatible and fail closed on open (nothing is deployed, so no
+#                      migration is provided). candidate/outcome/finding keep their idempotency_key
+#                      columns UNCHANGED until each is separately migrated to the registry.
 
 
 # --------------------------------------------------------------------------- errors
@@ -186,12 +200,14 @@ CREATE TABLE IF NOT EXISTS record_registry (
   record_seq INTEGER PRIMARY KEY,
   kind       TEXT NOT NULL CHECK (kind IN ('observation','candidate','outcome','finding')),
   record_id  TEXT NOT NULL,
-  UNIQUE (kind, record_id)
+  UNIQUE (kind, record_id),
+  UNIQUE (record_seq, kind, record_id)   -- v3: composite-unique FK target for idempotency_registry
 );
 
+-- v3: observation_private carries NO idempotency_key column (the registry is authoritative for
+-- observations). candidate/outcome/finding keep their idempotency_key UNCHANGED (decision 3).
 CREATE TABLE IF NOT EXISTS observation_private (
   observation_id   TEXT PRIMARY KEY,
-  idempotency_key  TEXT NOT NULL UNIQUE,
   record_seq       INTEGER NOT NULL UNIQUE,
   observer         TEXT NOT NULL,
   entity_json      TEXT NOT NULL,
@@ -204,6 +220,36 @@ CREATE TABLE IF NOT EXISTS observation_private (
   bk_captured      TEXT NOT NULL,
   content_hash     TEXT NOT NULL
 );
+
+-- v3 GOVERNED IDEMPOTENCY REGISTRY (observations only). Keyed on INTENT, not the server-generated
+-- sequence/clocks, so an exact retry returns the original record without allocating a sequence, and a
+-- changed payload conflicts. UNIQUE(bound_record_seq) => one key per observation; the composite FK ties
+-- (seq,kind,id) to a real record_registry row; the observer-bind trigger ties observer_id to the actual
+-- observation_private.observer; the CHECK keeps other kinds out until each declares its own lineage.
+-- Pseudonymous/linkable: an opaque key, a 64-hex digest, ids, and a UTC timestamp — never email/thesis.
+CREATE TABLE IF NOT EXISTS idempotency_registry (
+  record_kind         TEXT NOT NULL CHECK (record_kind = 'observation'),
+  observer_id         TEXT NOT NULL,
+  idempotency_key     TEXT NOT NULL,
+  request_fingerprint TEXT NOT NULL,
+  bound_record_seq    INTEGER NOT NULL,
+  bound_record_id     TEXT NOT NULL,
+  created_at          TEXT NOT NULL,
+  PRIMARY KEY (record_kind, observer_id, idempotency_key),
+  UNIQUE (bound_record_seq),
+  FOREIGN KEY (bound_record_seq, record_kind, bound_record_id)
+      REFERENCES record_registry(record_seq, kind, record_id)
+);
+CREATE TRIGGER IF NOT EXISTS idempotency_registry_observer_bind BEFORE INSERT ON idempotency_registry
+WHEN NEW.record_kind = 'observation' AND NOT EXISTS (
+  SELECT 1 FROM observation_private o
+  WHERE o.record_seq = NEW.bound_record_seq AND o.observation_id = NEW.bound_record_id
+    AND o.observer = NEW.observer_id)
+BEGIN SELECT RAISE(ABORT, 'idempotency row does not bind a matching observation_private(observer, id, seq)'); END;
+CREATE TRIGGER IF NOT EXISTS idempotency_registry_no_update BEFORE UPDATE ON idempotency_registry
+BEGIN SELECT RAISE(ABORT, 'idempotency_registry is immutable'); END;
+CREATE TRIGGER IF NOT EXISTS idempotency_registry_no_delete BEFORE DELETE ON idempotency_registry
+BEGIN SELECT RAISE(ABORT, 'idempotency_registry is append-only'); END;
 
 -- pseudonymous/linkable research evidence (NO observer column; observer/thesis rejoin via observation_id).
 CREATE TABLE IF NOT EXISTS research_candidate (
@@ -510,6 +556,23 @@ class ResearchCandidateStore:
             ).fetchone()[0]
             if missing:
                 raise StoreIntegrityError(f"{table}: {missing} current row(s) with no tip entry")
+        # v3: every observation is bound by EXACTLY one idempotency_registry row, and every observation
+        # registry row binds a real observation_private(observer, id, seq) — reconcile BOTH directions so a
+        # direct-SQL observation left unbound (or an orphan registry row) fails closed on reopen. The
+        # UNIQUE(bound_record_seq) already prevents two keys binding one observation.
+        unbound = self.conn.execute(
+            "SELECT COUNT(*) FROM observation_private o WHERE NOT EXISTS "
+            "(SELECT 1 FROM idempotency_registry r WHERE r.record_kind='observation' "
+            " AND r.bound_record_seq=o.record_seq)").fetchone()[0]
+        if unbound:
+            raise StoreIntegrityError(f"{unbound} observation(s) with no idempotency_registry binding")
+        orphan_idem = self.conn.execute(
+            "SELECT COUNT(*) FROM idempotency_registry r WHERE r.record_kind='observation' AND NOT EXISTS "
+            "(SELECT 1 FROM observation_private o WHERE o.record_seq=r.bound_record_seq "
+            " AND o.observation_id=r.bound_record_id AND o.observer=r.observer_id)").fetchone()[0]
+        if orphan_idem:
+            raise StoreIntegrityError(
+                f"{orphan_idem} observation idempotency row(s) with no matching observation")
 
     # durable sequence reservation -----------------------------------------
     def next_seq(self) -> int:
@@ -634,17 +697,75 @@ class ResearchCandidateStore:
                     "SELECT max_claimed FROM seq_allocator WHERE id=1").fetchone()[0])}
 
     # writes (triggers maintain tips + bind registry; no Python tip maintenance) --------
-    def record_observation(self, obs: UserObservation, *, idempotency_key: str) -> dict:
-        return self._write("observation_private", idempotency_key, obs.content_hash, "observation_id",
-                           lambda: self._memory().record_observation(obs),
-                           lambda: self._claim_seq(obs.record_seq, "observation", obs.observation_id),
-                           lambda: self.conn.execute(
-                               "INSERT INTO observation_private VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                               (obs.observation_id, idempotency_key, obs.record_seq, obs.observer,
-                                _j(obs.entity), _j(obs.event), obs.thesis, _j(list(obs.sources)),
-                                int(obs.acted), obs.acted_journal_ref, obs.observed_at.isoformat(),
-                                obs.bk_captured.isoformat(), obs.content_hash)),
-                           obs.observation_id, obs.record_seq)
+    # OBSERVATIONS (v3): there is NO public raw observation writer. The ONLY sanctioned path is
+    # capture_observation(), which inserts the observation AND its registry binding in ONE transaction,
+    # so every stored observation is bound exactly once. The server owns the observation_id, the clocks
+    # and the sequence; the caller supplies only the governed intent + an opaque idempotency_key.
+    def capture_observation(self, *, observer_id: str, entity: EntityIdentity, event: EventIdentity,
+                            thesis: str, sources=(), acted: bool = False,
+                            acted_journal_ref: Optional[str] = None, idempotency_key: str) -> dict:
+        _check_key(idempotency_key)
+        if not isinstance(observer_id, str) or not observer_id.strip():
+            raise ResearchStoreError("observer_id is required (immutable account id, never email)")
+        if not isinstance(entity, EntityIdentity):
+            raise ResearchStoreError("entity must be a governed EntityIdentity")
+        if not isinstance(event, EventIdentity):
+            raise ResearchStoreError("event must be a governed EventIdentity")
+        sources = tuple(sources)
+        fp = _request_fingerprint(observer_id, entity, event, thesis, sources, acted)
+        self._begin()
+        try:
+            row = self.conn.execute(
+                "SELECT bound_record_seq, bound_record_id, request_fingerprint FROM idempotency_registry "
+                "WHERE record_kind='observation' AND observer_id=? AND idempotency_key=?",
+                (observer_id, idempotency_key)).fetchone()
+            if row is not None:
+                if row["request_fingerprint"] == fp:
+                    self.conn.execute("ROLLBACK")      # exact retry: no reservation, no insert
+                    return {"status": "noop", "id": row["bound_record_id"],
+                            "record_seq": row["bound_record_seq"]}
+                raise IdempotencyConflict(
+                    f"idempotency_key {idempotency_key!r} reused with a DIFFERENT request fingerprint "
+                    f"for this observer (fail closed)")
+            seq = self._reserve_seq_in_txn()           # durable reservation, no nested BEGIN
+            now = datetime.now(timezone.utc)
+            obs = UserObservation(
+                observation_id=uuid.uuid4().hex, observer=observer_id, entity=entity, event=event,
+                thesis=thesis, observed_at=now, bk_captured=now, record_seq=seq, sources=sources,
+                acted=acted, acted_journal_ref=acted_journal_ref)
+            self._memory().record_observation(obs)     # Slice-1 semantic validation + hash re-verify
+            self._insert_observation_in_txn(obs)        # registry bind + reservation claim + record insert
+            self.conn.execute(
+                "INSERT INTO idempotency_registry(record_kind, observer_id, idempotency_key, "
+                "request_fingerprint, bound_record_seq, bound_record_id, created_at) "
+                "VALUES ('observation', ?, ?, ?, ?, ?, ?)",
+                (observer_id, idempotency_key, fp, seq, obs.observation_id, now.isoformat()))
+            self.conn.execute("COMMIT")
+            return {"status": "recorded", "id": obs.observation_id, "record_seq": seq}
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
+    def _reserve_seq_in_txn(self) -> int:
+        """Reserve the next record_seq WITHIN the caller's open transaction (no own BEGIN). Used only by
+        capture_observation; a rollback of that txn undoes the reservation (no gap), while a crash after
+        commit leaves a durable value never reissued (next = MAX+1)."""
+        n = int(self.conn.execute(
+            "SELECT COALESCE(MAX(record_seq), 0) FROM seq_reservation").fetchone()[0]) + 1
+        self.conn.execute("INSERT INTO seq_reservation(record_seq, claimed) VALUES (?, 0)", (n,))
+        return n
+
+    def _insert_observation_in_txn(self, obs: UserObservation) -> None:
+        """Internal, transaction-participating observation writer (no own BEGIN): claim the reservation
+        (registry INSERT -> reservation 0->1 -> allocator) then INSERT the observation row, firing the
+        bind trigger. There is no public equivalent, so nothing can insert an observation without a
+        registry binding."""
+        self._claim_seq(obs.record_seq, "observation", obs.observation_id)
+        self.conn.execute(
+            "INSERT INTO observation_private VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (obs.observation_id, obs.record_seq, obs.observer, _j(obs.entity), _j(obs.event),
+             obs.thesis, _j(list(obs.sources)), int(obs.acted), obs.acted_journal_ref,
+             obs.observed_at.isoformat(), obs.bk_captured.isoformat(), obs.content_hash))
 
     def freeze_candidate(self, cand: ResearchCandidate, *, idempotency_key: str) -> dict:
         seq = cand.temporal.record_seq
@@ -932,6 +1053,31 @@ def _link_no_overwrite(tmp: str, dest_path: str) -> None:
 def _check_key(key) -> None:
     if not isinstance(key, str) or not key.strip():
         raise ResearchStoreError("idempotency_key is required and must be a non-empty string")
+
+
+def _nfc(s: str) -> str:
+    return unicodedata.normalize("NFC", s)
+
+
+def _request_fingerprint(observer_id: str, entity: EntityIdentity, event: EventIdentity,
+                         thesis: str, sources, acted: bool) -> str:
+    """A stable digest over the PERSISTED observation intent — observer, canonical entity + event
+    (incl. event_effective), NFC thesis, NFC sorted-unique sources, acted — and NOTHING else. It
+    EXCLUDES the server-generated record_seq and the capture clocks, so an exact retry hashes equal
+    (no-op) while a changed payload conflicts. category/sub_label are NOT part of the observation
+    contract and are excluded. It is a 64-hex sha256, never cleartext thesis/email."""
+    if not isinstance(thesis, str):
+        raise ResearchStoreError("thesis must be a string")
+    payload = {
+        "record_kind": "observation",
+        "observer_id": observer_id,
+        "entity": entity.canonical_dict(),
+        "event": event.canonical_dict(),
+        "thesis": _nfc(thesis),
+        "sources": sorted({_nfc(s) for s in sources}),
+        "acted": bool(acted),
+    }
+    return content_hash(payload)
 
 
 def _verify(recomputed: str, stored: str, kind: str, rid: str) -> None:

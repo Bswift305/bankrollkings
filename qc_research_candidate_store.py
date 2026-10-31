@@ -1,26 +1,33 @@
 """QC: Research Candidate local dark-store adapter (SLICE 2B, synthetic fixtures only).
 
-Proves the 2B gates of `services/research_candidate_store.py` against the Rev-2 contract, with the
-emphasis on DB-LEVEL (not adapter-level) enforcement: round-trip, idempotency, immutability (UPDATE
-+ DELETE), schema-gate, durable sequence reservation, replay, record<->registry bijection + bind,
-composite-lineage supersession, current-tip maintenance/reconcile, integrity/foreign-key/allocator
-reconcile, pseudonymous naming. Temp-dir DBs only; no prod path, flag, backup, route, UI, or job.
+Proves the 2B/v3 gates of `services/research_candidate_store.py` against the Rev-2.1 contract, with the
+emphasis on DB-LEVEL (not adapter-level) enforcement: round-trip, observation idempotency via the
+governed registry (`capture_observation`), immutability (UPDATE + DELETE), schema-gate, durable sequence
+reservation, replay, record<->registry bijection + bind, composite-lineage supersession, current-tip
+maintenance/reconcile, integrity/foreign-key/allocator reconcile, pseudonymous naming. Temp-dir DBs only;
+no prod path, flag, backup, route, UI, or job.
+
+v3 note: observations are written ONLY through `capture_observation` (no public raw writer); the server
+owns the observation_id / clocks / sequence, and the caller supplies governed intent + an opaque key.
 """
 import os
 import sqlite3
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import services.research_candidate as rc            # noqa: E402
 import services.research_candidate_store as rcs     # noqa: E402
 
 UTC = timezone.utc
-OBSERVED = datetime(2026, 10, 25, 11, 0, 0, tzinfo=UTC)
-PRE = datetime(2026, 10, 25, 12, 51, 21, tzinfo=UTC)
-EVENT = datetime(2026, 10, 25, 17, 30, 0, tzinfo=UTC)
-POST = datetime(2026, 10, 25, 21, 0, 0, tzinfo=UTC)
+# Clocks are anchored to "now" so a captured observation (whose clocks the server sets to capture time)
+# is always PRE-event (candidates must freeze before the event); the event sits safely in the future.
+NOW = datetime.now(UTC)
+OBSERVED = NOW
+PRE = NOW
+EVENT = NOW + timedelta(days=2)
+POST = NOW + timedelta(days=3)
 THESIS = "usage may rise"
 SOURCES = ("https://example.test/bio",)
 
@@ -64,19 +71,23 @@ def ev(cid):
     return rc.EventIdentity(cid, EVENT)
 
 
-def obs(oid, e, g, seq):
-    return rc.UserObservation(observation_id=oid, observer="owner", entity=e, event=g, thesis=THESIS,
-                              observed_at=OBSERVED, bk_captured=PRE, record_seq=seq, sources=SOURCES)
+def cap(store, e, g, key, observer="owner", thesis=THESIS, sources=SOURCES, acted=False):
+    """Capture an observation through the ONLY sanctioned v3 path and return (result, stored obs)."""
+    r = store.capture_observation(observer_id=observer, entity=e, event=g, thesis=thesis,
+                                  sources=sources, acted=acted, idempotency_key=key)
+    return r, store.load_observation(r["id"])
 
 
-def cand(cid, oid, e, g, seq, sub=rc.SubLabel.BIRTHDAY):
+def cand_for(o, cid, seq, sub=rc.SubLabel.BIRTHDAY):
+    """Build a candidate that BINDS to a stored observation `o` (same subject/event/thesis/sources)."""
     return rc.ResearchCandidate(
-        candidate_id=cid, observation_id=oid, observer="owner",
-        category=rc.Category.PLAYER_MILESTONE_USAGE, sub_label=sub, entity=e, event=g,
-        temporal=rc.TemporalFacts(OBSERVED, g.event_effective, PRE, seq), thesis=THESIS,
-        baseline=baseline(), assumptions=("player active",), eligibility_conditions=("player active",),
-        invalidation_conditions=("player_inactive",), primary_endpoint=endpoint(),
-        pre_event_snapshot={"expected_target_share": 0.18, "nested": {"x": [1, 2]}}, sources=SOURCES)
+        candidate_id=cid, observation_id=o.observation_id, observer=o.observer,
+        category=rc.Category.PLAYER_MILESTONE_USAGE, sub_label=sub, entity=o.entity, event=o.event,
+        temporal=rc.TemporalFacts(o.observed_at, o.event.event_effective, o.bk_captured, seq),
+        thesis=o.thesis, baseline=baseline(), assumptions=("player active",),
+        eligibility_conditions=("player active",), invalidation_conditions=("player_inactive",),
+        primary_endpoint=endpoint(),
+        pre_event_snapshot={"expected_target_share": 0.18, "nested": {"x": [1, 2]}}, sources=o.sources)
 
 
 def measured(oid, cid, seq, observed=0.30):
@@ -88,11 +99,13 @@ def measured(oid, cid, seq, observed=0.30):
 
 
 def seeded_store(path):
+    """Two lineages (obs -> candidate -> measured outcome). Observations are CAPTURED (v3), so their ids
+    are server-generated; candidates/outcomes keep deterministic ids (c0/c1/m0/m1). Returns (store, fk)."""
     s = rcs.ResearchCandidateStore(path)
     for i in range(2):
         e, g = ent(f"p{i}", f"P{i}"), ev(f"g{i}")
-        s.record_observation(obs(f"o{i}", e, g, s.next_seq()), idempotency_key=f"obs-{i}")
-        s.freeze_candidate(cand(f"c{i}", f"o{i}", e, g, s.next_seq()), idempotency_key=f"cand-{i}")
+        _, o = cap(s, e, g, f"obs-{i}")
+        s.freeze_candidate(cand_for(o, f"c{i}", s.next_seq()), idempotency_key=f"cand-{i}")
         s.append_outcome(measured(f"m{i}", f"c{i}", s.next_seq()), idempotency_key=f"out-{i}")
     return s, s.load_candidate("c0").family_key
 
@@ -105,6 +118,11 @@ def seeded_with_finding(path):
                            proposed_status=rc.FindingStatus.INCONCLUSIVE, bk_captured=POST,
                            record_seq=store.next_seq()), idempotency_key="find-0")
     return store, fk
+
+
+def oid_of(store, candidate_id):
+    """The server-generated observation id behind a candidate (observations have no fixed ids in v3)."""
+    return store.load_candidate(candidate_id).observation_id
 
 
 def raw_insert(store, table, base_row, **overrides):
@@ -128,6 +146,8 @@ def test_round_trip():
     with tmp() as d:
         path = os.path.join(d, "r.db")
         store, fk = seeded_store(path)
+        oid0 = oid_of(store, "c0")
+        o0 = store.load_observation(oid0)
         c0, out0 = store.load_candidate("c0"), store.current_outcome("c0")
         summary = rc.summarize_family(fk, store._memory().family_cases(fk))
         finding = rc.evaluate_family(finding_id="f0", endpoint=endpoint(), summary=summary,
@@ -136,9 +156,8 @@ def test_round_trip():
         store.record_finding(finding, idempotency_key="find-0")
         store.close()
         s2 = rcs.ResearchCandidateStore(path)
-        ro = s2.load_observation("o0")
-        check(ro is not None and ro.content_hash == obs("o0", ent("p0", "P0"), ev("g0"),
-              ro.record_seq).content_hash, "observation hash round-trips")
+        ro = s2.load_observation(oid0)
+        check(ro is not None and ro.content_hash == o0.content_hash, "observation hash round-trips")
         check(s2.load_candidate("c0").content_hash == c0.content_hash, "candidate hash round-trips")
         check(s2.current_outcome("c0").outcome_id == out0.outcome_id, "current outcome round-trips")
         check(s2.current_finding(fk).content_hash == finding.content_hash, "finding hash round-trips")
@@ -146,30 +165,35 @@ def test_round_trip():
         s2.close()
 
 
-# =========================================================================== B idempotency
+# =========================================================================== B idempotency (capture)
 def test_idempotency():
-    print("\n[B] idempotency: exact retry -> noop; same key + different content -> conflict")
+    print("\n[B] capture idempotency: exact retry -> noop; same key + different intent -> conflict")
     with tmp() as d:
         store = rcs.ResearchCandidateStore(os.path.join(d, "r.db"))
         e, g = ent("p", "P"), ev("g")
-        r1 = store.record_observation(obs("o", e, g, store.next_seq()), idempotency_key="K")
-        check(r1["status"] == "recorded", "first write recorded")
-        r2 = store.record_observation(obs("o", e, g, r1["record_seq"]), idempotency_key="K")
-        check(r2["status"] == "noop" and r2["record_seq"] == r1["record_seq"], "exact retry -> noop")
-        diff = rc.UserObservation(observation_id="o2", observer="owner", entity=e, event=g,
-                                  thesis="different", observed_at=OBSERVED, bk_captured=PRE,
-                                  record_seq=store.next_seq(), sources=SOURCES)
-        expect_raises(rcs.IdempotencyConflict, lambda: store.record_observation(diff, idempotency_key="K"),
-                      "same key + different content -> conflict (fail closed)")
+        r1, _ = cap(store, e, g, "K")
+        check(r1["status"] == "recorded", "first capture recorded")
+        r2 = store.capture_observation(observer_id="owner", entity=e, event=g, thesis=THESIS,
+                                       sources=SOURCES, idempotency_key="K")
+        check(r2["status"] == "noop" and r2["record_seq"] == r1["record_seq"]
+              and r2["id"] == r1["id"], "exact retry -> noop (same bound record)")
+        expect_raises(rcs.IdempotencyConflict,
+                      lambda: store.capture_observation(observer_id="owner", entity=e, event=g,
+                                                        thesis="different", sources=SOURCES,
+                                                        idempotency_key="K"),
+                      "same key + different intent -> conflict (fail closed)")
         expect_raises(rcs.ResearchStoreError,
-                      lambda: store.record_observation(obs("o3", e, g, 999), idempotency_key="  "),
+                      lambda: store.capture_observation(observer_id="owner", entity=e, event=g,
+                                                        thesis=THESIS, idempotency_key="  "),
                       "a blank idempotency_key is rejected")
+        check(store.conn.execute("SELECT COUNT(*) FROM observation_private").fetchone()[0] == 1,
+              "no extra observation row from the noop / conflict / blank-key attempts")
         store.close()
 
 
 # =========================================================================== C immutability (UPDATE+DELETE)
 def test_immutability():
-    print("\n[C] records are write-once: BOTH UPDATE and DELETE abort on every record table")
+    print("\n[C] records + the registry are write-once: BOTH UPDATE and DELETE abort")
     with tmp() as d:
         store, _ = seeded_with_finding(os.path.join(d, "r.db"))
         for t in ("observation_private", "research_candidate", "candidate_outcome", "evaluated_finding"):
@@ -179,6 +203,10 @@ def test_immutability():
                           f"DELETE on {t} aborts")
         expect_raises(sqlite3.Error, lambda: store.conn.execute("DELETE FROM record_registry"),
                       "DELETE on record_registry aborts")
+        expect_raises(sqlite3.Error, lambda: store.conn.execute(
+            "UPDATE idempotency_registry SET request_fingerprint='x'"), "UPDATE on idempotency_registry aborts")
+        expect_raises(sqlite3.Error, lambda: store.conn.execute("DELETE FROM idempotency_registry"),
+                      "DELETE on idempotency_registry aborts")
         store.close()
 
 
@@ -196,17 +224,19 @@ def test_schema_gate():
                       "unsupported version raises SchemaVersionError")
 
 
-# =========================================================================== E round-trip of finding/current
+# =========================================================================== E current tips (DB-maintained)
 def test_current_tips_db_maintained():
     print("\n[E] current tips are maintained by DB triggers (supersession moves the tip)")
     with tmp() as d:
         store, fk = seeded_store(os.path.join(d, "r.db"))
+        oid0 = oid_of(store, "c0")
         c0 = store.load_candidate("c0")
         corr = rc.supersede_candidate(c0, new_temporal=rc.TemporalFacts(OBSERVED, EVENT, PRE,
                                                                         store.next_seq()),
                                       candidate_id="c0b")
         store.freeze_candidate(corr, idempotency_key="cand-0b")
-        tip = store.conn.execute("SELECT record_seq FROM candidate_current WHERE observation_id='o0'").fetchone()[0]
+        tip = store.conn.execute("SELECT record_seq FROM candidate_current WHERE observation_id=?",
+                                 (oid0,)).fetchone()[0]
         check(tip == corr.temporal.record_seq, "the DB-maintained candidate tip advanced to the successor")
         cases = store._memory().family_cases(fk)
         check(any(c.candidate_id == "c0b" for c, _ in cases)
@@ -239,27 +269,27 @@ def test_registry_binding():
     with tmp() as d:
         path = os.path.join(d, "r.db")
         store = rcs.ResearchCandidateStore(path)
-        e, g = ent("p", "P"), ev("g")
-        store.record_observation(obs("o", e, g, store.next_seq()), idempotency_key="K")
-        base = dict(store.conn.execute("SELECT * FROM observation_private WHERE observation_id='o'").fetchone())
+        _, o = cap(store, ent("p", "P"), ev("g"), "K")
+        base = dict(store.conn.execute(
+            "SELECT * FROM observation_private WHERE observation_id=?", (o.observation_id,)).fetchone())
         s = store.next_seq()   # reserved, NOT registered
         expect_raises(sqlite3.Error, lambda: raw_insert(store, "observation_private", base,
-                      observation_id="o2", idempotency_key="k2", record_seq=s),
+                      observation_id="o2", record_seq=s),
                       "a record with NO matching registry row is rejected (bind trigger)")
         store.conn.execute("INSERT INTO record_registry(record_seq,kind,record_id) VALUES (?,?,?)",
                            (s, "observation", "WRONGID"))
         expect_raises(sqlite3.Error, lambda: raw_insert(store, "observation_private", base,
-                      observation_id="o3", idempotency_key="k3", record_seq=s),
+                      observation_id="o3", record_seq=s),
                       "a registry row with the wrong record_id does not satisfy the bind")
         expect_raises(sqlite3.IntegrityError, lambda: store.conn.execute(
-            "INSERT INTO record_registry(record_seq,kind,record_id) VALUES (?, 'observation', 'o')",
-            (store.next_seq(),)), "same (kind, record_id) under two sequences -> UNIQUE violation")
+            "INSERT INTO record_registry(record_seq,kind,record_id) VALUES (?, 'observation', ?)",
+            (store.next_seq(), o.observation_id)), "same (kind, record_id) under two sequences -> UNIQUE")
         store.close()
     # orphan registry (no matching record) is detected on reopen
     with tmp() as d:
         path = os.path.join(d, "r.db")
         store = rcs.ResearchCandidateStore(path)
-        store.record_observation(obs("o", ent("p", "P"), ev("g"), store.next_seq()), idempotency_key="K")
+        cap(store, ent("p", "P"), ev("g"), "K")
         store.conn.execute("INSERT INTO record_registry(record_seq,kind,record_id) VALUES (?, 'candidate', 'ghost')",
                            (store.next_seq(),))
         store.close()
@@ -272,6 +302,7 @@ def test_lineage_and_one_current_db_enforced():
     print("\n[AO] cross-lineage/stale supersession + duplicate current rejected by the DB itself")
     with tmp() as d:
         store, _ = seeded_store(os.path.join(d, "r.db"))
+        oid0 = oid_of(store, "c0")
         c1seq = store.load_candidate("c1").temporal.record_seq
         base = dict(store.conn.execute("SELECT * FROM research_candidate WHERE candidate_id='c0'").fetchone())
         s = store.next_seq()
@@ -279,13 +310,13 @@ def test_lineage_and_one_current_db_enforced():
                            (s, "candidate", "xlin"))
         # bound to o0 but supersedes o1's candidate -> tip-guard / composite lineage FK reject it
         expect_raises(sqlite3.Error, lambda: raw_insert(store, "research_candidate", base,
-                      candidate_id="xlin", idempotency_key="xlin-k", record_seq=s, observation_id="o0",
+                      candidate_id="xlin", idempotency_key="xlin-k", record_seq=s, observation_id=oid0,
                       supersedes=c1seq),
                       "a candidate bound to o0 superseding o1's candidate is rejected by the DB")
         # a second CURRENT candidate for one observation is a PK violation on candidate_current
         c0seq = base["record_seq"]
         expect_raises(sqlite3.IntegrityError, lambda: store.conn.execute(
-            "INSERT INTO candidate_current(observation_id, record_seq) VALUES ('o0', ?)", (c0seq,)),
+            "INSERT INTO candidate_current(observation_id, record_seq) VALUES (?, ?)", (oid0, c0seq)),
             "a second current candidate for one observation -> candidate_current PK violation")
         store.close()
 
@@ -303,12 +334,13 @@ def test_reopen_reconcile():
     with tmp() as d:
         path = os.path.join(d, "r.db")
         store, _ = seeded_store(path)
+        oid0 = oid_of(store, "c0")
         c0 = store.load_candidate("c0")
         store.freeze_candidate(rc.supersede_candidate(
             c0, new_temporal=rc.TemporalFacts(OBSERVED, EVENT, PRE, store.next_seq()),
             candidate_id="c0b"), idempotency_key="c0b")       # now c0 superseded, c0b current
         c0seq = c0.temporal.record_seq
-        store.conn.execute("UPDATE candidate_current SET record_seq=? WHERE observation_id='o0'", (c0seq,))
+        store.conn.execute("UPDATE candidate_current SET record_seq=? WHERE observation_id=?", (c0seq, oid0))
         store.close()
         expect_raises(rcs.StoreIntegrityError, lambda: rcs.ResearchCandidateStore(path),
                       "a tip pointing at a superseded (non-current) row is detected on reopen")
@@ -329,20 +361,13 @@ def test_foreign_key_check_disables_store():
 
 # =========================================================================== AR durable reservation
 def test_durable_reservation():
-    print("\n[AR] next_seq durably reserves: no reissue across restart; unclaimed = permanent gap")
+    print("\n[AR] durable reservation: distinct values, no reissue of an unclaimed gap, claim-once")
     with tmp() as d:
         path = os.path.join(d, "r.db")
         a = rcs.ResearchCandidateStore(path)
         b = rcs.ResearchCandidateStore(path)
         sa, sb = a.next_seq(), b.next_seq()
-        check(sa == 1 and sb == 2, "two connections reserve DISTINCT durable values (no shared seq)")
-        a.record_observation(obs("oa", ent("pa", "PA"), ev("ga"), sa), idempotency_key="KA")
-        # an already-claimed sequence cannot be claimed again (rejected fail-closed by the monotonic
-        # replay guard and/or the reservation claimed-flag check).
-        expect_raises((rc.SupersessionError, rcs.SequenceError),
-                      lambda: a.record_observation(obs("oa2", ent("pa2", "PA2"), ev("ga2"), sa),
-                                                   idempotency_key="KA2"),
-                      "an already-claimed reservation cannot be claimed again")
+        check(sa == 1 and sb == 2, "two connections reserve DISTINCT durable values (operator next_seq)")
         a.close()
         b.close()
     with tmp() as d:
@@ -352,24 +377,26 @@ def test_durable_reservation():
         s1.close()
         s2 = rcs.ResearchCandidateStore(path)
         check(s2.next_seq() == reserved + 1, "a restart does NOT reissue an unclaimed reservation (durable gap)")
-        # a record_seq that was never reserved cannot be claimed
-        expect_raises(rcs.SequenceError,
-                      lambda: s2.record_observation(obs("ox", ent("px", "PX"), ev("gx"), 10 ** 6),
-                                                    idempotency_key="KX"),
-                      "an unreserved record_seq cannot be claimed")
         s2.close()
+    # claim mechanics on the candidate path (still two-transaction): unreserved + already-claimed rejected
     with tmp() as d:
         store = rcs.ResearchCandidateStore(os.path.join(d, "r.db"))
-        before = counts(store)
+        _, o = cap(store, ent("p", "P"), ev("g"), "K")
         expect_raises(rcs.SequenceError,
-                      lambda: store.record_observation(obs("o", ent("p", "P"), ev("g"), 500),
-                                                       idempotency_key="K"),
-                      "a failed write (unreserved seq) is rejected")
-        check(counts(store) == before, "a failed write leaves NO registry/reservation/record residue")
+                      lambda: store.freeze_candidate(cand_for(o, "cx", 10 ** 6), idempotency_key="cx"),
+                      "an unreserved record_seq cannot be claimed (candidate path)")
+        _, o2 = cap(store, ent("p2", "P2"), ev("g2"), "K2")
+        s = store.next_seq()
+        store.freeze_candidate(cand_for(o, "c_a", s), idempotency_key="c_a")   # claims s
+        before = counts(store)
+        expect_raises((rc.SupersessionError, rcs.SequenceError),
+                      lambda: store.freeze_candidate(cand_for(o2, "c_b", s), idempotency_key="c_b"),
+                      "an already-claimed reservation cannot be claimed again")
+        check(counts(store) == before, "a failed claim leaves NO new registry/reservation/record residue")
         store.close()
 
 
-# =========================================================================== AS pseudonymous + conclusions + path/deletion
+# =========================================================================== AS pseudonymous + conclusions + guards
 def test_pseudonymous_and_guards():
     print("\n[AS] pseudonymous naming, path safety, deletion + conclusions fail closed")
     doc, src = (rcs.__doc__ or "").lower(), rcs._SCHEMA_SQL.lower()
@@ -406,32 +433,39 @@ def test_replay_and_tamper():
         store.conn.execute("INSERT INTO record_registry(record_seq,kind,record_id) VALUES (?, 'observation', 'tamper')",
                            (s,))
         store.conn.execute("UPDATE seq_reservation SET claimed=1 WHERE record_seq=?", (s,))  # bind needs this
-        raw_insert(store, "observation_private", base, observation_id="tamper", idempotency_key="tamper-k",
+        raw_insert(store, "observation_private", base, observation_id="tamper",
                    record_seq=s, content_hash="TAMPERED_HASH")
+        # bind the tampered observation so the reopen reconcile passes and the HASH check is what fails
+        store.conn.execute(
+            "INSERT INTO idempotency_registry(record_kind,observer_id,idempotency_key,"
+            "request_fingerprint,bound_record_seq,bound_record_id,created_at) "
+            "VALUES ('observation', ?, 'tamper-k', ?, ?, 'tamper', ?)",
+            (base["observer"], "0" * 64, s, "2026-10-31T00:00:00+00:00"))
         expect_raises(rcs.StoreIntegrityError, store.replay_validate,
                       "a row whose stored content hash does not recompute is detected on replay")
         store.close()
 
 
-# =========================================================================== AT schema version bump (v1 rejected)
-def test_v1_schema_rejected():
-    print("\n[AT] SCHEMA_VERSION bumped: an earlier v1 store is rejected without mutation")
-    check(rcs.SCHEMA_VERSION >= 2, "SCHEMA_VERSION advanced past 1 for the incompatible schema change")
-    with tmp() as d:
-        path = os.path.join(d, "r.db")
-        rcs.ResearchCandidateStore(path).close()
-        raw = sqlite3.connect(path)
-        raw.execute("UPDATE schema_meta SET version=1 WHERE id=1")   # simulate an earlier v1 store
-        raw.commit()
-        before = [r[0] for r in raw.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY sql")]
-        raw.close()
-        expect_raises(rcs.SchemaVersionError, lambda: rcs.ResearchCandidateStore(path),
-                      "a v1 schema is rejected (fail closed, no migration)")
-        raw2 = sqlite3.connect(path)
-        after = [r[0] for r in raw2.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY sql")]
-        v = raw2.execute("SELECT version FROM schema_meta WHERE id=1").fetchone()[0]
-        raw2.close()
-        check(before == after and v == 1, "the rejected v1 open mutated nothing")
+# =========================================================================== AT schema version bump (v1/v2 rejected)
+def test_v_prior_schema_rejected():
+    print("\n[AT] SCHEMA_VERSION bumped: earlier v1/v2 stores are rejected without mutation")
+    check(rcs.SCHEMA_VERSION >= 3, "SCHEMA_VERSION advanced to 3 for the registry schema change")
+    for prior in (1, 2):
+        with tmp() as d:
+            path = os.path.join(d, "r.db")
+            rcs.ResearchCandidateStore(path).close()
+            raw = sqlite3.connect(path)
+            raw.execute("UPDATE schema_meta SET version=? WHERE id=1", (prior,))
+            raw.commit()
+            before = [r[0] for r in raw.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY sql")]
+            raw.close()
+            expect_raises(rcs.SchemaVersionError, lambda: rcs.ResearchCandidateStore(path),
+                          f"a v{prior} schema is rejected (fail closed, no migration)")
+            raw2 = sqlite3.connect(path)
+            after = [r[0] for r in raw2.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY sql")]
+            v = raw2.execute("SELECT version FROM schema_meta WHERE id=1").fetchone()[0]
+            raw2.close()
+            check(before == after and v == prior, f"the rejected v{prior} open mutated nothing")
 
 
 # =========================================================================== AU reservation integrity bidirectional
@@ -453,13 +487,13 @@ def test_reservation_integrity_bidirectional():
 
 if __name__ == "__main__":
     print("=" * 80)
-    print("RESEARCH CANDIDATE STORE — SLICE 2B QC (DB-enforced ledger, synthetic fixtures)")
+    print("RESEARCH CANDIDATE STORE — SLICE 2B/v3 QC (DB-enforced ledger, synthetic fixtures)")
     print("=" * 80)
     for t in (test_round_trip, test_idempotency, test_immutability, test_schema_gate,
               test_current_tips_db_maintained, test_unsupported_schema_zero_mutation,
               test_registry_binding, test_lineage_and_one_current_db_enforced, test_reopen_reconcile,
               test_foreign_key_check_disables_store, test_durable_reservation,
-              test_pseudonymous_and_guards, test_replay_and_tamper, test_v1_schema_rejected,
+              test_pseudonymous_and_guards, test_replay_and_tamper, test_v_prior_schema_rejected,
               test_reservation_integrity_bidirectional):
         t()
     print("\n" + "=" * 80)

@@ -81,8 +81,9 @@ def test_backup_restore_round_trip():
         res = r.conn.execute("SELECT claimed FROM seq_reservation WHERE record_seq=?", (gap,)).fetchone()
         check(res is not None and int(res["claimed"]) == 0, "the unclaimed-reservation GAP is preserved")
         check(r.next_seq() == gap + 2, "next_seq on the restored store skips the gap (no reissue)")
-        noop = r.record_observation(sq.obs("o0", sq.ent("p0", "P0"), sq.ev("g0"), 1), idempotency_key="obs-0")
-        check(noop["status"] == "noop", "idempotency preserved (same key+content -> noop) after restore")
+        noop = r.capture_observation(observer_id="owner", entity=sq.ent("p0", "P0"), event=sq.ev("g0"),
+                                     thesis=sq.THESIS, sources=sq.SOURCES, idempotency_key="obs-0")
+        check(noop["status"] == "noop", "idempotency preserved (same key+intent -> noop) after restore")
         check(r.replay_validate()["candidates"] == 2, "restored store fully replays + reconciles")
         r.close()
 
@@ -399,13 +400,20 @@ def test_fail_closed_semantic():
     with tmp() as d:
         live = os.path.join(d, "live.db")
         store, _, _ = seeded_with_gap_and_finding(live)
-        # tamper: a row that passes bind (registry + claimed reservation) but whose stored hash is wrong
+        # tamper: a row that passes bind (registry + claimed reservation + idempotency binding) but
+        # whose stored hash is wrong, so the HASH check (not the unbound-observation reconcile) is the
+        # thing that fails validation.
         s = store.next_seq()
         store.conn.execute("INSERT INTO record_registry(record_seq,kind,record_id) VALUES (?, 'observation', 'tamper')", (s,))
         store.conn.execute("UPDATE seq_reservation SET claimed=1 WHERE record_seq=?", (s,))
         base = dict(store.conn.execute("SELECT * FROM observation_private LIMIT 1").fetchone())
-        sq.raw_insert(store, "observation_private", base, observation_id="tamper", idempotency_key="tamper-k",
+        sq.raw_insert(store, "observation_private", base, observation_id="tamper",
                       record_seq=s, content_hash="TAMPERED")
+        store.conn.execute(
+            "INSERT INTO idempotency_registry(record_kind,observer_id,idempotency_key,"
+            "request_fingerprint,bound_record_seq,bound_record_id,created_at) "
+            "VALUES ('observation', ?, 'tamper-k', ?, ?, 'tamper', ?)",
+            (base["observer"], "0" * 64, s, "2026-10-31T00:00:00+00:00"))
         store.close()
         expect_raises(rcs.StoreIntegrityError, lambda: rcs.ResearchCandidateStore.validate_store(live),
                       "a tampered (hash-mismatch) store fails validation (would never be accepted as a backup)")

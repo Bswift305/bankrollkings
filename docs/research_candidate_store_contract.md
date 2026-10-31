@@ -1,6 +1,13 @@
 # Research Candidate — Dark-Store Contract (SLICE 2A → Rev 2; 2B AUTHORIZED)
 
-**Status: Rev 2 — reviewer decisions frozen; 2B authorized under the boundary in §4.** Date 2026-10-27.
+**Status: Rev 2 — reviewer decisions frozen; 2B/2C BUILT; schema advanced to v3.** Date 2026-10-27
+(v3 addendum 2026-10-31). **v3 addendum:** observation idempotency moved from the per-table
+`observation_private.idempotency_key UNIQUE` to the governed `idempotency_registry` keyed on a REQUEST
+FINGERPRINT (persisted intent, excluding seq/clocks), written only through `capture_observation`;
+`observation_private` lost its legacy key; candidate/outcome/finding keep theirs; reopen reconciles
+observation↔registry both directions; `SCHEMA_VERSION`=3 rejects v1/v2 with no migration. See
+`docs/research_candidate_idempotency_registry_design.md` (Rev 2.1, BUILT) and
+`qc_research_candidate_idempotency.py`.
 Rev 1 was the audit + recommendation; Rev 2 freezes the engine choice and corrects the privacy model,
 idempotency, replay, deletion, and path-safety so they cannot conflict with the ledger's transactional
 guarantees.
@@ -130,7 +137,8 @@ Mapping to the ten required areas:
    supersession is lineage-bound (same `observation_id`, prior must be current); outcomes form a version
    chain with one current; findings supersede by `record_seq`. FKs + the Slice-1 guards enforce it.
 4. **Content hashes + schema version.** `schema_meta.version = SCHEMA_VERSION`; unknown → fail closed, no
-   auto-migration. `SCHEMA_VERSION` is **2** (the durable-reservation + composite-FK + trigger schema); a v1 store is
+   auto-migration. `SCHEMA_VERSION` is **3** (durable-reservation + composite-FK + trigger schema + the v3
+   idempotency_registry); a v1/v2 store is
    structurally incompatible and fails closed on open (nothing deployed, so no migration). Canonical serialization (`canonical_json`) keeps hashes stable.
 5. **Crash-safe / atomic transactions (two-transaction contract).** `next_seq()` reserves the
    sequence in its OWN committed transaction; the record write is a SEPARATE `BEGIN IMMEDIATE` txn
