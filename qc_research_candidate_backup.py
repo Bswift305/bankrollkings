@@ -208,19 +208,13 @@ def test_directory_fsync_after_publish():
               "_fsync_dir was invoked on the parent dir AFTER the dest was published (dest already existed)")
 
 
-def _expect_cleanup_error(fn, dest, msg):
-    try:
-        fn()
-        check(False, msg + "  (no exception, expected CleanupError)")
-    except rcs.CleanupError as e:
-        check(dest in str(e), msg)
-    except Exception as e:  # noqa: BLE001
-        check(False, msg + f"  (got {type(e).__name__}: {e})")
+def _blow(*_a, **_k):
+    raise OSError("forced OS failure")
 
 
-# =========================================================================== B6 cleanup failure surfaced
-def test_cleanup_failure_surfaces_unsafe_path():
-    print("\n[B6] when quarantine cannot durably clean up, a dedicated CleanupError names the path")
+# =========================================================================== B6 error-path cleanup aggregation
+def test_error_path_cleanup_aggregates():
+    print("\n[B6] a failed restore where temp+dest cleanup ALSO fail -> one CleanupError naming ALL, chained")
     check(issubclass(rcs.CleanupError, rcs.ResearchStoreError), "CleanupError is a dedicated store error")
     with tmp() as d:
         live, bkp, dest = (os.path.join(d, n) for n in ("live.db", "snap.db", "restored.db"))
@@ -228,7 +222,7 @@ def test_cleanup_failure_surfaces_unsafe_path():
         store.backup(bkp)
         store.close()
         real_validate = rcs.ResearchCandidateStore.validate_store
-        real_quar = rcs._quarantine
+        real_rm, real_rp = os.remove, os.replace
         n = {"c": 0}
 
         def flaky(path):
@@ -238,74 +232,77 @@ def test_cleanup_failure_surfaces_unsafe_path():
             return real_validate(path)
 
         rcs.ResearchCandidateStore.validate_store = staticmethod(flaky)
-        rcs._quarantine = lambda path: (_ for _ in ()).throw(   # force removal+rename to fail
-            rcs.CleanupError(f"could not remove or rename the invalid destination; UNSAFE DB remains at: {path}"))
+        rcs.os.remove = _blow                     # force removal AND rename to fail for temp AND dest
+        rcs.os.replace = _blow
         try:
-            _expect_cleanup_error(lambda: rcs.ResearchCandidateStore.restore(bkp, dest), dest,
-                                  "restore surfaces a CleanupError naming the unsafe remaining path")
+            try:
+                rcs.ResearchCandidateStore.restore(bkp, dest)
+                check(False, "expected CleanupError")
+            except rcs.CleanupError as e:
+                msg = str(e)
+                check(dest in msg, "the aggregated CleanupError names the unsafe destination")
+                check(".tmp" in msg, "the aggregated CleanupError also names the unsafe temp copy")
+                check(isinstance(e.__cause__, rcs.StoreIntegrityError),
+                      "the original operation error is retained as the cause")
+            except Exception as e:  # noqa: BLE001
+                check(False, f"expected CleanupError, got {type(e).__name__}: {e}")
         finally:
             rcs.ResearchCandidateStore.validate_store = real_validate
-            rcs._quarantine = real_quar
-            if os.path.exists(dest):
-                os.remove(dest)
+            rcs.os.remove, rcs.os.replace = real_rm, real_rp
 
 
-# =========================================================================== B7/B8 post-link fsync failure
+# =========================================================================== B7 post-link fsync failure (not durable)
 def test_post_link_fsync_failure():
-    print("\n[B7/B8] a post-link directory-fsync failure quarantines the dest (backup AND restore)")
+    print("\n[B7] post-link dir-fsync failure -> cleanup can't prove durable -> CleanupError names dest+temp")
     real_fsd = rcs._fsync_dir
-    rcs._fsync_dir = lambda p: (_ for _ in ()).throw(OSError("forced directory fsync failure"))
     try:
-        with tmp() as d:                                   # backup
-            live, dest = os.path.join(d, "live.db"), os.path.join(d, "snap.db")
-            store, _, _ = seeded_with_gap_and_finding(live)
-            _expect_cleanup_error(lambda: store.backup(dest), dest,
-                                  "backup: link ok + forced dir-fsync failure -> CleanupError names the dest")
-            check(not os.path.exists(dest), "backup: no final/partial destination is left behind")
-            store.close()
-        with tmp() as d:                                   # restore
+        with tmp() as d:
             live, bkp, dest = (os.path.join(d, n) for n in ("live.db", "snap.db", "restored.db"))
-            rcs._fsync_dir = real_fsd                       # a clean backup first
-            store, _, _ = seeded_with_gap_and_finding(live)
+            store, _, _ = seeded_with_gap_and_finding(live)   # clean backup with real fsync
             store.backup(bkp)
             store.close()
-            rcs._fsync_dir = lambda p: (_ for _ in ()).throw(OSError("forced directory fsync failure"))
-            _expect_cleanup_error(lambda: rcs.ResearchCandidateStore.restore(bkp, dest), dest,
-                                  "restore: link ok + forced dir-fsync failure -> CleanupError names the dest")
-            check(not os.path.exists(dest), "restore: no restored destination is left behind")
+            rcs._fsync_dir = _blow                            # now every dir-fsync fails
+            try:
+                rcs.ResearchCandidateStore.restore(bkp, dest)
+                check(False, "expected CleanupError")
+            except rcs.CleanupError as e:
+                check(dest in str(e) and "durable" in str(e).lower(),
+                      "CleanupError reports non-durable disposal and names the dest")
+                check(isinstance(e.__cause__, OSError), "the original (dir-fsync) error is the cause")
+            except Exception as e:  # noqa: BLE001
+                check(False, f"expected CleanupError, got {type(e).__name__}: {e}")
+            check(not os.path.exists(dest), "the dest was actually removed (just not proven durable)")
     finally:
         rcs._fsync_dir = real_fsd
 
 
-# =========================================================================== B9 quarantine durability + temp
-def test_quarantine_durability_and_temp():
-    print("\n[B9] quarantine does not claim durable cleanup if dir-sync fails; temp cleanup is surfaced")
-    real_fsd = rcs._fsync_dir
+# =========================================================================== B8 _try_cleanup unit (3 outcomes)
+def test_try_cleanup_outcomes():
+    print("\n[B8] _try_cleanup: durable-removed vs failed(no-remove/rename) vs failed(not-durable)")
     with tmp() as d:
-        victim = os.path.join(d, "victim.db")
-        with open(victim, "wb") as f:
-            f.write(b"x")
-        rcs._fsync_dir = lambda p: (_ for _ in ()).throw(OSError("forced dir fsync failure"))
-        try:
-            _expect_cleanup_error(lambda: rcs._quarantine(victim), victim,
-                                  "_quarantine: removed-but-dir-sync-failed is reported, not claimed durable")
-        finally:
-            rcs._fsync_dir = real_fsd
-        check(not os.path.exists(victim), "the victim was actually removed (just not proven durable)")
-    with tmp() as d:
-        sens = os.path.join(d, "sensitive.tmp")
-        with open(sens, "wb") as f:
-            f.write(b"SENSITIVE DB BYTES")
+        p = os.path.join(d, "f.db")
+        open(p, "wb").close()
+        status, _ = rcs._try_cleanup(p)
+        check(status == "removed" and not os.path.exists(p), "a clean removal reports 'removed'")
+        open(p, "wb").close()
         real_rm, real_rp = os.remove, os.replace
-        rcs.os.remove = lambda p: (_ for _ in ()).throw(OSError("boom"))
-        rcs.os.replace = lambda a, b: (_ for _ in ()).throw(OSError("boom"))
+        rcs.os.remove, rcs.os.replace = _blow, _blow
         try:
-            _expect_cleanup_error(lambda: rcs._discard_temp(sens, surface=True), sens,
-                                  "a sensitive temp DB copy that cannot be removed/quarantined is surfaced")
+            status, detail = rcs._try_cleanup(p)
         finally:
             rcs.os.remove, rcs.os.replace = real_rm, real_rp
-            if os.path.exists(sens):
-                os.remove(sens)
+        check(status == "failed" and p in detail, "neither remove nor rename -> 'failed' names the path")
+        os.remove(p)
+        open(p, "wb").close()
+        real_fsd = rcs._fsync_dir
+        rcs._fsync_dir = _blow
+        try:
+            status, detail = rcs._try_cleanup(p)
+        finally:
+            rcs._fsync_dir = real_fsd
+        check(status == "failed" and "durable" in detail.lower(),
+              "removed-but-dir-sync-failed -> 'failed' (not proven durable)")
+        check(not os.path.exists(p), "the file was actually removed")
 
 
 # =========================================================================== C fail closed on bad backups
@@ -397,8 +394,8 @@ if __name__ == "__main__":
     print("=" * 80)
     for t in (test_backup_restore_round_trip, test_never_overwrites, test_validation_is_read_only,
               test_post_publish_validation_quarantines, test_permissions, test_directory_fsync_after_publish,
-              test_cleanup_failure_surfaces_unsafe_path, test_post_link_fsync_failure,
-              test_quarantine_durability_and_temp, test_fail_closed_bad_backups,
+              test_error_path_cleanup_aggregates, test_post_link_fsync_failure,
+              test_try_cleanup_outcomes, test_fail_closed_bad_backups,
               test_fail_closed_semantic, test_no_journal_coupling):
         t()
     print("\n" + "=" * 80)

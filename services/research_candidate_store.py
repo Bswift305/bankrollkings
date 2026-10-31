@@ -758,12 +758,10 @@ class ResearchCandidateStore:
             _link_no_overwrite(tmp, dest_path)                  # atomic create-if-absent (no overwrite)
             published = True                                    # OWNERSHIP the instant the link succeeds
             _fsync_dir(os.path.dirname(os.path.abspath(dest_path)))   # directory-durable publish (POSIX)
-        except Exception:
-            _discard_temp(tmp, surface=False)                   # error path: never leave a readable temp DB
-            if published:
-                _quarantine(dest_path)                          # raises CleanupError if not durably cleaned
-            raise
-        _discard_temp(tmp, surface=True)      # success: surface a temp-cleanup failure (sensitive DB copy)
+        except Exception as exc:
+            # clean up the temp copy AND (if owned) the destination, aggregating every failure.
+            _finish_cleanup(exc, [tmp, dest_path] if published else [tmp])
+        _cleanup_temp_or_raise(tmp)           # success: surface a temp-cleanup failure (sensitive DB copy)
         return dest_path
 
     @staticmethod
@@ -786,14 +784,11 @@ class ResearchCandidateStore:
             published = True                                    # OWNERSHIP the instant the link succeeds
             _fsync_dir(os.path.dirname(os.path.abspath(dest_path)))   # directory-durable publish (POSIX)
             ResearchCandidateStore.validate_store(dest_path)    # the restored store must validate too
-        except Exception:
-            _discard_temp(tmp, surface=False)                   # error path: never leave a readable temp DB
-            if published:
-                # we created dest via the atomic publish (never a pre-existing one) -> quarantine it.
-                # _quarantine raises CleanupError (naming the path) if it can't prove durable removal.
-                _quarantine(dest_path)
-            raise
-        _discard_temp(tmp, surface=True)      # success: surface a temp-cleanup failure (sensitive DB copy)
+        except Exception as exc:
+            # clean up the temp copy AND (if owned) the just-published destination, aggregating every
+            # failure; a pre-existing dest is never owned (link refused) so it is never touched.
+            _finish_cleanup(exc, [tmp, dest_path] if published else [tmp])
+        _cleanup_temp_or_raise(tmp)           # success: surface a temp-cleanup failure (sensitive DB copy)
         return dest_path
 
     # deletion NOT implemented in 2B ---------------------------------------
@@ -842,47 +837,59 @@ def _fsync_dir(path: str) -> None:
         os.close(fd)
 
 
-def _quarantine(path: str) -> None:
-    """Remove an invalid published destination (or atomically rename it to a clearly INVALID name if
-    removal fails), then fsync the parent dir. Raises CleanupError — NEVER returns success — if the path
-    can be neither removed nor renamed, OR if it was removed/renamed but the parent-directory sync failed
-    (so durable cleanup is only ever reported when it actually happened)."""
-    outcome = None
+def _try_cleanup(path: str) -> tuple:
+    """Dispose of one sensitive path (an invalid published dest or a temp DB copy) DURABLY. Removes it,
+    else atomically renames it to a clearly ORPHAN name; on POSIX then fsyncs the parent dir so the
+    removal/rename is durable. Returns (status, detail) and NEVER raises:
+      * ("removed", ...)      -> gone and (POSIX) directory-durable — nothing left behind;
+      * ("quarantined", path) -> could not remove but RENAMED to the given observable ORPHAN path;
+      * ("failed", detail)    -> could neither remove nor rename, OR removed/renamed but the parent-dir
+                                 sync failed (so disposal is NOT proven durable) — an unsafe path remains.
+    Quarantined/failed are both surfaced by the caller; durable disposal is reported only as 'removed'."""
+    if not os.path.lexists(path):
+        return ("removed", f"{path} (already absent)")
+    renamed = None
     try:
         os.remove(path)
-        outcome = "removed"
     except OSError:
         try:
-            renamed = path + f".INVALID-{uuid.uuid4().hex}"
+            renamed = path + f".ORPHAN-{uuid.uuid4().hex}"
             os.replace(path, renamed)
-            outcome = "renamed to " + renamed
         except OSError:
-            raise CleanupError(
-                f"could not remove or rename the invalid destination; an UNSAFE database remains at: {path}")
+            return ("failed", f"could not remove or rename; UNSAFE file remains at {path}")
     try:
         _fsync_dir(os.path.dirname(os.path.abspath(path)))
     except OSError:
+        tgt = renamed or path
+        return ("failed", f"{'renamed to ' + renamed if renamed else path + ' removed'} but the "
+                          f"parent-directory sync failed, so disposal is NOT proven durable: {tgt}")
+    if renamed:
+        return ("quarantined", renamed)
+    return ("removed", f"{path} removed")
+
+
+def _finish_cleanup(primary_exc: BaseException, paths: list) -> None:
+    """ERROR-PATH disposal: clean up EVERY path (temp copy + any owned destination), collecting all
+    cleanup problems rather than stopping at the first. If any path was not cleanly, durably removed
+    (failed OR quarantined-to-ORPHAN), raise a single CleanupError naming every affected path, chained
+    from the original operation error. Otherwise re-raise the original error. Never silent."""
+    unsafe = []
+    for p in paths:
+        status, detail = _try_cleanup(p)
+        if status != "removed":
+            unsafe.append(f"[{status}] {detail}")
+    if unsafe:
         raise CleanupError(
-            f"the invalid destination was {outcome} but the parent-directory sync failed, so its removal "
-            f"is NOT proven durable: {path}")
+            "operation failed AND cleanup left unsafe path(s): " + "; ".join(unsafe)) from primary_exc
+    raise primary_exc
 
 
-def _discard_temp(path: str, *, surface: bool) -> None:
-    """Dispose of a sensitive temporary DB copy: remove it, else atomically rename it to a clearly ORPHAN
-    name (never silently leave a readable `.tmp` DB behind). On the success path (`surface=True`) a
-    failure to do either is raised as CleanupError; on an error path (`surface=False`) it is a
-    best-effort explicit quarantine that must not mask the primary error."""
-    try:
-        os.remove(path)
-        return
-    except OSError:
-        pass
-    try:
-        os.replace(path, path + f".ORPHAN-{uuid.uuid4().hex}")
-        return
-    except OSError:
-        if surface:
-            raise CleanupError(f"could not remove or quarantine a sensitive temp DB copy: {path}")
+def _cleanup_temp_or_raise(tmp: str) -> None:
+    """SUCCESS-PATH temp disposal: a sensitive temp DB copy that is not cleanly, durably removed
+    (failed OR only quarantined) is surfaced as CleanupError naming it — never silently abandoned."""
+    status, detail = _try_cleanup(tmp)
+    if status != "removed":
+        raise CleanupError(f"operation completed but the temp DB copy was not cleanly removed: [{status}] {detail}")
 
 
 def _lock_down(path: str) -> None:
