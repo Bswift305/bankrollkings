@@ -50546,8 +50546,10 @@ def _research_candidate_is_owner(user):
 
 @app.route('/research-candidate/observe', methods=['POST'])
 def research_candidate_observe():
-    # OFF (default) -> the feature does not exist. Unauthorized is ALSO 404 (dark). CSRF is enforced by the
-    # global before_request hook for this POST.
+    # OFF (default) -> the feature does not exist. This is the FIRST executable statement, so an OFF request
+    # does ZERO work (no correlation id generated, nothing imported). CSRF is enforced globally.
+    if not RESEARCH_CANDIDATE_ENABLED:
+        abort(404)
     import uuid as _uuid
     corr = _uuid.uuid4().hex[:12]
 
@@ -50559,16 +50561,22 @@ def research_candidate_observe():
         except Exception:
             pass
 
-    if not RESEARCH_CANDIDATE_ENABLED:
-        abort(404)
     user = get_current_user()
-    if not _research_candidate_is_owner(user):
+    if not _research_candidate_is_owner(user):      # unauthorized is ALSO 404 (dark); is_admin alone -> 404
         _rclog(404, 'not_owner')
         abort(404)
+    clen = request.content_length                   # bound the RAW body BEFORE parsing
+    if clen is None or clen > 8192:
+        _rclog(413, 'body_size')
+        return jsonify({'ok': False, 'error': 'request too large'}), 413
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         _rclog(422, 'not_json')
         return jsonify({'ok': False, 'error': 'JSON body required'}), 422
+    allowed = {'player_ref', 'event_id', 'thesis', 'idempotency_key', 'acted', 'sources'}
+    if set(data.keys()) - allowed:                  # reject keys outside the frozen observation-input set
+        _rclog(422, 'unknown_field')
+        return jsonify({'ok': False, 'error': 'unknown field'}), 422
     # STRICT types: never str()-coerce a number/dict/list into a governed field.
     for fld in ('player_ref', 'event_id', 'thesis', 'idempotency_key'):
         if not isinstance(data.get(fld), str):
@@ -50603,20 +50611,28 @@ def research_candidate_observe():
     if not isinstance(observer_id, str) or not observer_id.strip():
         _rclog(422, 'no_account')
         return jsonify({'ok': False, 'error': 'no account id'}), 422
-    from services import research_candidate_boundary as rcb   # lazy: ON-path only
+    try:                                                 # guard the lazy import -> ImportError becomes 503
+        from services import research_candidate_boundary as rcb
+    except Exception:
+        _rclog(503, 'import')
+        return jsonify({'ok': False, 'error': 'unavailable'}), 503
     try:
         result = rcb.capture(observer_id=observer_id.strip(), player_ref=player_ref, event_id=event_id,
-                             thesis=thesis, sources=sources, acted=acted, idempotency_key=idempotency_key)
+                             thesis=thesis, sources=sources, acted=acted, idempotency_key=idempotency_key,
+                             correlation_id=corr)
     except rcb.Conflict:
         _rclog(409, 'conflict')
         return jsonify({'ok': False, 'error': 'conflict'}), 409
-    except rcb.InvalidInput as exc:                     # user-selection abstention / input rejection
+    except rcb.InvalidInput as exc:                     # user-selection abstention / input rejection -> 422
         code = (exc.args[0] if exc.args else 'invalid')
         _rclog(422, str(code))
         return jsonify({'ok': False, 'reason': str(code)}), 422
-    except rcb.BoundaryError as exc:                    # ConfigError / Unavailable (incl. artifact-health) -> calm 503
+    except rcb.BoundaryError as exc:                    # ConfigError / Unavailable (incl. artifact-health) -> 503
         code = (exc.args[0] if exc.args else exc.__class__.__name__)
         _rclog(503, str(code))
+        return jsonify({'ok': False, 'error': 'unavailable'}), 503
+    except Exception:                                   # any other unexpected failure -> sanitized 503, never 500
+        _rclog(503, 'unexpected')
         return jsonify({'ok': False, 'error': 'unavailable'}), 503
     _rclog(200, result.get('status'))
     return jsonify({'ok': True, 'status': result['status'], 'id': result['id']}), 200

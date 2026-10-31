@@ -323,13 +323,131 @@ def test_route_level_concurrency():
     check(results["a"][1]["id"] == results["b"][1]["id"], "both return the same bound record id")
 
 
+def test_off_no_corr_generation():
+    print("\n[L] OFF: the route does ZERO work before the flag check (no correlation id generated)")
+    import uuid as _uuid
+    _write_artifacts()
+    appmod, c = _on_client()
+    calls = {"n": 0}
+    real = _uuid.uuid4
+    _uuid.uuid4 = lambda: (calls.__setitem__("n", calls["n"] + 1) or real())
+    try:
+        appmod.RESEARCH_CANDIDATE_ENABLED = False
+        r_off = _post(c, _body(idempotency_key="Z1"))
+        off_calls = calls["n"]
+        appmod.RESEARCH_CANDIDATE_ENABLED = True
+        before = calls["n"]
+        r_on = _post(c, _body(idempotency_key="Z2"))
+    finally:
+        _uuid.uuid4 = real
+        appmod.RESEARCH_CANDIDATE_ENABLED = True
+    check(r_off.status_code == 404 and off_calls == 0,
+          "an OFF request 404s and NEVER generates a correlation id (uuid4 not called)")
+    check(r_on.status_code == 200 and calls["n"] > before,
+          "an ON request does generate a correlation id (the spy is wired)")
+
+
+def test_on_body_and_unknown_field_limits():
+    print("\n[M] ON: an oversized raw body -> 413 (bounded before parsing); an unknown field -> 422")
+    _write_artifacts()
+    appmod, c = _on_client()
+    r_big = _post(c, _body(thesis="x" * 9000, idempotency_key="B1"))
+    check(r_big.status_code == 413, "a raw body over the limit -> 413 (before JSON parsing)")
+    bad = _body(idempotency_key="B2")
+    bad["surprise"] = 1
+    r_unk = _post(c, bad)
+    check(r_unk.status_code == 422 and "unknown" in str(r_unk.get_json()).lower(),
+          "a key outside the frozen observation-input set -> 422")
+
+
+def test_on_unexpected_capture_error_503():
+    print("\n[N] ON: an unexpected boundary/capture error is contained as a sanitized 503 (never 500)")
+    import services.research_candidate_boundary as rcb
+    _write_artifacts()
+    appmod, c = _on_client()
+    saved = rcb.capture
+    rcb.capture = lambda **k: (_ for _ in ()).throw(RuntimeError("unexpected"))
+    try:
+        r = _post(c, _body(idempotency_key="N1"))
+    finally:
+        rcb.capture = saved
+    check(r.status_code == 503 and r.get_json() == {"ok": False, "error": "unavailable"},
+          "an unexpected error -> sanitized 503, never a 500")
+
+
+def test_close_failure_logged_with_corr():
+    print("\n[O] ON: a store close() failure logs corr/op/status/type, preserves the result, leaks no content")
+    import logging
+    import services.research_candidate_store as rcs_store
+    _write_artifacts()
+    appmod, c = _on_client()
+    records = []
+
+    class _Cap(logging.Handler):
+        def emit(self, rec):
+            records.append(rec.getMessage())
+
+    lg = logging.getLogger("research_candidate.boundary")
+    h = _Cap()
+    lg.addHandler(h)
+    lg.setLevel(logging.WARNING)
+    saved = rcs_store.ResearchCandidateStore.close
+    rcs_store.ResearchCandidateStore.close = lambda self: (_ for _ in ()).throw(OSError("close boom"))
+    try:
+        r = _post(c, _body(thesis="SECRET_CLOSE_THESIS", idempotency_key="O1"))
+    finally:
+        rcs_store.ResearchCandidateStore.close = saved
+        lg.removeHandler(h)
+    check(r.status_code == 200, "the committed result is preserved despite the close failure")
+    blob = "||".join(records)
+    check("status=close_failed" in blob and "op=observe" in blob and "corr=" in blob,
+          "the close failure is logged with corr + op + coarse status + error type")
+    check("SECRET_CLOSE_THESIS" not in blob, "the close-failure log carries no content")
+
+
+def test_permissions_live_sidecars():
+    print("\n[P] ON: live WAL sidecars (-wal/-shm) are also 0600 on POSIX (re-locked after the write)")
+    import sqlite3
+    import stat as _st
+    import uuid as _uuid
+    _write_artifacts()
+    appmod, c = _on_client()
+    db = os.path.join(ROOT, f"side_{_uuid.uuid4().hex}.db")
+    saved = os.environ.get("BK_RESEARCH_CANDIDATE_DB_PATH")
+    os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = db
+    hold = None
+    try:
+        r1 = _post(c, _body(idempotency_key="S1"))      # creates the DB (WAL)
+        check(r1.status_code == 200, "first capture creates the DB")
+        hold = sqlite3.connect(db)                       # keep a connection so -wal/-shm persist
+        hold.execute("PRAGMA journal_mode=WAL")
+        hold.execute("SELECT 1 FROM schema_meta")
+        r2 = _post(c, _body(idempotency_key="S2"))      # a second write; sidecars live + re-locked
+        check(r2.status_code == 200, "second capture writes with the WAL held open")
+        if os.name != "nt":
+            present = [db + s for s in ("", "-wal", "-shm") if os.path.exists(db + s)]
+            check(any(p.endswith("-wal") or p.endswith("-shm") for p in present),
+                  "at least one live WAL sidecar is present during the check")
+            offenders = [p for p in present if _st.S_IMODE(os.stat(p).st_mode) != 0o600]
+            check(not offenders, f"every present DB/WAL/SHM file is 0600 (offenders: {offenders})")
+        else:
+            check(os.path.exists(db), "DB present (sidecar perms are best-effort on Windows)")
+    finally:
+        if hold is not None:
+            hold.close()
+        os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = saved
+
+
 if __name__ == "__main__":
     print("=" * 80)
     print("RESEARCH CANDIDATE — 2D1 OBSERVATION ROUTE + BOUNDARY QC (dark, local)")
     print("=" * 80)
-    for t in (test_off_zero_import_and_404, test_on_success_idempotency_conflict, test_on_authz_and_csrf,
+    for t in (test_off_zero_import_and_404, test_off_no_corr_generation,
+              test_on_success_idempotency_conflict, test_on_authz_and_csrf,
               test_on_input_and_abstain_tiers, test_on_misconfig_503, test_on_artifact_health_503,
-              test_on_invalid_json_types_422, test_on_unexpected_error_503, test_on_permissions,
+              test_on_invalid_json_types_422, test_on_body_and_unknown_field_limits,
+              test_on_unexpected_error_503, test_on_unexpected_capture_error_503,
+              test_on_permissions, test_permissions_live_sidecars, test_close_failure_logged_with_corr,
               test_logs_no_sensitive_values, test_route_level_concurrency):
         t()
     print("\n" + "=" * 80)

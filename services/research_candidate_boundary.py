@@ -1,9 +1,10 @@
 """Research Candidate — 2D1 observation-only application boundary (DARK / LOCAL).
 
-The ONLY module `app.py` imports for the dark owner-only capture route. It is deliberately tiny and
-dependency-free at import: it imports ONLY `os` at module top, so when the flag is OFF (the default) the
-store, the adapter, pandas and sqlite are NEVER imported and nothing is read, opened, or written. The
-store + adapter are imported LAZILY inside `capture()`, which the route reaches only when the flag is ON.
+The ONLY module `app.py` imports for the dark owner-only capture route. Its import is tiny and uses the
+STANDARD LIBRARY ONLY (os, stat, logging, typing) — the meaningful invariant is that NO store/adapter/
+pandas/sqlite is imported while OFF. The route reaches this module lazily, and the store + adapter are
+imported LAZILY (and guarded) inside `capture()`, which runs only when the flag is ON — so with the flag
+OFF (the default) nothing research-candidate is imported and nothing is read, opened, or written.
 
 Boundaries (design: docs/research_candidate_2d_integration_audit.md Rev 3 + the adapter design): the DB
 path is explicit + absolute + contained under an explicit approved root (realpath + commonpath, symlink
@@ -112,17 +113,22 @@ def _lock_down_db(path: str) -> None:
 
 
 def capture(*, observer_id: str, player_ref: str, event_id: str, thesis: str, sources, acted: bool,
-            idempotency_key: str) -> dict:
-    """ON-path capture. Lazily imports the adapter + store (so OFF imports nothing). Resolves the board
-    selection through the governed adapter (abstain -> InvalidInput/422), then captures through a
-    REQUEST-SCOPED store connection closed in `finally`. The observer id is the caller's server-derived
-    account id; the store owns the clocks, sequence, season gate, and evidence serialization."""
-    # lazy imports — ONLY reached when the flag is ON
-    from services.research_candidate_store import (
-        ResearchCandidateStore, IdempotencyConflict, SchemaVersionError, StoreIntegrityError,
-        ResearchStoreError,
-    )
-    from services import nfl_identity_event_adapter as adapter
+            idempotency_key: str, correlation_id: Optional[str] = None) -> dict:
+    """ON-path capture. Lazily imports the adapter + store (so OFF imports nothing), GUARDED so an import
+    failure becomes a calm 503 rather than a 500. Resolves the board selection through the governed adapter
+    (abstain -> 422 for user-selection / 503 for artifact-health), then captures through a REQUEST-SCOPED
+    store connection closed in `finally`. The observer id is the caller's server-derived account id; the
+    store owns the clocks, sequence, season gate, and evidence serialization. `correlation_id` is used ONLY
+    for sanitized operational logging (close/relock failures) — never content."""
+    # lazy imports — ONLY reached when the flag is ON; guarded so a dependency ImportError -> 503
+    try:
+        from services.research_candidate_store import (
+            ResearchCandidateStore, IdempotencyConflict, SchemaVersionError, StoreIntegrityError,
+            ResearchStoreError,
+        )
+        from services import nfl_identity_event_adapter as adapter
+    except Exception as exc:
+        raise Unavailable("dependency import failed") from exc
 
     db_path = _resolved_db_path()                     # canonical, containment-validated path
     props = (os.environ.get(PROPS_ENV, "") or "").strip()
@@ -150,11 +156,19 @@ def capture(*, observer_id: str, player_ref: str, event_id: str, thesis: str, so
     store = None
     try:
         store = ResearchCandidateStore(db_path)       # request-scoped connection (creates the DB first use)
-        _lock_down_db(db_path)
+        _lock_down_db(db_path)                         # lock the main file (POSIX failure -> 503)
         res = store.capture_observation(
             observer_id=observer_id, entity=resolved.entity, event=resolved.event, thesis=thesis,
             sources=tuple(sources), acted=acted, evidence=resolved.evidence,
             idempotency_key=idempotency_key)
+        # Re-lock AFTER the write so WAL -wal/-shm sidecars created during capture are 0600 too. This runs
+        # POST-commit, so a failure here is logged (within the 0700 dir) rather than discarding a committed
+        # capture — the primary result is preserved.
+        try:
+            _lock_down_db(db_path)
+        except Exception as exc:
+            _log.warning("research_candidate op=observe corr=%s status=relock_failed code=%s",
+                         correlation_id, type(exc).__name__)
         return {"status": res["status"], "id": res["id"]}
     except IdempotencyConflict:
         raise Conflict("idempotency conflict")
@@ -171,9 +185,11 @@ def capture(*, observer_id: str, player_ref: str, event_id: str, thesis: str, so
             try:
                 store.close()
             except Exception as exc:
-                # surfaced honestly (sanitized type only), never swallowed; the primary result/exception
-                # above is preserved (a close failure does not fabricate or discard a committed capture).
-                _log.warning("research_candidate close failed: %s", type(exc).__name__)
+                # surfaced honestly with the request correlation id + op + coarse status + error TYPE
+                # (never content); never swallowed; the primary result/exception above is preserved (a
+                # close failure does not fabricate or discard a committed capture).
+                _log.warning("research_candidate op=observe corr=%s status=close_failed code=%s",
+                             correlation_id, type(exc).__name__)
 
 
 __all__ = ["FLAG", "DB_PATH_ENV", "ROOT_ENV", "PROPS_ENV", "ROSTER_ENV", "enabled", "capture",
