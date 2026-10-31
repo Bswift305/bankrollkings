@@ -93,9 +93,15 @@ class DeletionNotPermitted(ResearchStoreError):
     """Deletion/erasure is undecided (Rev 2 §3.8) — 2B fails closed on any deletion request."""
 
 
-class RestoreCleanupError(ResearchStoreError):
-    """A restored destination failed post-publication validation AND could not be removed or quarantined.
-    An INVALID database remains at the reported path — surfaced unmistakably rather than swallowed."""
+class CleanupError(ResearchStoreError):
+    """A post-publication failure could not be cleaned up DURABLY: an invalid destination (or a sensitive
+    temp DB copy) could not be removed/renamed, or was removed but its parent-directory sync was not
+    proven durable. The unsafe path is named — surfaced unmistakably rather than swallowed, and durable
+    cleanup is never reported unless it actually happened."""
+
+
+# backward-compatible alias (restore-specific name retained)
+RestoreCleanupError = CleanupError
 
 
 # --------------------------------------------------------------------------- (de)serialize helpers
@@ -743,23 +749,21 @@ class ResearchCandidateStore:
         if not isinstance(dest_path, str) or not dest_path.strip():
             raise ResearchStoreError("backup dest_path is required")
         tmp = _tmp_beside(dest_path)
+        published = False
         try:
             self.conn.execute("VACUUM INTO ?", (tmp,))
             ResearchCandidateStore.validate_store(tmp)          # accept only a fully-valid snapshot
             _fsync_file(tmp)
             _lock_down(tmp)
-            _publish_no_overwrite(tmp, dest_path)               # atomic create-if-absent (no overwrite)
+            _link_no_overwrite(tmp, dest_path)                  # atomic create-if-absent (no overwrite)
+            published = True                                    # OWNERSHIP the instant the link succeeds
+            _fsync_dir(os.path.dirname(os.path.abspath(dest_path)))   # directory-durable publish (POSIX)
         except Exception:
-            if os.path.exists(tmp):
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
+            _discard_temp(tmp, surface=False)                   # error path: never leave a readable temp DB
+            if published:
+                _quarantine(dest_path)                          # raises CleanupError if not durably cleaned
             raise
-        try:
-            os.remove(tmp)      # drop the temp link; the published dest keeps the content
-        except OSError:
-            pass
+        _discard_temp(tmp, surface=True)      # success: surface a temp-cleanup failure (sensitive DB copy)
         return dest_path
 
     @staticmethod
@@ -778,23 +782,18 @@ class ResearchCandidateStore:
             shutil.copyfile(backup_path, tmp)
             _fsync_file(tmp)
             _lock_down(tmp)
-            _publish_no_overwrite(tmp, dest_path)
-            published = True
+            _link_no_overwrite(tmp, dest_path)
+            published = True                                    # OWNERSHIP the instant the link succeeds
+            _fsync_dir(os.path.dirname(os.path.abspath(dest_path)))   # directory-durable publish (POSIX)
             ResearchCandidateStore.validate_store(dest_path)    # the restored store must validate too
-        except Exception as exc:
-            # we created dest via the atomic publish (never a pre-existing one) -> quarantine it. If
-            # quarantine ALSO fails, surface the unsafe remaining path instead of swallowing it.
-            if published and not _quarantine(dest_path):
-                raise RestoreCleanupError(
-                    f"restored store failed validation AND the invalid destination could not be removed "
-                    f"or quarantined; an UNSAFE database remains at: {dest_path}") from exc
+        except Exception:
+            _discard_temp(tmp, surface=False)                   # error path: never leave a readable temp DB
+            if published:
+                # we created dest via the atomic publish (never a pre-existing one) -> quarantine it.
+                # _quarantine raises CleanupError (naming the path) if it can't prove durable removal.
+                _quarantine(dest_path)
             raise
-        finally:
-            if os.path.exists(tmp):
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
+        _discard_temp(tmp, surface=True)      # success: surface a temp-cleanup failure (sensitive DB copy)
         return dest_path
 
     # deletion NOT implemented in 2B ---------------------------------------
@@ -843,24 +842,47 @@ def _fsync_dir(path: str) -> None:
         os.close(fd)
 
 
-def _quarantine(path: str) -> bool:
-    """Remove an invalid published destination, or (if removal fails) atomically rename it to a clearly
-    INVALID name so the published name no longer holds a bad DB. fsyncs the parent dir on success.
-    Returns True iff the path was removed or renamed away; False iff an invalid file still occupies it."""
-    renamed = None
+def _quarantine(path: str) -> None:
+    """Remove an invalid published destination (or atomically rename it to a clearly INVALID name if
+    removal fails), then fsync the parent dir. Raises CleanupError — NEVER returns success — if the path
+    can be neither removed nor renamed, OR if it was removed/renamed but the parent-directory sync failed
+    (so durable cleanup is only ever reported when it actually happened)."""
+    outcome = None
     try:
         os.remove(path)
+        outcome = "removed"
     except OSError:
         try:
             renamed = path + f".INVALID-{uuid.uuid4().hex}"
             os.replace(path, renamed)
+            outcome = "renamed to " + renamed
         except OSError:
-            return False
+            raise CleanupError(
+                f"could not remove or rename the invalid destination; an UNSAFE database remains at: {path}")
     try:
         _fsync_dir(os.path.dirname(os.path.abspath(path)))
     except OSError:
+        raise CleanupError(
+            f"the invalid destination was {outcome} but the parent-directory sync failed, so its removal "
+            f"is NOT proven durable: {path}")
+
+
+def _discard_temp(path: str, *, surface: bool) -> None:
+    """Dispose of a sensitive temporary DB copy: remove it, else atomically rename it to a clearly ORPHAN
+    name (never silently leave a readable `.tmp` DB behind). On the success path (`surface=True`) a
+    failure to do either is raised as CleanupError; on an error path (`surface=False`) it is a
+    best-effort explicit quarantine that must not mask the primary error."""
+    try:
+        os.remove(path)
+        return
+    except OSError:
         pass
-    return True
+    try:
+        os.replace(path, path + f".ORPHAN-{uuid.uuid4().hex}")
+        return
+    except OSError:
+        if surface:
+            raise CleanupError(f"could not remove or quarantine a sensitive temp DB copy: {path}")
 
 
 def _lock_down(path: str) -> None:
@@ -876,15 +898,15 @@ def _lock_down(path: str) -> None:
             raise ResearchStoreError(f"backup permissions not 0600 (got {oct(mode)})")
 
 
-def _publish_no_overwrite(tmp: str, dest_path: str) -> None:
-    """Atomic create-if-absent publish: a hard link fails (FileExistsError) if dest already exists, so a
-    destination created in a race is NEVER overwritten (unlike os.replace). After a successful link the
-    parent directory is fsynced on POSIX so the new name survives a power loss (Windows: best-effort)."""
+def _link_no_overwrite(tmp: str, dest_path: str) -> None:
+    """Atomic create-if-absent publish — ONLY the hard link. It fails (FileExistsError -> ResearchStoreError)
+    if dest already exists, so a destination created in a race is NEVER overwritten (unlike os.replace).
+    The caller marks ownership IMMEDIATELY after this returns and fsyncs the directory separately, so a
+    post-link fsync failure still triggers cleanup of the just-created destination."""
     try:
         os.link(tmp, dest_path)
     except FileExistsError:
         raise ResearchStoreError("dest already exists; refusing to overwrite (atomic no-overwrite publish)")
-    _fsync_dir(os.path.dirname(os.path.abspath(dest_path)))   # directory-durable publish (POSIX)
 
 
 def _check_key(key) -> None:
@@ -900,5 +922,5 @@ def _verify(recomputed: str, stored: str, kind: str, rid: str) -> None:
 __all__ = [
     "SCHEMA_VERSION", "ResearchCandidateStore", "ResearchStoreError", "SchemaVersionError",
     "IdempotencyConflict", "SequenceError", "StoreIntegrityError", "DeletionNotPermitted",
-    "RestoreCleanupError",
+    "CleanupError", "RestoreCleanupError",
 ]
