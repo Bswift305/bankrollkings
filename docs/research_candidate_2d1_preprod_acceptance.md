@@ -14,7 +14,8 @@ on any failure; every `[P]/[Q]/[R]` POSIX line is asserted individually (failing
 Rev 1.3 hardens both the base runbook and the SSM appendix: (1) the final `if` **exits 0/1** (not always 0);
 (2) the SSM path uses a **standalone read-only scratch clone** of `origin` so `/opt/bankrollkings` is left
 entirely untouched (no `fetch`/worktree into its `.git`); (3) scratch + `TMPDIR` live on a **verified
-deployment-like fs** (`findmnt -T`; `tmpfs` is rejected) so Python's test fixtures exercise ext4/xfs; (4)
+deployment-like fs** — `findmnt -T` must report **ext4 or xfs** (an allow-list; anything else, incl. tmpfs/
+overlay/nfs/cifs/btrfs, is FATAL) so Python's test fixtures exercise real ext4/xfs; (4)
 all temp output is **inside the single cleanup tree** with the trap installed immediately; (5) each passing
 POSIX assertion echoes **`GATE OK: <assertion>`** so the receipt is auditable.
 
@@ -50,7 +51,7 @@ git merge-base --is-ancestor fd63b10 HEAD || { echo "FATAL: fd63b10 is not an an
 BASE=${ACCEPT_BASE:-/var/tmp}
 FSTYPE=$(findmnt -nro FSTYPE -T "$BASE" 2>/dev/null || echo unknown)
 echo "scratch_base=$BASE fstype=$FSTYPE"
-case "$FSTYPE" in tmpfs|unknown) echo "FATAL: $BASE is '$FSTYPE' — need a deployment-like ext4/xfs fs (set ACCEPT_BASE)"; exit 2;; esac
+case "$FSTYPE" in ext4|xfs) ;; *) echo "FATAL: $BASE is '$FSTYPE' — acceptance requires ext4 or xfs (set ACCEPT_BASE)"; exit 2 ;; esac
 # (4) all temp output under ONE scratch tree; cleanup trap installed immediately
 SCRATCH=$(mktemp -d "$BASE/rc2d1.XXXXXX") || { echo "FATAL: mktemp failed"; exit 2; }
 trap 'rm -rf "$SCRATCH"' EXIT
@@ -93,8 +94,8 @@ if [ "$FAILED" -eq 0 ]; then echo "PREPROD ACCEPTANCE: PASS"; exit 0; else echo 
 ## Receipt must show (to pass the gate)
 
 1. Header: a `head=<sha>` for which `fd63b10` is an ancestor (hard-fail otherwise), `worktree_changes=0`
-   (a dirty tree is a GATE FAIL), `os=posix`, `flag=<unset>`, and `scratch_base=… fstype=ext4|xfs`
-   (a `tmpfs` base is a FATAL). The branch name is informational.
+   (a dirty tree is a GATE FAIL), `os=posix`, `flag=<unset>`, and `scratch_base=… fstype=ext4` or `xfs`
+   (any other fstype is a FATAL — ext4/xfs allow-list). The branch name is informational.
 2. Every suite `exit=0 FAIL=0` and `ok=<n>/<n>` matching its expected total (contract 128, store 80,
    backup 50, idempotency 56, adapter 48, route 51, season 49).
 3. A `GATE OK:` line for each required `[P]/[Q]/[R]` assertion (incl. `[Q] … ran (not skipped)`), and
@@ -125,7 +126,7 @@ PY=/opt/bankrollkings/venv/bin/python
 BASE=${ACCEPT_BASE:-/var/tmp}
 FSTYPE=$(findmnt -nro FSTYPE -T "$BASE" 2>/dev/null || echo unknown)
 echo "scratch_base=$BASE fstype=$FSTYPE"
-case "$FSTYPE" in tmpfs|unknown) echo "FATAL: $BASE is '$FSTYPE' — need a deployment-like ext4/xfs fs (set ACCEPT_BASE)"; exit 2;; esac
+case "$FSTYPE" in ext4|xfs) ;; *) echo "FATAL: $BASE is '$FSTYPE' — acceptance requires ext4 or xfs (set ACCEPT_BASE)"; exit 2 ;; esac
 SCRATCH=$(mktemp -d "$BASE/rc2d1.XXXXXX") || { echo "FATAL: mktemp failed"; exit 2; }
 trap 'rm -rf "$SCRATCH"' EXIT
 export TMPDIR="$SCRATCH"; WT="$SCRATCH/wt"; OUT="$SCRATCH/out"; mkdir -p "$OUT"
