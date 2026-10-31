@@ -11,9 +11,11 @@ Proves the 2C backup/restore guarantees of `services/research_candidate_store.py
 Reuses the 2B QC fixtures. Temp-dir DBs only; no prod path, flag, route, UI, job, deployment, erasure,
 or Decision Journal changes.
 """
+import hashlib
 import os
 import shutil
 import sqlite3
+import stat
 import sys
 import tempfile
 
@@ -85,19 +87,101 @@ def test_backup_restore_round_trip():
         r.close()
 
 
-# =========================================================================== B never overwrite / needs new path
+def _digest(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def _sidecars(path):
+    return [s for s in (path + "-wal", path + "-shm", path + "-journal") if os.path.exists(s)]
+
+
+# =========================================================================== B atomic no-overwrite publish
 def test_never_overwrites():
-    print("\n[B] backup needs a new file; restore never overwrites an existing/live DB")
+    print("\n[B] backup + restore publish atomically and NEVER overwrite an existing dest (bytes intact)")
     with tmp() as d:
         live = os.path.join(d, "live.db")
         bkp = os.path.join(d, "snap.db")
         store, _, _ = seeded_with_gap_and_finding(live)
         store.backup(bkp)
+        bkp_digest = _digest(bkp)
+        # a pre-existing dest (the race target) is refused by the atomic create-if-absent publish
         expect_raises(rcs.ResearchStoreError, lambda: store.backup(bkp),
-                      "backup refuses an existing dest (VACUUM INTO needs a new file)")
-        expect_raises(rcs.ResearchStoreError, lambda: rcs.ResearchCandidateStore.restore(bkp, live),
+                      "backup refuses to overwrite an existing dest (atomic no-overwrite publish)")
+        check(_digest(bkp) == bkp_digest, "the existing backup's bytes are untouched after the refused backup")
+        existing = os.path.join(d, "occupied.db")
+        with open(existing, "wb") as f:
+            f.write(b"PRE-EXISTING BYTES")
+        occ = _digest(existing)
+        expect_raises(rcs.ResearchStoreError, lambda: rcs.ResearchCandidateStore.restore(bkp, existing),
                       "restore refuses to overwrite an existing/live DB")
+        check(_digest(existing) == occ, "the pre-existing restore target's bytes are untouched")
+        check(not _sidecars(existing), "no journal sidecars were created next to the untouched target")
         store.close()
+
+
+# =========================================================================== B2 read-only validation
+def test_validation_is_read_only():
+    print("\n[B2] validating a backup is READ-ONLY: creates nothing; bytes/size/mtime/sidecars unchanged")
+    with tmp() as d:
+        missing = os.path.join(d, "missing.db")
+        expect_raises(rcs.SchemaVersionError, lambda: rcs.ResearchCandidateStore.validate_store(missing),
+                      "validating a nonexistent path fails closed")
+        check(not os.path.exists(missing), "validating a nonexistent path created NOTHING")
+        live = os.path.join(d, "live.db")
+        bkp = os.path.join(d, "snap.db")
+        store, _, _ = seeded_with_gap_and_finding(live)
+        store.backup(bkp)
+        store.close()
+        before = (_digest(bkp), os.path.getsize(bkp), os.stat(bkp).st_mtime_ns, _sidecars(bkp))
+        rcs.ResearchCandidateStore.validate_store(bkp)      # a full, read-only validation pass
+        after = (_digest(bkp), os.path.getsize(bkp), os.stat(bkp).st_mtime_ns, _sidecars(bkp))
+        check(before == after and not _sidecars(bkp),
+              "validation left the backup's bytes/size/mtime unchanged and created no sidecars")
+
+
+# =========================================================================== B3 post-publish validation quarantine
+def test_post_publish_validation_quarantines():
+    print("\n[B3] a FAILED post-publish validation removes the just-published dest (never a pre-existing one)")
+    with tmp() as d:
+        live = os.path.join(d, "live.db")
+        bkp = os.path.join(d, "snap.db")
+        dest = os.path.join(d, "restored.db")
+        store, _, _ = seeded_with_gap_and_finding(live)
+        store.backup(bkp)
+        store.close()
+        real = rcs.ResearchCandidateStore.validate_store
+        state = {"n": 0}
+
+        def flaky(path):
+            state["n"] += 1
+            if state["n"] >= 2:          # pass the pre-copy backup check; fail the post-publish dest check
+                raise rcs.StoreIntegrityError("forced post-publication validation failure")
+            return real(path)
+
+        rcs.ResearchCandidateStore.validate_store = staticmethod(flaky)
+        try:
+            expect_raises(rcs.StoreIntegrityError,
+                          lambda: rcs.ResearchCandidateStore.restore(bkp, dest),
+                          "a forced post-publication validation failure raises")
+        finally:
+            rcs.ResearchCandidateStore.validate_store = real
+        check(not os.path.exists(dest), "the just-published dest was quarantined (removed) on validation failure")
+
+
+# =========================================================================== B4 permissions (0600)
+def test_permissions():
+    print("\n[B4] backup permissions: 0600 enforced on POSIX; best-effort on Windows (ACL limitation)")
+    with tmp() as d:
+        live = os.path.join(d, "live.db")
+        bkp = os.path.join(d, "snap.db")
+        store, _, _ = seeded_with_gap_and_finding(live)
+        store.backup(bkp)
+        store.close()
+        if os.name != "nt":
+            check(stat.S_IMODE(os.stat(bkp).st_mode) == 0o600, "backup file is 0600 on POSIX")
+        else:
+            check(os.path.exists(bkp), "backup exists (0600 is best-effort on Windows ACLs)")
 
 
 # =========================================================================== C fail closed on bad backups
@@ -187,7 +271,8 @@ if __name__ == "__main__":
     print("=" * 80)
     print("RESEARCH CANDIDATE STORE — SLICE 2C QC (backup / restore / validation, local-only)")
     print("=" * 80)
-    for t in (test_backup_restore_round_trip, test_never_overwrites, test_fail_closed_bad_backups,
+    for t in (test_backup_restore_round_trip, test_never_overwrites, test_validation_is_read_only,
+              test_post_publish_validation_quarantines, test_permissions, test_fail_closed_bad_backups,
               test_fail_closed_semantic, test_no_journal_coupling):
         t()
     print("\n" + "=" * 80)

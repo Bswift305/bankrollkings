@@ -49,7 +49,10 @@ import json
 import os
 import shutil
 import sqlite3
+import stat
+import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from services.research_candidate import (
@@ -389,11 +392,20 @@ class ResearchCandidateStore:
         # it never creates schema, so a truncated/empty/foreign file fails closed instead of being
         # silently initialized.
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path, isolation_level=None, timeout=5.0)
+        if create:
+            self.conn = sqlite3.connect(db_path, isolation_level=None, timeout=5.0)
+        else:
+            # VALIDATION open: the file must already exist (create nothing) and is opened READ-ONLY
+            # (mode=ro) so validating a backup never writes bytes, mtime, or journal sidecars.
+            if not os.path.isfile(db_path):
+                raise SchemaVersionError("no store file at this path (validation creates nothing)")
+            uri = Path(db_path).resolve().as_uri() + "?mode=ro"
+            self.conn = sqlite3.connect(uri, uri=True, isolation_level=None, timeout=5.0)
         self.conn.row_factory = sqlite3.Row
         try:
-            self.conn.execute("PRAGMA foreign_keys=ON")
             self.conn.execute("PRAGMA busy_timeout=5000")
+            if create:
+                self.conn.execute("PRAGMA foreign_keys=ON")
             self._init(create=create)
         except Exception:
             self.conn.close()
@@ -717,53 +729,66 @@ class ResearchCandidateStore:
             s.close()
 
     def backup(self, dest_path: str) -> str:
-        """Consistent snapshot of this (possibly live, WAL) DB to a NEW file via `VACUUM INTO`, then
-        ACCEPT it only if it passes full validation (else the snapshot is removed). `VACUUM INTO`
-        requires `dest_path` not to exist and never modifies the source."""
+        """Crash-safe, no-overwrite backup of this (possibly live, WAL) DB. `VACUUM INTO` writes a
+        consistent snapshot to a same-directory TEMP path (never the final path, so an interrupted
+        VACUUM cannot leave an apparently-final partial backup); the temp is fully validated, fsynced
+        and locked down (0600 — POSIX-enforced, Windows best-effort), then published atomically with a
+        create-if-absent hard link that refuses to overwrite an existing dest. `VACUUM INTO` never
+        modifies the source."""
         if not isinstance(dest_path, str) or not dest_path.strip():
             raise ResearchStoreError("backup dest_path is required")
-        if os.path.exists(dest_path):
-            raise ResearchStoreError("backup dest_path already exists (VACUUM INTO needs a new file)")
-        self.conn.execute("VACUUM INTO ?", (dest_path,))
+        tmp = _tmp_beside(dest_path)
         try:
-            os.chmod(dest_path, 0o600)
+            self.conn.execute("VACUUM INTO ?", (tmp,))
+            ResearchCandidateStore.validate_store(tmp)          # accept only a fully-valid snapshot
+            _fsync_file(tmp)
+            _lock_down(tmp)
+            _publish_no_overwrite(tmp, dest_path)               # atomic create-if-absent (no overwrite)
+        except Exception:
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+            raise
+        try:
+            os.remove(tmp)      # drop the temp link; the published dest keeps the content
         except OSError:
             pass
-        try:
-            ResearchCandidateStore.validate_store(dest_path)   # accept only a fully-valid snapshot
-        except Exception:
-            try:
-                os.remove(dest_path)
-            except OSError:
-                pass
-            raise
         return dest_path
 
     @staticmethod
     def restore(backup_path: str, dest_path: str) -> str:
-        """Restore a VALIDATED backup to a NEW explicit path. Never overwrites an existing/live DB.
-        The backup is fully validated FIRST (fail closed on corrupt/truncated/foreign/wrong-version/
-        semantically-inconsistent), then atomically copied to `dest_path`, which is then re-validated."""
+        """Restore a VALIDATED backup to a NEW explicit path. The backup is fully validated FIRST (fail
+        closed on corrupt/truncated/foreign/wrong-version/semantically-inconsistent), copied to a
+        same-dir temp (fsynced, locked down), then PUBLISHED atomically with a create-if-absent hard
+        link that never overwrites an existing/live DB. The restored store is re-validated; if that
+        fails, the just-published dest is removed (quarantined) — a PRE-EXISTING dest is never touched."""
         if not isinstance(dest_path, str) or not dest_path.strip():
             raise ResearchStoreError("restore dest_path is required")
-        if os.path.exists(dest_path):
-            raise ResearchStoreError("restore dest_path exists; refusing to overwrite an existing/live DB")
-        ResearchCandidateStore.validate_store(backup_path)      # fail closed on a bad backup
-        tmp = dest_path + ".restore.tmp"
+        ResearchCandidateStore.validate_store(backup_path)      # fail closed on a bad backup, before any copy
+        tmp = _tmp_beside(dest_path)
+        published = False
         try:
             shutil.copyfile(backup_path, tmp)
-            try:
-                os.chmod(tmp, 0o600)
-            except OSError:
-                pass
-            os.replace(tmp, dest_path)                          # atomic into the NEW path
+            _fsync_file(tmp)
+            _lock_down(tmp)
+            _publish_no_overwrite(tmp, dest_path)
+            published = True
+            ResearchCandidateStore.validate_store(dest_path)    # the restored store must validate too
+        except Exception:
+            if published:   # we created dest via the atomic publish -> safe to remove; never a pre-existing one
+                try:
+                    os.remove(dest_path)
+                except OSError:
+                    pass
+            raise
         finally:
             if os.path.exists(tmp):
                 try:
                     os.remove(tmp)
                 except OSError:
                     pass
-        ResearchCandidateStore.validate_store(dest_path)        # the restored store must validate too
         return dest_path
 
     # deletion NOT implemented in 2B ---------------------------------------
@@ -783,6 +808,43 @@ class ResearchCandidateStore:
 
     def __exit__(self, *_):
         self.close()
+
+
+def _tmp_beside(dest_path: str) -> str:
+    """A unique, non-existent temp path in the SAME directory as dest (atomic publish needs same fs)."""
+    d = os.path.dirname(os.path.abspath(dest_path)) or "."
+    return os.path.join(d, f".{os.path.basename(dest_path)}.{uuid.uuid4().hex}.tmp")
+
+
+def _fsync_file(path: str) -> None:
+    # O_RDWR (not O_RDONLY): on Windows os.fsync requires a writable handle. We only flush, never write.
+    fd = os.open(path, os.O_RDWR)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _lock_down(path: str) -> None:
+    """0600: ENFORCED + verified on POSIX; BEST-EFFORT on Windows (chmod does not set NTFS ACLs)."""
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        if os.name != "nt":
+            raise ResearchStoreError("could not set backup permissions to 0600")
+    if os.name != "nt":
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+        if mode != 0o600:
+            raise ResearchStoreError(f"backup permissions not 0600 (got {oct(mode)})")
+
+
+def _publish_no_overwrite(tmp: str, dest_path: str) -> None:
+    """Atomic create-if-absent publish: a hard link fails (FileExistsError) if dest already exists,
+    so a destination created in a race is NEVER overwritten (unlike os.replace)."""
+    try:
+        os.link(tmp, dest_path)
+    except FileExistsError:
+        raise ResearchStoreError("dest already exists; refusing to overwrite (atomic no-overwrite publish)")
 
 
 def _check_key(key) -> None:
