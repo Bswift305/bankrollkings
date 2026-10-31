@@ -46,6 +46,8 @@ Deletion requests FAIL CLOSED. Idempotency uses a caller-supplied immutable `ide
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import sqlite3
 from datetime import datetime
 from typing import Optional
@@ -378,24 +380,27 @@ _TIP_TABLES = (("research_candidate", "observation_id", "candidate_current"),
 class ResearchCandidateStore:
     """A durable mirror of the Slice-1 domain objects in ONE SQLite DB. Local-only (2B)."""
 
-    def __init__(self, db_path: str) -> None:
+    def __init__(self, db_path: str, *, create: bool = True) -> None:
         if not isinstance(db_path, str) or not db_path.strip():
             raise ResearchStoreError("db_path is required (2B: no default path, tests pass a temp dir)")
         if db_path == ":memory:":
             raise ResearchStoreError("db_path must be a real file path, not an in-memory DB")
+        # create=False (used to VALIDATE a backup/restore target) requires an EXISTING valid v2 store;
+        # it never creates schema, so a truncated/empty/foreign file fails closed instead of being
+        # silently initialized.
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path, isolation_level=None, timeout=5.0)
         self.conn.row_factory = sqlite3.Row
         try:
             self.conn.execute("PRAGMA foreign_keys=ON")
             self.conn.execute("PRAGMA busy_timeout=5000")
-            self._init()
+            self._init(create=create)
         except Exception:
             self.conn.close()
             raise
 
     # schema ----------------------------------------------------------------
-    def _init(self) -> None:
+    def _init(self, *, create: bool) -> None:
         has_meta = self.conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_meta'").fetchone()
         if has_meta is not None:
@@ -404,8 +409,13 @@ class ResearchCandidateStore:
                 raise SchemaVersionError(
                     f"unsupported schema version {None if row is None else row['version']} "
                     f"(expected {SCHEMA_VERSION}) — fail closed, no mutation")
-            self.conn.execute("PRAGMA journal_mode=WAL")
-            self.conn.execute("PRAGMA synchronous=FULL")
+            if create:   # a validation open (create=False) stays read-only — never flips the file to WAL
+                self.conn.execute("PRAGMA journal_mode=WAL")
+                self.conn.execute("PRAGMA synchronous=FULL")
+        elif not create:
+            # validation/restore-target open: refuse anything that is not already a v2 store.
+            raise SchemaVersionError(
+                "no research-candidate schema present (empty / truncated / foreign file) — fail closed")
         else:
             other = self.conn.execute(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
@@ -689,6 +699,72 @@ class ResearchCandidateStore:
 
     def current_finding(self, family_key: FamilyKey) -> Optional[EvaluatedFinding]:
         return self._memory().current_finding(family_key)
+
+    # backup / validate / restore (2C, LOCAL ONLY) -------------------------
+    # Own implementation of the proven Tier-B pattern (VACUUM INTO consistent snapshot of a live WAL
+    # DB -> full validation -> 0600). It does NOT import, modify, or extract Decision Journal code.
+    @staticmethod
+    def validate_store(path: str) -> dict:
+        """FULL validation of an existing store file (used to accept a backup or a restored store):
+        opens it with create=False (schema version + integrity_check + foreign_key_check + ledger
+        reconcile + reservation/tip reconcile in `_init`/`_check_integrity`), then replays every record
+        in record_seq order through the Slice-1 engine and re-verifies every content hash. Raises
+        (SchemaVersionError / StoreIntegrityError / a domain error) and fails closed on any problem."""
+        s = ResearchCandidateStore(path, create=False)
+        try:
+            return s.replay_validate()
+        finally:
+            s.close()
+
+    def backup(self, dest_path: str) -> str:
+        """Consistent snapshot of this (possibly live, WAL) DB to a NEW file via `VACUUM INTO`, then
+        ACCEPT it only if it passes full validation (else the snapshot is removed). `VACUUM INTO`
+        requires `dest_path` not to exist and never modifies the source."""
+        if not isinstance(dest_path, str) or not dest_path.strip():
+            raise ResearchStoreError("backup dest_path is required")
+        if os.path.exists(dest_path):
+            raise ResearchStoreError("backup dest_path already exists (VACUUM INTO needs a new file)")
+        self.conn.execute("VACUUM INTO ?", (dest_path,))
+        try:
+            os.chmod(dest_path, 0o600)
+        except OSError:
+            pass
+        try:
+            ResearchCandidateStore.validate_store(dest_path)   # accept only a fully-valid snapshot
+        except Exception:
+            try:
+                os.remove(dest_path)
+            except OSError:
+                pass
+            raise
+        return dest_path
+
+    @staticmethod
+    def restore(backup_path: str, dest_path: str) -> str:
+        """Restore a VALIDATED backup to a NEW explicit path. Never overwrites an existing/live DB.
+        The backup is fully validated FIRST (fail closed on corrupt/truncated/foreign/wrong-version/
+        semantically-inconsistent), then atomically copied to `dest_path`, which is then re-validated."""
+        if not isinstance(dest_path, str) or not dest_path.strip():
+            raise ResearchStoreError("restore dest_path is required")
+        if os.path.exists(dest_path):
+            raise ResearchStoreError("restore dest_path exists; refusing to overwrite an existing/live DB")
+        ResearchCandidateStore.validate_store(backup_path)      # fail closed on a bad backup
+        tmp = dest_path + ".restore.tmp"
+        try:
+            shutil.copyfile(backup_path, tmp)
+            try:
+                os.chmod(tmp, 0o600)
+            except OSError:
+                pass
+            os.replace(tmp, dest_path)                          # atomic into the NEW path
+        finally:
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+        ResearchCandidateStore.validate_store(dest_path)        # the restored store must validate too
+        return dest_path
 
     # deletion NOT implemented in 2B ---------------------------------------
     def delete_observation(self, *_a, **_k):

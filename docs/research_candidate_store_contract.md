@@ -170,9 +170,15 @@ constructor **requires an explicit db path** (tests pass a temp dir); it never d
 OneDrive, `data/`, or a runtime path.
 
 **Later stages (not started):**
-- **2C — integrity + backup/restore, local only.** First audit whether the Journal's
-  backup/integrity/restore helpers can be extracted behavior-preservingly; QC corruption-fail-closed and
-  restore. No prod presence.
+- **2C — integrity + backup/restore, local only. BUILT 2026-10-30.** The store has its OWN
+  `backup()` / `validate_store()` / `restore()` (it does NOT import, modify, or extract Decision
+  Journal code): a consistent `VACUUM INTO` snapshot of the live WAL DB -> `0600`, accepted only
+  after FULL validation (schema version + `integrity_check` + `foreign_key_check` + ledger
+  reconcile + reservation/tip reconcile + record replay + content-hash re-verify). `restore()`
+  validates the backup FIRST, then atomically copies to a NEW explicit path (never overwrites an
+  existing/live DB) and re-validates. Fails closed on corrupt/truncated/foreign-schema/
+  wrong-version/semantically-inconsistent backups. A `create=False` open requires an existing v2
+  store so an empty/truncated/foreign file can never be silently initialized. No prod presence.
 - **2D — dark production store (separately approved).** DB path points at
   `BK_RUNTIME_DIR/research_candidate/…` behind an OFF feature flag (the `decision_journal`/`lookup_changes`
   dark pattern). Still no writer job, route, or UI.
