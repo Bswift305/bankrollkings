@@ -712,6 +712,9 @@ class ResearchCandidateStore:
             raise ResearchStoreError("entity must be a governed EntityIdentity")
         if not isinstance(event, EventIdentity):
             raise ResearchStoreError("event must be a governed EventIdentity")
+        # Canonicalize the event instant to zero-offset UTC so two equivalent instants expressed with
+        # different offsets cannot produce different fingerprints or different stored event JSON.
+        event = EventIdentity(event.canonical_id, event.event_effective.astimezone(timezone.utc))
         if not isinstance(thesis, str) or not thesis.strip():
             raise ResearchStoreError("thesis is required and must be a non-empty string")
         if not isinstance(acted, bool):   # NO truthy coercion: "false"/1/None are rejected, not interpreted
@@ -730,7 +733,6 @@ class ResearchCandidateStore:
         canon_thesis = _nfc(thesis)
         canon_sources = tuple(sorted({_nfc(s) for s in src_items}))
         fp = _request_fingerprint(observer_id, entity, event, canon_thesis, canon_sources, acted)
-        now = datetime.now(timezone.utc)
         self._begin()
         try:
             row = self.conn.execute(
@@ -746,9 +748,12 @@ class ResearchCandidateStore:
                     f"idempotency_key {idempotency_key!r} reused with a DIFFERENT request fingerprint "
                     f"for this observer (fail closed)")
             # GOVERNED ELIGIBILITY GATE — this store API is the SOLE sanctioned writer, so it (not a future
-            # route) enforces eligibility. Checked AFTER the idempotency decision (an exact retry of an
-            # already-recorded observation still no-ops) but BEFORE any sequence allocation, so a rejection
-            # consumes no reservation.
+            # route) enforces eligibility. Capture time is taken HERE: inside the transaction, after the
+            # write lock is held and after the idempotency decision (an exact retry still returns above,
+            # before this), so a request that waited on the lock until kickoff passed is judged against the
+            # real post-wait instant, never a stale pre-lock one. BEFORE any sequence allocation, so a
+            # rejection consumes no reservation. This SAME instant stamps observed_at/bk_captured/created_at.
+            now = datetime.now(timezone.utc)
             if entity.resolution is not Resolution.RESOLVED:
                 raise ResearchStoreError(
                     "entity is not RESOLVED — observation refused (abstain; unresolved/ambiguous identity)")

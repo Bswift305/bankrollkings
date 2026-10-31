@@ -226,9 +226,17 @@ Source review of the first cut surfaced four governed-capture gaps, all fixed in
    one scope/key/fingerprint and asserts one record + one binding, identical returned id/seq, and exactly
    one reservation consumed.
 
+5. **Capture time is taken inside the lock; event instant canonicalized to UTC.** `now` is acquired in the
+   absent-key branch *after* `BEGIN IMMEDIATE` holds the write lock and immediately before the eligibility
+   check, so a request that waited on the lock until kickoff passed is judged against the real post-wait
+   instant, not a stale pre-lock one. That single instant stamps `event_effective > now`, `observed_at`,
+   `bk_captured`, and the registry `created_at` (an exact retry still returns before this). The
+   `EventIdentity.event_effective` is canonicalized to zero-offset UTC before fingerprinting and
+   persistence, so equivalent instants at different offsets cannot drift the fingerprint or stored JSON.
+
 Stale "valid v2 store" wording corrected to v3. Adversarial fixtures added: string-as-sources,
 non-string/empty source, `"false"`/`1` acted, NFC/NFD thesis, reordered + duplicated sources, unresolved
-entity, non-future event.
+entity, non-future event, a lock-wait that carries past kickoff, and offset-equivalent event instants.
 
 **BUILT (local schema v3).** Implemented in `services/research_candidate_store.py` (SCHEMA_VERSION=3,
 `idempotency_registry` + observer-bind/write-once triggers, `capture_observation` + the internal

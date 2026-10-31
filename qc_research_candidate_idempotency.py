@@ -16,6 +16,7 @@ import sqlite3
 import sys
 import tempfile
 import threading
+import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
 
@@ -166,6 +167,61 @@ def test_capture_eligibility_gate():
             "an event whose effective time is not in the future is refused")
         check(max_res(store) == before and n_obs(store) == 0,
               "a refused capture consumed NO reservation and wrote no record")
+        store.close()
+
+
+# 3c ========================================================================
+def test_capture_time_taken_inside_lock():
+    print("\n[3c] a capture that waits on the write lock until kickoff passes is refused (no reservation)")
+    with tmp() as d:
+        path = os.path.join(d, "r.db")
+        mk(path).close()                       # schema once
+        holder = mk(path)
+        near = datetime.now(UTC) + timedelta(seconds=1)   # kickoff ~1s out
+        ev_near = rc.EventIdentity("gnear", near)
+        result = {}
+
+        def run():
+            try:
+                w = mk(path)                   # the worker's own connection, opened IN this thread
+                try:
+                    result["r"] = w.capture_observation(
+                        observer_id="owner", entity=sq.ent("p", "P"), event=ev_near, thesis="t",
+                        idempotency_key="k")
+                finally:
+                    w.close()
+            except Exception as ex:  # noqa: BLE001
+                result["err"] = type(ex).__name__
+
+        holder.conn.execute("BEGIN IMMEDIATE")              # hold the write lock
+        t = threading.Thread(target=run)
+        t.start()
+        time.sleep(1.6)                                     # let kickoff pass while the worker is blocked
+        holder.conn.execute("ROLLBACK")                     # release; worker acquires the lock NOW (> kickoff)
+        t.join(timeout=10)
+        holder.close()
+        check(result.get("err") == "ResearchStoreError" and "r" not in result,
+              "the lock-delayed capture is refused against the real post-wait instant")
+        v = mk(path)
+        check(max_res(v) == 0 and n_obs(v) == 0, "the refused capture consumed NO reservation or record")
+        v.close()
+
+
+# 3d ========================================================================
+def test_event_offset_canonicalization():
+    print("\n[3d] equivalent event instants with different offsets canonicalize to one stored intent/fp")
+    with tmp() as d:
+        store = mk(os.path.join(d, "r.db"))
+        inst_utc = datetime(2026, 12, 1, 17, 30, tzinfo=timezone.utc)
+        inst_off = datetime(2026, 12, 1, 12, 30, tzinfo=timezone(timedelta(hours=-5)))   # same instant
+        r1, o1 = sq.cap(store, sq.ent("p", "P"), rc.EventIdentity("g", inst_utc), "K")
+        check(o1.event.event_effective.utcoffset() == timedelta(0),
+              "the stored event_effective is zero-offset UTC")
+        r2 = store.capture_observation(observer_id="owner", entity=sq.ent("p", "P"),
+                                       event=rc.EventIdentity("g", inst_off), thesis=sq.THESIS,
+                                       sources=sq.SOURCES, idempotency_key="K")
+        check(r2["status"] == "noop" and r2["id"] == r1["id"],
+              "the same instant at a -05:00 offset hashes equal -> noop (no fingerprint drift)")
         store.close()
 
 
@@ -403,6 +459,7 @@ if __name__ == "__main__":
     print("=" * 80)
     for t in (test_no_nested_transaction, test_exact_retry_true_noop, test_input_coercion_rejected,
               test_canonical_sources_and_nfc_equivalence, test_capture_eligibility_gate,
+              test_capture_time_taken_inside_lock, test_event_offset_canonicalization,
               test_clocks_and_seq_excluded, test_different_fingerprint_conflicts,
               test_two_observers_same_token, test_db_rejects_mismatch, test_no_observation_supersession,
               test_invisible_field_rejection, test_no_cleartext_pii, test_write_once_and_v3_gate,
