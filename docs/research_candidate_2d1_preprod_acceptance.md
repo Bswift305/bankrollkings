@@ -1,10 +1,15 @@
 # Research Candidate 2D1 — Linux Pre-Production Acceptance Gate (flag OFF) — Rev 1.3
 
-**Status: MANDATORY GATE before the dark 2D1 route may ever be enabled.** 2D1 local integration is approved
-and closed (`fd63b10`), but the POSIX permission guarantees — `[P]` live-sidecar 0600, `[Q]` sidecar
-chmod/verify fail-closed, `[R]` post-commit relock → 503 — are **skipped on the Windows dev box** (chmod
-cannot set NTFS ACLs). They must be exercised on a **Linux, deployment-like filesystem** (ext4/xfs, not a
-network-mounted share) **before enabling**. Production enablement remains unauthorized.
+**Status: CLOSED / PASS (receipt below).** The mandatory Linux pre-production gate was run on EC2 against
+HEAD `5282f6e` (ext4, POSIX, clean checkout, flag unset) — all seven suites at exact counts with zero
+failures and every POSIX `[P]/[Q]/[R]` permission + fail-closed assertion passing — ending in
+`PREPROD ACCEPTANCE: PASS`. 2D1 local integration was already approved and closed (`fd63b10`); this gate
+confirms the POSIX permission guarantees — `[P]` live-sidecar 0600, `[Q]` sidecar chmod/verify fail-closed,
+`[R]` post-commit relock → 503 — which are **skipped on the Windows dev box** (chmod cannot set NTFS ACLs)
+and therefore had to be exercised on a **Linux ext4/xfs filesystem**. **Clearing this gate authorizes none
+of the production behavior by itself** — deploying or enabling `BK_RESEARCH_CANDIDATE_ENABLED` remains a
+separate explicit decision; the safest next phase is deployment with the flag still OFF, followed by an
+OFF-state production verification.
 
 The runbook is a real gate: authoritative code identity is a **clean full HEAD with `fd63b10` as an
 ancestor** (branch name is informational, so detached CI checkouts pass); a **dirty worktree fails**; each
@@ -60,7 +65,7 @@ export TMPDIR="$SCRATCH"; OUT="$SCRATCH/out"; mkdir -p "$OUT"
 # (2) each suite must exit 0, have no [FAIL], AND match its expected [ok] total (a lost test fails the gate)
 declare -A EXP=( [qc_research_candidate_contract]=128 [qc_research_candidate_store]=80 \
                  [qc_research_candidate_backup]=50 [qc_research_candidate_idempotency]=56 \
-                 [qc_nfl_identity_event_adapter]=48 [qc_research_candidate_route]=51 \
+                 [qc_nfl_identity_event_adapter]=48 [qc_research_candidate_route]=54 \
                  [qc_nfl_season_contract]=49 )
 for f in qc_research_candidate_contract qc_research_candidate_store qc_research_candidate_backup \
          qc_research_candidate_idempotency qc_nfl_identity_event_adapter qc_research_candidate_route \
@@ -97,7 +102,9 @@ if [ "$FAILED" -eq 0 ]; then echo "PREPROD ACCEPTANCE: PASS"; exit 0; else echo 
    (a dirty tree is a GATE FAIL), `os=posix`, `flag=<unset>`, and `scratch_base=… fstype=ext4` or `xfs`
    (any other fstype is a FATAL — ext4/xfs allow-list). The branch name is informational.
 2. Every suite `exit=0 FAIL=0` and `ok=<n>/<n>` matching its expected total (contract 128, store 80,
-   backup 50, idempotency 56, adapter 48, route 51, season 49).
+   backup 50, idempotency 56, adapter 48, **route 54** on Linux, season 49). Note: a local **Windows** run
+   shows **route 51** — the `[Q]`/`[I]`/`[P]` POSIX branches each run one more assertion on ext4/xfs than
+   their Windows skip/best-effort branch (+3), which is exactly what this gate is for.
 3. A `GATE OK:` line for each required `[P]/[Q]/[R]` assertion (incl. `[Q] … ran (not skipped)`), and
    **no** `GATE FAIL:` line.
 4. Final line `PREPROD ACCEPTANCE: PASS` with **exit status 0** (the script exits 1 on FAIL).
@@ -143,7 +150,7 @@ echo "head=$HEAD_SHA worktree_changes=$DIRTY os=$("$PY" -c 'import os;print(os.n
 git merge-base --is-ancestor fd63b10 HEAD || { echo "FATAL: fd63b10 is not an ancestor of HEAD"; exit 3; }
 declare -A EXP=( [qc_research_candidate_contract]=128 [qc_research_candidate_store]=80 \
                  [qc_research_candidate_backup]=50 [qc_research_candidate_idempotency]=56 \
-                 [qc_nfl_identity_event_adapter]=48 [qc_research_candidate_route]=51 \
+                 [qc_nfl_identity_event_adapter]=48 [qc_research_candidate_route]=54 \
                  [qc_nfl_season_contract]=49 )
 for f in qc_research_candidate_contract qc_research_candidate_store qc_research_candidate_backup \
          qc_research_candidate_idempotency qc_nfl_identity_event_adapter qc_research_candidate_route \
@@ -174,3 +181,25 @@ ACCEPT
 
 Paste the full console output (ending `PREPROD ACCEPTANCE: PASS`, exit 0) as the receipt. If SSM is
 unavailable, separately authorize the CI workflow.
+
+## Acceptance receipt — GATE CLOSED / PASS
+
+The gate was run on the EC2 Linux host and passed. Verified receipt:
+
+| Field | Value |
+|---|---|
+| SSM command id | `327c6548-2a1a-4729-bafa-c9a85863d48e` |
+| Instance | `i-08d2fd818875381dd` |
+| Tested HEAD | `5282f6e23217a401ecb6cdbb1f1a746da6831baf` |
+| Clean checkout | yes (`worktree_changes=0`) |
+| Filesystem | ext4 |
+| OS | POSIX |
+| Flag `BK_RESEARCH_CANDIDATE_ENABLED` | unset before AND after |
+| Suites | all seven at exact counts (contract 128, store 80, backup 50, idempotency 56, adapter 48, **route 54**, season 49), zero `[FAIL]` |
+| POSIX `[P]/[Q]/[R]` | all DB/WAL/SHM permission + fail-closed assertions passed (`GATE OK` each) |
+| Final result | **`PREPROD ACCEPTANCE: PASS`** |
+
+**The Linux pre-production acceptance gate is CLOSED / PASS.** No further Linux run is required for this
+code (HEAD `5282f6e`). This does **not** enable the feature: production deployment and setting
+`BK_RESEARCH_CANDIDATE_ENABLED` remain a separate, explicit, still-unauthorized decision. Recommended next
+phase: deploy with the flag OFF, then an OFF-state production verification (route 404s, nothing imported).
