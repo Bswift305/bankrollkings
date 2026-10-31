@@ -1,9 +1,15 @@
 # Research Candidate 2D1 — NFL Identity/Event Feasibility Audit (READ-ONLY)
 
-**Status: READ-ONLY feasibility audit. No paid fetches, no code, no flag/route/schema edit.** Date
-2026-10-31. Determines whether a **governed NFL identity+event adapter** (the first 2D1 prerequisite)
-can be built from existing artifacts. **Verdict up front: EVENT binding is feasible now; PLAYER identity
-is BLOCKED** on an immutable-id source contract — so 2D1 stays blocked.
+**Status: READ-ONLY feasibility audit — PROD RECEIPT RETURNED 2026-10-31 (§3a). No paid fetches, no code,
+no flag/route/schema edit.** Determines whether a **governed NFL identity+event adapter** (the first 2D1
+prerequisite) can be built from existing artifacts. **Verdict up front (confirmed on prod): EVENT binding
+is feasible now AND authoritative (100% — 0 blank ids / 0 unparseable kickoffs / 0 conflicts over 2,158
+rows); the observer `UserId` is unique + nonblank; PLAYER identity is FEASIBLE for the resolved majority
+(80% of names, 92% of rows) via an EXACT name→player_id join, but ONLY with a governed ABSTAIN path for
+the 85 non-authoritative names (171 rows) and the 3 roster collisions.** Per the reviewer's abstain-capable
+contract, positive authoritative coverage with zero ambiguity among admitted rows SATISFIES feasibility —
+100% resolution is NOT required. The adapter may now be DESIGNED; 2D1 routing stays blocked until the
+adapter is designed+approved+built (the registry prerequisite is now BUILT, schema v3).
 
 The adapter must supply, authoritatively, for an owner-entered NFL player observation: (1) an immutable
 player id, (2) a canonical display identity, (3) an event id, (4) an authoritative kickoff, (5) explicit
@@ -86,10 +92,35 @@ Report: resolvable count, **unresolved names**, **ambiguous names (name→>1 id)
 resolves to exactly one roster `player_id`**; any ambiguous/unresolved name must **abstain** (never
 guess).
 
+## 3a. Production receipt (redacted, count-only — 2026-10-31)
+
+The owner ran the single corrected `sudo -u ubuntu bash -lc` command (`OWNER_EMAILS` parsed from `app.py`
+via `ast`, no app import, unioned with `Role=="owner"`; users `data/tracking/NBA_Users.csv`; props
+`data/props/NFL_Props.csv` keyed on `EventCommenceAtUTC`; roster auto-discovered). **Count-only output, no
+names:**
+
+| Dimension | Result |
+|---|---|
+| Observer `UserId` | 13 users, 1 owner; **global duplicate (nonblank) = 0**, **owner blank = 0** → unique + nonblank |
+| Event id (`EventId`) | **0 blank** of **2,158** prop rows |
+| Kickoff (`EventCommenceAtUTC`) | **0 missing/unparseable**; **0 EventIds with >1 distinct kickoff** |
+| Roster artifact | `data/tracking/_nflverse_stats_2026.parquet` — `player_id` + display name present |
+| Name resolution | 424 distinct props names → **339 resolved** (exactly one id), **84 unresolved**, **1 ambiguous**; **coverage 80.0%** |
+| Roster collisions | **3** name→>1 id; **0** id→>1 name |
+| Admitted rows | **1,987 / 2,158 (92.1%)** — resolved name + valid non-conflicting event + kickoff |
+| `RECEIPT_COMPLETE` | **True** |
+
+Reading: event binding and the observer id are clean and authoritative. Name identity is majority-clean
+with a hard tail: **84 unresolved + 1 ambiguous = 85 names (≈171 rows, 7.9%)** have no authoritative id, and
+**3 roster name-collisions** make those names non-authoritative even if they later appear on the board. The
+**0 id→>1-name** result means a resolved name's `player_id` is a stable 1:1 — so a resolved match is safe.
+These are exactly the rows the abstain path must refuse; feasibility does not require resolving them.
+
 ## 4. Owner `UserId` integrity (prod, read-only)
 
-The observer is the account `UserId` (§Rev-3). Prove production owner records have a **unique, nonblank**
-`UserId` before relying on it; **reject** missing/duplicate legacy identities rather than synthesizing one:
+The observer is the account `UserId` (§Rev-3). **CONFIRMED (§3a): the owner row's `UserId` is unique
+(0 global nonblank duplicates) and nonblank.** The probe below is retained as the standing check; the
+adapter must still **reject** any missing/duplicate legacy identity rather than synthesizing one:
 
 ```bash
 # owners = OWNER_EMAILS; the users store is prod-only. READ ONLY.
@@ -107,21 +138,27 @@ PY
 
 ## 5. Verdict + missing source contract
 
-- **Event binding: FEASIBLE now** — `EventId` + `CommenceTime` are present and authoritative on every
-  props row (100% locally). The adapter's event id + kickoff come from the **persisted Odds event**, not
-  user input.
-- **Player identity: BLOCKED.** The props feed has **no immutable player id**; a name→roster join is the
-  only path and is authoritative **only if** the prod measurement (§3) shows **every** props name resolves
-  to exactly one roster `player_id` with **zero** roster name-collisions affecting those names. Until that
-  is demonstrated AND a governed **abstain** path for any non-unique/unresolved name is designed, 2D1
-  stays blocked.
-- **Missing source contract (if the join is not clean):** 2D1 requires **either** an immutable player id
-  delivered *on the props/event feed itself* (an Odds-API participant/player id, if available), **or** a
-  separately governed roster-join adapter that (a) uses an EXACT normalized match only, (b) binds to the
-  roster `player_id`, (c) **abstains** (no record) on any unresolved or >1-id name, and (d) is
-  collision-audited on every refresh. **Name-only authoritative identity, fuzzy matching, short-form
-  inference, and user-supplied kickoff remain prohibited.**
+- **Observer: RESOLVED (prod-confirmed).** 1 owner row, `UserId` unique (0 global nonblank duplicates)
+  and nonblank. The observer is set server-side from this immutable account id, never from email/payload.
+- **Event binding: FEASIBLE + AUTHORITATIVE (prod-confirmed, 100%).** Over 2,158 live prop rows: 0 blank
+  `EventId`, 0 missing/unparseable `EventCommenceAtUTC`, 0 EventIds carrying >1 distinct kickoff. The
+  adapter's event id + kickoff come from the **persisted Odds event**, not user input.
+- **Player identity: FEASIBLE for the resolved majority, abstain-capable (prod-confirmed).** The props feed
+  has **no immutable player id**; the EXACT normalized name→roster `player_id` join resolves **339/424
+  names (80%)** to exactly one id with **0 id→>1-name duplicates** (a resolved match is a stable 1:1),
+  covering **1,987/2,158 rows (92%)**. The residual **84 unresolved + 1 ambiguous names (171 rows)** and the
+  **3 roster name-collisions** have no authoritative id. Per the reviewer's correction, feasibility requires
+  **positive authoritative coverage + zero ambiguity among ADMITTED rows** (true by construction —
+  resolved-only), **not** that every provider name resolves. **CONFIRMED feasible** on that basis.
+- **Required adapter contract (the join is majority-clean, so build it abstain-first):** a separately
+  governed roster-join adapter that (a) uses an EXACT normalized match only — no fuzzy/short-form — (b)
+  binds to the roster `player_id`, (c) **abstains** (no record, surfaced as unresolved/ambiguous) on any
+  unresolved, >1-id, or roster-collision name, (d) **abstains** on a blank/unparseable `EventId` or kickoff
+  or a conflicting kickoff, and (e) is **collision-audited on every roster refresh** (the 3 collisions — and
+  the unresolved set — can change week to week). **User-supplied kickoff and name-only authoritative
+  identity remain prohibited.**
 
-**STOP — 2D1 remains blocked** pending the §3 prod measurement (clean exact join) + a governed
-abstain-capable identity/event adapter, and the §4 owner `UserId` integrity confirmation. Return those
-results before the adapter is designed for build.
+**STOP — returned for review.** The §3a prod receipt + §4 observer integrity confirm feasibility, so the
+governed NFL identity+event adapter may now be **designed** (abstain-first, per the contract above). It has
+**not** been designed or built here. 2D1 production routing stays blocked until that adapter is
+designed → approved → built; the other prerequisite (the idempotency registry, schema v3) is now BUILT.
