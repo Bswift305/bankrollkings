@@ -438,6 +438,83 @@ def test_permissions_live_sidecars():
         os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = saved
 
 
+def test_lockdown_sidecar_failures():
+    print("\n[Q] POSIX: a sidecar chmod failure OR a wrong sidecar mode fails closed (ConfigError)")
+    import services.research_candidate_boundary as rcb
+    if os.name == "nt":
+        check(True, "sidecar 0600 enforcement is POSIX-only (best-effort on Windows) — skipped")
+        return
+    import uuid as _uuid
+    base = os.path.join(ROOT, f"lk_{_uuid.uuid4().hex}")
+    db, wal, shm = base + ".db", base + ".db-wal", base + ".db-shm"
+    for p in (db, wal, shm):
+        open(p, "wb").close()
+        os.chmod(p, 0o600)
+    real_chmod = rcb.os.chmod
+    # (a) chmod FAILS on the -wal sidecar -> ConfigError (not silently ignored)
+    def chmod_fail(p, mode):
+        if str(p).endswith("-wal"):
+            raise OSError("forced chmod failure")
+        return real_chmod(p, mode)
+    rcb.os.chmod = chmod_fail
+    try:
+        try:
+            rcb._lock_down_db(db); ok_a = False
+        except rcb.ConfigError:
+            ok_a = True
+    finally:
+        rcb.os.chmod = real_chmod
+    check(ok_a, "a sidecar chmod failure raises ConfigError")
+    # (b) chmod is a NO-OP so the -shm sidecar keeps a wrong (0644) mode -> verification fails
+    os.chmod(shm, 0o644)
+    rcb.os.chmod = lambda p, mode: None
+    try:
+        try:
+            rcb._lock_down_db(db); ok_b = False
+        except rcb.ConfigError:
+            ok_b = True
+    finally:
+        rcb.os.chmod = real_chmod
+    check(ok_b, "a sidecar whose mode is not 0600 fails verification (ConfigError)")
+
+
+def test_post_commit_relock_503():
+    print("\n[R] a post-commit relock failure -> 503 while the record IS committed; a later retry no-ops")
+    import services.research_candidate_boundary as rcb
+    import services.research_candidate_store as rcs_store
+    import uuid as _uuid
+    _write_artifacts()
+    appmod, c = _on_client()
+    fresh = os.path.join(ROOT, f"relock_{_uuid.uuid4().hex}.db")
+    saved = os.environ.get("BK_RESEARCH_CANDIDATE_DB_PATH")
+    os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = fresh
+    real = rcb._lock_down_db
+    state = {"n": 0}
+
+    def wrap(p):
+        state["n"] += 1
+        if state["n"] >= 2:                 # 1st (pre-write) succeeds; 2nd (post-commit) fails
+            raise rcb.ConfigError("forced post-commit relock failure")
+        return real(p)
+
+    rcb._lock_down_db = wrap
+    try:
+        r = _post(c, _body(idempotency_key="RL1"))
+        check(r.status_code == 503, "the post-commit relock failure returns 503 (not a false success)")
+    finally:
+        rcb._lock_down_db = real
+    s = rcs_store.ResearchCandidateStore(fresh)
+    try:
+        n = s.conn.execute("SELECT COUNT(*) FROM observation_private").fetchone()[0]
+    finally:
+        s.close()
+    check(n == 1, "exactly one observation was committed despite the 503 (idempotency makes it honest)")
+    r2 = _post(c, _body(idempotency_key="RL1"))
+    check(r2.status_code == 200 and r2.get_json().get("status") == "noop",
+          "a later retry (permissions healthy) no-ops to the committed record")
+    os.environ["BK_RESEARCH_CANDIDATE_DB_PATH"] = saved
+
+
 if __name__ == "__main__":
     print("=" * 80)
     print("RESEARCH CANDIDATE — 2D1 OBSERVATION ROUTE + BOUNDARY QC (dark, local)")
@@ -447,7 +524,8 @@ if __name__ == "__main__":
               test_on_input_and_abstain_tiers, test_on_misconfig_503, test_on_artifact_health_503,
               test_on_invalid_json_types_422, test_on_body_and_unknown_field_limits,
               test_on_unexpected_error_503, test_on_unexpected_capture_error_503,
-              test_on_permissions, test_permissions_live_sidecars, test_close_failure_logged_with_corr,
+              test_on_permissions, test_permissions_live_sidecars, test_lockdown_sidecar_failures,
+              test_post_commit_relock_503, test_close_failure_logged_with_corr,
               test_logs_no_sensitive_values, test_route_level_concurrency):
         t()
     print("\n" + "=" * 80)

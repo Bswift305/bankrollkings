@@ -97,19 +97,24 @@ def _ensure_secure_dir(path: str) -> None:
 
 
 def _lock_down_db(path: str) -> None:
-    """Set/verify the DB file (and any WAL sidecars present) to 0600. POSIX ENFORCES + verifies the main
-    file (failure -> 503); Windows is best-effort."""
+    """Set/verify the DB file AND every present WAL sidecar (-wal/-shm) to 0600. On POSIX EVERY present
+    target must chmod successfully AND individually verify as 0600 — a chmod failure or a wrong mode on any
+    one (incl. a sidecar, which holds governed observation data) fails closed with ConfigError. Windows is
+    best-effort (chmod cannot set NTFS ACLs). Error labels name the suffix only (db/wal/shm) — never a
+    path."""
+    labels = {path: "db", path + "-wal": "wal", path + "-shm": "shm"}
     targets = [path] + [path + s for s in ("-wal", "-shm") if os.path.exists(path + s)]
     for p in targets:
+        label = labels[p]
         try:
             os.chmod(p, 0o600)
-        except OSError:
-            if os.name != "nt" and p == path:
-                raise ConfigError("cannot set the DB file to 0600")
-    if os.name != "nt":
-        mode = _stat.S_IMODE(os.stat(path).st_mode)
-        if mode != 0o600:
-            raise ConfigError(f"DB file is not 0600 (got {oct(mode)})")
+        except OSError as exc:
+            if os.name != "nt":
+                raise ConfigError(f"cannot set {label} file to 0600") from exc
+        if os.name != "nt":
+            mode = _stat.S_IMODE(os.stat(p).st_mode)
+            if mode != 0o600:
+                raise ConfigError(f"{label} file is not 0600 (got {oct(mode)})")
 
 
 def capture(*, observer_id: str, player_ref: str, event_id: str, thesis: str, sources, acted: bool,
@@ -161,14 +166,16 @@ def capture(*, observer_id: str, player_ref: str, event_id: str, thesis: str, so
             observer_id=observer_id, entity=resolved.entity, event=resolved.event, thesis=thesis,
             sources=tuple(sources), acted=acted, evidence=resolved.evidence,
             idempotency_key=idempotency_key)
-        # Re-lock AFTER the write so WAL -wal/-shm sidecars created during capture are 0600 too. This runs
-        # POST-commit, so a failure here is logged (within the 0700 dir) rather than discarding a committed
-        # capture — the primary result is preserved.
+        # Re-lock AFTER the write so WAL -wal/-shm sidecars created during capture are 0600 too. The record
+        # may already be committed, but reporting success while sensitive sidecars could be exposed is
+        # dishonest: a post-commit permission failure is LOGGED (corr) and then raised as a sanitized 503.
+        # Idempotency makes a retry safe — it returns the original record once permissions are healthy.
         try:
             _lock_down_db(db_path)
         except Exception as exc:
             _log.warning("research_candidate op=observe corr=%s status=relock_failed code=%s",
                          correlation_id, type(exc).__name__)
+            raise Unavailable("post-commit relock failed") from exc
         return {"status": res["status"], "id": res["id"]}
     except IdempotencyConflict:
         raise Conflict("idempotency conflict")
