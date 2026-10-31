@@ -1,4 +1,4 @@
-# Research Candidate 2D1 — Linux Pre-Production Acceptance Gate (flag OFF) — Rev 1.1
+# Research Candidate 2D1 — Linux Pre-Production Acceptance Gate (flag OFF) — Rev 1.2
 
 **Status: MANDATORY GATE before the dark 2D1 route may ever be enabled.** 2D1 local integration is approved
 and closed (`fd63b10`), but the POSIX permission guarantees — `[P]` live-sidecar 0600, `[Q]` sidecar
@@ -6,9 +6,11 @@ chmod/verify fail-closed, `[R]` post-commit relock → 503 — are **skipped on 
 cannot set NTFS ACLs). They must be exercised on a **Linux, deployment-like filesystem** (ext4/xfs, not a
 network-mounted share) **before enabling**. Production enablement remains unauthorized.
 
-Rev 1.1 makes the runbook a real gate: it binds the receipt to code identity (branch + full HEAD + worktree
-status, and `fd63b10` must be an ancestor), accumulates failures and exits nonzero, asserts every required
-`[P]/[Q]/[R]` line individually (and fails on a `skipped`), and uses a unique `mktemp -d` output dir.
+Rev 1.2 makes the runbook a real gate: authoritative code identity is a **clean full HEAD with `fd63b10`
+as an ancestor** (branch name is informational, so detached CI checkouts pass); a **dirty worktree fails**
+the gate; each suite's **`[ok]` count must equal its expected total** (so a suite silently losing tests
+fails); it accumulates failures and exits nonzero, asserts every required `[P]/[Q]/[R]` line individually
+(failing on a `skipped`), and uses a unique `mktemp -d` output dir.
 
 **Invariants this gate does NOT change:** the feature flag `BK_RESEARCH_CANDIDATE_ENABLED` stays **OFF by
 default** (unset on the systemd unit / `.env`); no UI, candidate-freeze, outcome, evaluation, thesis
@@ -18,37 +20,44 @@ directories only** — it never touches prod data or the live DB, and running it
 
 ## What to run
 
-On a **Linux** checkout of the feature branch `claude/jolly-ishizaka-c6519a` (a staging host or container
-with the project venv), with the flag unset. The script self-asserts and exits nonzero on any failure —
+On a **Linux** checkout of this feature code (a staging host or container with the project venv), with the
+flag unset. Authoritative identity is a clean HEAD with `fd63b10` as an ancestor — the exact branch name is
+informational, so detached CI checkouts pass. The script self-asserts and exits nonzero on any failure —
 paste the full output (ending in `PREPROD ACCEPTANCE: PASS`/`FAIL`) as the receipt:
 
 ```bash
 set -u
-cd /path/to/bankrollkings-branch-checkout || { echo "FATAL: cd failed"; exit 2; }
+cd /path/to/bankrollkings-feature-checkout || { echo "FATAL: cd failed"; exit 2; }
 unset BK_RESEARCH_CANDIDATE_ENABLED
 export SECRET_KEY="preprod-acceptance-dummy"
 PY=$( [ -x venv/bin/python ] && echo venv/bin/python || { [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3; } )
 
-# (1) bind the receipt to code identity
+FAILED=0
+# (1) code identity: a CLEAN full HEAD with fd63b10 as an ancestor is authoritative (branch informational)
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 HEAD_SHA=$(git rev-parse HEAD)
 DIRTY=$(git status --porcelain | wc -l | tr -d ' ')
 echo "branch=$BRANCH head=$HEAD_SHA worktree_changes=$DIRTY os=$("$PY" -c 'import os;print(os.name)') flag=${BK_RESEARCH_CANDIDATE_ENABLED:-<unset>}"
-[ "$DIRTY" = "0" ] || echo "WARNING: worktree has uncommitted changes — receipt may not describe committed code"
+[ "$DIRTY" = "0" ] || { echo "GATE FAIL: worktree has $DIRTY uncommitted change(s) — receipt must describe committed code"; FAILED=1; }
 git merge-base --is-ancestor fd63b10 HEAD || { echo "FATAL: fd63b10 is not an ancestor of HEAD (different code)"; exit 3; }
 
 # (4) unique temp output dir + cleanup trap
 OUT=$(mktemp -d) || { echo "FATAL: mktemp failed"; exit 2; }
 trap 'rm -rf "$OUT"' EXIT
 
-FAILED=0
+# (2) each suite must exit 0, have no [FAIL], AND match its expected [ok] total (a lost test fails the gate)
+declare -A EXP=( [qc_research_candidate_contract]=128 [qc_research_candidate_store]=80 \
+                 [qc_research_candidate_backup]=50 [qc_research_candidate_idempotency]=56 \
+                 [qc_nfl_identity_event_adapter]=48 [qc_research_candidate_route]=51 \
+                 [qc_nfl_season_contract]=49 )
 for f in qc_research_candidate_contract qc_research_candidate_store qc_research_candidate_backup \
          qc_research_candidate_idempotency qc_nfl_identity_event_adapter qc_research_candidate_route \
          qc_nfl_season_contract; do
   "$PY" "$f.py" > "$OUT/$f.out" 2>&1; rc=$?
-  nfail=$(grep -c '\[FAIL\]' "$OUT/$f.out")
-  printf '%-38s exit=%s ok=%s FAIL=%s\n' "$f" "$rc" "$(grep -c '\[ok\]' "$OUT/$f.out")" "$nfail"
-  { [ "$rc" -eq 0 ] && [ "$nfail" -eq 0 ]; } || FAILED=1   # (2) accumulate suite failures
+  nok=$(grep -c '\[ok\]' "$OUT/$f.out"); nfail=$(grep -c '\[FAIL\]' "$OUT/$f.out"); exp=${EXP[$f]}
+  printf '%-38s exit=%s ok=%s/%s FAIL=%s\n' "$f" "$rc" "$nok" "$exp" "$nfail"
+  { [ "$rc" -eq 0 ] && [ "$nfail" -eq 0 ] && [ "$nok" -eq "$exp" ]; } \
+    || { echo "GATE FAIL: $f (exit=$rc ok=$nok expected=$exp FAIL=$nfail)"; FAILED=1; }
 done
 
 # (3) assert every required [P]/[Q]/[R] POSIX line individually; fail on absence or a skip
@@ -72,9 +81,11 @@ if [ "$FAILED" -eq 0 ]; then echo "PREPROD ACCEPTANCE: PASS"; exit 0; else echo 
 
 ## Receipt must show (to pass the gate)
 
-1. Header: `branch=claude/jolly-ishizaka-c6519a`, a `head=<sha>` for which `fd63b10` is an ancestor
-   (the script hard-fails otherwise), `worktree_changes=0`, `os=posix`, `flag=<unset>`.
-2. Every suite `exit=0 FAIL=0` (notably `qc_research_candidate_route` = 51 checks).
+1. Header: a `head=<sha>` for which `fd63b10` is an ancestor (the script hard-fails otherwise),
+   `worktree_changes=0` (a dirty tree is a GATE FAIL), `os=posix`, `flag=<unset>`. The branch name is
+   informational.
+2. Every suite `exit=0 FAIL=0` and `ok=<n>/<n>` matching its expected total (contract 128, store 80,
+   backup 50, idempotency 56, adapter 48, route 51, season 49).
 3. No `GATE FAIL:` lines (every required `[P]/[Q]/[R]` POSIX line present; no `[Q] skipped`).
 4. Final line `PREPROD ACCEPTANCE: PASS` (exit 0).
 
