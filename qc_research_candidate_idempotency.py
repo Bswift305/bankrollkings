@@ -15,7 +15,9 @@ import os
 import sqlite3
 import sys
 import tempfile
-from datetime import datetime, timezone
+import threading
+import unicodedata
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import services.research_candidate as rc            # noqa: E402
@@ -94,6 +96,76 @@ def test_exact_retry_true_noop():
               "retry returns the ORIGINAL id + seq")
         check(max_res(store) == before, "no new reservation was consumed by the retry")
         check(n_obs(store) == 1 and n_idem(store) == 1, "exactly one observation + one binding")
+        store.close()
+
+
+# 2b ========================================================================
+def test_input_coercion_rejected():
+    print("\n[2b] capture rejects string-as-sources, non-string/empty source, and non-bool acted")
+    with tmp() as d:
+        store = mk(os.path.join(d, "r.db"))
+        e, g = sq.ent("p", "P"), sq.ev("g")
+        before = max_res(store)
+        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
+            observer_id="owner", entity=e, event=g, thesis="t", sources="http://x", idempotency_key="k1"),
+            "a bare string as sources is rejected (not iterated char by char)")
+        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
+            observer_id="owner", entity=e, event=g, thesis="t", sources=[123], idempotency_key="k2"),
+            "a non-string source is rejected")
+        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
+            observer_id="owner", entity=e, event=g, thesis="t", sources=[""], idempotency_key="k2b"),
+            "an empty-string source is rejected")
+        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
+            observer_id="owner", entity=e, event=g, thesis="t", acted="false", idempotency_key="k3"),
+            "acted='false' (a string) is rejected (no truthy coercion)")
+        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
+            observer_id="owner", entity=e, event=g, thesis="t", acted=1, idempotency_key="k4"),
+            "acted=1 (an int) is rejected")
+        check(max_res(store) == before and n_obs(store) == 0, "no rejected input consumed a reservation")
+        store.close()
+
+
+# 2c ========================================================================
+def test_canonical_sources_and_nfc_equivalence():
+    print("\n[2c] sources canonicalized ONCE (NFC + sorted-unique); persisted == fingerprinted")
+    with tmp() as d:
+        store = mk(os.path.join(d, "r.db"))
+        e, g = sq.ent("p", "P"), sq.ev("g")
+        r1, o1 = sq.cap(store, e, g, "K", sources=("https://x/b", "https://x/a", "https://x/a"))
+        check(tuple(o1.sources) == ("https://x/a", "https://x/b"),
+              "stored sources are NFC + sorted + de-duplicated (canonical tuple)")
+        r2 = store.capture_observation(observer_id="owner", entity=e, event=g, thesis=sq.THESIS,
+                                       sources=["https://x/a", "https://x/b", "https://x/b"],
+                                       idempotency_key="K")
+        check(r2["status"] == "noop" and r2["id"] == r1["id"],
+              "a reordered + duplicated sources retry hashes equal -> noop")
+        nfc = unicodedata.normalize("NFC", "café")   # café, composed
+        nfd = unicodedata.normalize("NFD", "café")  # café, decomposed
+        ra, _ = sq.cap(store, sq.ent("q", "Q"), g, "T", thesis=nfc)
+        rb = store.capture_observation(observer_id="owner", entity=sq.ent("q", "Q"), event=g,
+                                       thesis=nfd, sources=sq.SOURCES, idempotency_key="T")
+        check(rb["status"] == "noop" and rb["id"] == ra["id"],
+              "an NFD vs NFC thesis hashes equal -> noop (thesis NFC-normalized once)")
+        store.close()
+
+
+# 3b ========================================================================
+def test_capture_eligibility_gate():
+    print("\n[3b] the sole writer enforces eligibility: unresolved entity / non-future event refused")
+    nonres = next(r for r in rc.Resolution if r is not rc.Resolution.RESOLVED)
+    with tmp() as d:
+        store = mk(os.path.join(d, "r.db"))
+        e, g = sq.ent("p", "P"), sq.ev("g")
+        before = max_res(store)
+        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
+            observer_id="owner", entity=rc.EntityIdentity("p", "P", nonres), event=g, thesis="t",
+            idempotency_key="k1"), "an unresolved/ambiguous entity is refused")
+        past = rc.EventIdentity("gp", datetime.now(UTC) - timedelta(hours=1))
+        expect_raises(rcs.ResearchStoreError, lambda: store.capture_observation(
+            observer_id="owner", entity=e, event=past, thesis="t", idempotency_key="k2"),
+            "an event whose effective time is not in the future is refused")
+        check(max_res(store) == before and n_obs(store) == 0,
+              "a refused capture consumed NO reservation and wrote no record")
         store.close()
 
 
@@ -237,18 +309,39 @@ def test_write_once_and_v3_gate():
 
 # 11 ========================================================================
 def test_concurrency_one_record():
-    print("\n[11] two connections racing one scope+key+fingerprint -> one record, one binding, same id")
+    print("\n[11] two GENUINELY concurrent connections (barrier) race one scope/key/fingerprint")
     with tmp() as d:
         path = os.path.join(d, "r.db")
-        a = mk(path)
-        b = mk(path)
-        ra, _ = sq.cap(a, sq.ent("p", "P"), sq.ev("g"), "K")         # a commits first
-        rb = b.capture_observation(observer_id="owner", entity=sq.ent("p", "P"), event=sq.ev("g"),
-                                   thesis=sq.THESIS, sources=sq.SOURCES, idempotency_key="K")
-        check(rb["status"] == "noop" and rb["id"] == ra["id"], "the second caller sees the original (no dup)")
-        check(n_obs(a) == 1 and n_idem(a) == 1, "exactly one observation + one binding after the race")
-        a.close()
-        b.close()
+        mk(path).close()                      # create the schema once (no create-race between workers)
+        barrier = threading.Barrier(2)
+        results, errors = {}, {}
+
+        def worker(name):
+            try:
+                st = mk(path)                 # own connection, opened in this thread
+                try:
+                    barrier.wait(timeout=10)  # both threads call capture at the same instant
+                    results[name] = st.capture_observation(
+                        observer_id="owner", entity=sq.ent("p", "P"), event=sq.ev("g"),
+                        thesis=sq.THESIS, sources=sq.SOURCES, idempotency_key="K")
+                finally:
+                    st.close()
+            except Exception as ex:  # noqa: BLE001
+                errors[name] = f"{type(ex).__name__}: {ex}"
+
+        ta, tb = threading.Thread(target=worker, args=("a",)), threading.Thread(target=worker, args=("b",))
+        ta.start(); tb.start(); ta.join(); tb.join()
+        check(not errors, f"no worker errored ({errors})")
+        if len(results) == 2:
+            ra, rb = results["a"], results["b"]
+            check(sorted([ra["status"], rb["status"]]) == ["noop", "recorded"],
+                  "exactly one caller recorded and the other no-oped")
+            check(ra["id"] == rb["id"] and ra["record_seq"] == rb["record_seq"],
+                  "both callers return the identical bound id + sequence")
+        v = mk(path)
+        check(n_obs(v) == 1 and n_idem(v) == 1, "exactly one observation + one binding after the race")
+        check(max_res(v) == 1, "exactly one reservation was consumed (the no-op consumed none)")
+        v.close()
 
 
 # 12 ========================================================================
@@ -308,10 +401,12 @@ if __name__ == "__main__":
     print("=" * 80)
     print("RESEARCH CANDIDATE — IDEMPOTENCY REGISTRY (schema v3) — 14 adversarial cases")
     print("=" * 80)
-    for t in (test_no_nested_transaction, test_exact_retry_true_noop, test_clocks_and_seq_excluded,
-              test_different_fingerprint_conflicts, test_two_observers_same_token, test_db_rejects_mismatch,
-              test_no_observation_supersession, test_invisible_field_rejection, test_no_cleartext_pii,
-              test_write_once_and_v3_gate, test_concurrency_one_record, test_unbound_observation_fails_closed,
+    for t in (test_no_nested_transaction, test_exact_retry_true_noop, test_input_coercion_rejected,
+              test_canonical_sources_and_nfc_equivalence, test_capture_eligibility_gate,
+              test_clocks_and_seq_excluded, test_different_fingerprint_conflicts,
+              test_two_observers_same_token, test_db_rejects_mismatch, test_no_observation_supersession,
+              test_invisible_field_rejection, test_no_cleartext_pii, test_write_once_and_v3_gate,
+              test_concurrency_one_record, test_unbound_observation_fails_closed,
               test_two_keys_one_observation, test_legacy_key_scope):
         t()
     print("\n" + "=" * 80)

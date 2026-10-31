@@ -445,7 +445,7 @@ class ResearchCandidateStore:
             raise ResearchStoreError("db_path is required (2B: no default path, tests pass a temp dir)")
         if db_path == ":memory:":
             raise ResearchStoreError("db_path must be a real file path, not an in-memory DB")
-        # create=False (used to VALIDATE a backup/restore target) requires an EXISTING valid v2 store;
+        # create=False (used to VALIDATE a backup/restore target) requires an EXISTING valid v3 store;
         # it never creates schema, so a truncated/empty/foreign file fails closed instead of being
         # silently initialized.
         self.db_path = db_path
@@ -482,7 +482,7 @@ class ResearchCandidateStore:
                 self.conn.execute("PRAGMA journal_mode=WAL")
                 self.conn.execute("PRAGMA synchronous=FULL")
         elif not create:
-            # validation/restore-target open: refuse anything that is not already a v2 store.
+            # validation/restore-target open: refuse anything that is not already a v3 store.
             raise SchemaVersionError(
                 "no research-candidate schema present (empty / truncated / foreign file) — fail closed")
         else:
@@ -702,8 +702,9 @@ class ResearchCandidateStore:
     # so every stored observation is bound exactly once. The server owns the observation_id, the clocks
     # and the sequence; the caller supplies only the governed intent + an opaque idempotency_key.
     def capture_observation(self, *, observer_id: str, entity: EntityIdentity, event: EventIdentity,
-                            thesis: str, sources=(), acted: bool = False,
-                            acted_journal_ref: Optional[str] = None, idempotency_key: str) -> dict:
+                            thesis: str, sources=(), acted: bool = False, idempotency_key: str) -> dict:
+        # NOTE: 2D1 captures carry NO acted_journal_ref — Decision-Journal linkage is out of scope here, and
+        # a persisted-but-unfingerprinted field could vary invisibly under one key. It is always None.
         _check_key(idempotency_key)
         if not isinstance(observer_id, str) or not observer_id.strip():
             raise ResearchStoreError("observer_id is required (immutable account id, never email)")
@@ -711,8 +712,25 @@ class ResearchCandidateStore:
             raise ResearchStoreError("entity must be a governed EntityIdentity")
         if not isinstance(event, EventIdentity):
             raise ResearchStoreError("event must be a governed EventIdentity")
-        sources = tuple(sources)
-        fp = _request_fingerprint(observer_id, entity, event, thesis, sources, acted)
+        if not isinstance(thesis, str) or not thesis.strip():
+            raise ResearchStoreError("thesis is required and must be a non-empty string")
+        if not isinstance(acted, bool):   # NO truthy coercion: "false"/1/None are rejected, not interpreted
+            raise ResearchStoreError("acted must be an actual boolean")
+        if isinstance(sources, (str, bytes)):
+            raise ResearchStoreError("sources must be a sequence of strings, not a single string")
+        try:
+            src_items = list(sources)
+        except TypeError:
+            raise ResearchStoreError("sources must be a sequence of strings")
+        for s in src_items:
+            if not isinstance(s, str) or not s.strip():
+                raise ResearchStoreError("each source must be a non-empty string")
+        # Canonicalize ONCE: NFC thesis + NFC, sorted, de-duplicated sources. The SAME canonical values are
+        # both fingerprinted and persisted, so fingerprinted intent == stored intent (no invisible drift).
+        canon_thesis = _nfc(thesis)
+        canon_sources = tuple(sorted({_nfc(s) for s in src_items}))
+        fp = _request_fingerprint(observer_id, entity, event, canon_thesis, canon_sources, acted)
+        now = datetime.now(timezone.utc)
         self._begin()
         try:
             row = self.conn.execute(
@@ -727,12 +745,21 @@ class ResearchCandidateStore:
                 raise IdempotencyConflict(
                     f"idempotency_key {idempotency_key!r} reused with a DIFFERENT request fingerprint "
                     f"for this observer (fail closed)")
+            # GOVERNED ELIGIBILITY GATE — this store API is the SOLE sanctioned writer, so it (not a future
+            # route) enforces eligibility. Checked AFTER the idempotency decision (an exact retry of an
+            # already-recorded observation still no-ops) but BEFORE any sequence allocation, so a rejection
+            # consumes no reservation.
+            if entity.resolution is not Resolution.RESOLVED:
+                raise ResearchStoreError(
+                    "entity is not RESOLVED — observation refused (abstain; unresolved/ambiguous identity)")
+            if event.event_effective <= now:
+                raise ResearchStoreError(
+                    "event_effective is not in the future at capture time — observation refused")
             seq = self._reserve_seq_in_txn()           # durable reservation, no nested BEGIN
-            now = datetime.now(timezone.utc)
             obs = UserObservation(
                 observation_id=uuid.uuid4().hex, observer=observer_id, entity=entity, event=event,
-                thesis=thesis, observed_at=now, bk_captured=now, record_seq=seq, sources=sources,
-                acted=acted, acted_journal_ref=acted_journal_ref)
+                thesis=canon_thesis, observed_at=now, bk_captured=now, record_seq=seq,
+                sources=canon_sources, acted=acted, acted_journal_ref=None)
             self._memory().record_observation(obs)     # Slice-1 semantic validation + hash re-verify
             self._insert_observation_in_txn(obs)        # registry bind + reservation claim + record insert
             self.conn.execute(
@@ -1062,20 +1089,22 @@ def _nfc(s: str) -> str:
 def _request_fingerprint(observer_id: str, entity: EntityIdentity, event: EventIdentity,
                          thesis: str, sources, acted: bool) -> str:
     """A stable digest over the PERSISTED observation intent — observer, canonical entity + event
-    (incl. event_effective), NFC thesis, NFC sorted-unique sources, acted — and NOTHING else. It
-    EXCLUDES the server-generated record_seq and the capture clocks, so an exact retry hashes equal
-    (no-op) while a changed payload conflicts. category/sub_label are NOT part of the observation
-    contract and are excluded. It is a 64-hex sha256, never cleartext thesis/email."""
-    if not isinstance(thesis, str):
-        raise ResearchStoreError("thesis must be a string")
+    (incl. event_effective), thesis, sources, acted — and NOTHING else. It EXCLUDES the server-generated
+    record_seq and the capture clocks, so an exact retry hashes equal (no-op) while a changed payload
+    conflicts. category/sub_label are NOT part of the observation contract and are excluded.
+
+    Inputs are already canonical: `capture_observation` NFC-normalizes the thesis, NFC-normalizes +
+    sorts + de-duplicates the sources, and verifies `acted` is a real bool, ONCE — the same canonical
+    values it then persists — so this function neither re-normalizes nor coerces (persisted intent ==
+    fingerprinted intent). It is a 64-hex sha256, never cleartext thesis/email."""
     payload = {
         "record_kind": "observation",
         "observer_id": observer_id,
         "entity": entity.canonical_dict(),
         "event": event.canonical_dict(),
-        "thesis": _nfc(thesis),
-        "sources": sorted({_nfc(s) for s in sources}),
-        "acted": bool(acted),
+        "thesis": thesis,
+        "sources": list(sources),
+        "acted": acted,
     }
     return content_hash(payload)
 

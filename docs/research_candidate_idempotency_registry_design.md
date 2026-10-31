@@ -206,6 +206,30 @@ per-table idempotency column, the composite FK + observer-bind triggers, the int
 `capture_observation` API, and the adversarial QC) to be approved and landed **before** any 2D1 route,
 flag, boundary, or unit file. No deletion/erasure implied. `SUPPORTED`/`UNSUPPORTED` remain unconstructible.
 
+## As-built hardening (Rev 2.1a — governed-capture gaps closed)
+
+Source review of the first cut surfaced four governed-capture gaps, all fixed in `capture_observation`:
+
+1. **`acted_journal_ref` removed from 2D1 capture.** Decision-Journal linkage is out of scope here, and a
+   persisted-but-unfingerprinted field could vary invisibly under one key. The parameter is gone; the
+   stored value is always `None`.
+2. **Strict input contract + single canonicalization.** `acted` must be an actual `bool` (no truthy
+   coercion — `"false"`/`1`/`None` are rejected); `sources` must be a sequence of non-empty strings (a bare
+   `str`/`bytes` is rejected, not iterated); the thesis is NFC-normalized and the sources are NFC-normalized,
+   sorted and de-duplicated **once**, and those exact canonical values are BOTH fingerprinted AND persisted,
+   so fingerprinted intent == stored intent. `_request_fingerprint` no longer re-normalizes or coerces.
+3. **The sole writer enforces eligibility.** Because this store API is the only sanctioned writer, it (not a
+   future route) rejects — AFTER the idempotency decision but BEFORE any sequence allocation, so a rejection
+   consumes no reservation — an `entity.resolution != RESOLVED` and an `event.event_effective <=` the server
+   capture time. (An exact retry of an already-recorded observation still no-ops.)
+4. **Concurrency proven with real threads.** The QC races two simultaneous connections through a barrier on
+   one scope/key/fingerprint and asserts one record + one binding, identical returned id/seq, and exactly
+   one reservation consumed.
+
+Stale "valid v2 store" wording corrected to v3. Adversarial fixtures added: string-as-sources,
+non-string/empty source, `"false"`/`1` acted, NFC/NFD thesis, reordered + duplicated sources, unresolved
+entity, non-future event.
+
 **BUILT (local schema v3).** Implemented in `services/research_candidate_store.py` (SCHEMA_VERSION=3,
 `idempotency_registry` + observer-bind/write-once triggers, `capture_observation` + the internal
 `_reserve_seq_in_txn`/`_insert_observation_in_txn`, `_request_fingerprint`, both-direction reopen
