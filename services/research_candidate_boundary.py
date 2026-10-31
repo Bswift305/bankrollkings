@@ -15,8 +15,12 @@ promotion, backup unit, UI, or production enablement.
 """
 from __future__ import annotations
 
+import logging
 import os
+import stat as _stat
 from typing import Optional
+
+_log = logging.getLogger("research_candidate.boundary")
 
 FLAG = "BK_RESEARCH_CANDIDATE_ENABLED"
 DB_PATH_ENV = "BK_RESEARCH_CANDIDATE_DB_PATH"       # explicit absolute path
@@ -70,7 +74,41 @@ def _resolved_db_path() -> str:
         contained = False
     if not contained:
         raise ConfigError("DB path is not contained under the approved root")
-    return db
+    return rdb              # the CANONICAL validated path — never reopen the unchecked original spelling
+
+
+def _ensure_secure_dir(path: str) -> None:
+    """Create/verify the DB's containing directory as 0700. POSIX ENFORCES + verifies (failure -> 503);
+    Windows is best-effort (chmod cannot set NTFS ACLs)."""
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as exc:
+        raise ConfigError("cannot create the approved directory") from exc
+    try:
+        os.chmod(path, 0o700)
+    except OSError:
+        if os.name != "nt":
+            raise ConfigError("cannot set the approved directory to 0700")
+    if os.name != "nt":
+        mode = _stat.S_IMODE(os.stat(path).st_mode)
+        if mode != 0o700:
+            raise ConfigError(f"approved directory is not 0700 (got {oct(mode)})")
+
+
+def _lock_down_db(path: str) -> None:
+    """Set/verify the DB file (and any WAL sidecars present) to 0600. POSIX ENFORCES + verifies the main
+    file (failure -> 503); Windows is best-effort."""
+    targets = [path] + [path + s for s in ("-wal", "-shm") if os.path.exists(path + s)]
+    for p in targets:
+        try:
+            os.chmod(p, 0o600)
+        except OSError:
+            if os.name != "nt" and p == path:
+                raise ConfigError("cannot set the DB file to 0600")
+    if os.name != "nt":
+        mode = _stat.S_IMODE(os.stat(path).st_mode)
+        if mode != 0o600:
+            raise ConfigError(f"DB file is not 0600 (got {oct(mode)})")
 
 
 def capture(*, observer_id: str, player_ref: str, event_id: str, thesis: str, sources, acted: bool,
@@ -86,19 +124,33 @@ def capture(*, observer_id: str, player_ref: str, event_id: str, thesis: str, so
     )
     from services import nfl_identity_event_adapter as adapter
 
-    db_path = _resolved_db_path()
+    db_path = _resolved_db_path()                     # canonical, containment-validated path
     props = (os.environ.get(PROPS_ENV, "") or "").strip()
     roster = (os.environ.get(ROSTER_ENV, "") or "").strip()
     if not props or not roster:
         raise ConfigError("props/roster path env is missing")
 
-    resolved = adapter.NflIdentityEventAdapter(props, roster).resolve(player_ref, event_id)
+    # Resolution runs OUTSIDE the store block, so guard it: the adapter normally returns an Abstention,
+    # but any UNEXPECTED error (pandas/filesystem/etc.) becomes a calm 503 rather than escaping as a 500.
+    try:
+        resolved = adapter.NflIdentityEventAdapter(props, roster).resolve(player_ref, event_id)
+    except Exception as exc:
+        raise Unavailable("resolver error") from exc
     if isinstance(resolved, adapter.Abstention):
-        raise InvalidInput(f"abstain:{resolved.reason_code}")   # governed reason code (no PII)
+        # Artifact-health abstentions (dimension 'artifact': SEASON_UNAVAILABLE, PROPS_*/ROSTER_*) are
+        # PLATFORM availability failures -> 503. User-selection abstentions (event/binding/player) -> 422.
+        if resolved.dimension == "artifact":
+            raise Unavailable(f"availability:{resolved.reason_code}")
+        raise InvalidInput(f"abstain:{resolved.reason_code}")
+
+    # Secure the approved directory (0700) BEFORE opening; the DB file is locked to 0600 right after the
+    # store creates it. POSIX enforces + verifies; failure -> 503.
+    _ensure_secure_dir(os.path.dirname(db_path))
 
     store = None
     try:
-        store = ResearchCandidateStore(db_path)       # request-scoped connection
+        store = ResearchCandidateStore(db_path)       # request-scoped connection (creates the DB first use)
+        _lock_down_db(db_path)
         res = store.capture_observation(
             observer_id=observer_id, entity=resolved.entity, event=resolved.event, thesis=thesis,
             sources=tuple(sources), acted=acted, evidence=resolved.evidence,
@@ -110,12 +162,18 @@ def capture(*, observer_id: str, player_ref: str, event_id: str, thesis: str, so
         raise Unavailable("store unhealthy")
     except ResearchStoreError:                        # input/eligibility rejection (e.g. non-future event)
         raise InvalidInput("rejected")
+    except BoundaryError:                             # a ConfigError from _lock_down_db -> 503 as-is
+        raise
+    except Exception as exc:                          # any other store/filesystem/sqlite failure -> 503
+        raise Unavailable("store error") from exc
     finally:
         if store is not None:
             try:
                 store.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                # surfaced honestly (sanitized type only), never swallowed; the primary result/exception
+                # above is preserved (a close failure does not fabricate or discard a committed capture).
+                _log.warning("research_candidate close failed: %s", type(exc).__name__)
 
 
 __all__ = ["FLAG", "DB_PATH_ENV", "ROOT_ENV", "PROPS_ENV", "ROSTER_ENV", "enabled", "capture",

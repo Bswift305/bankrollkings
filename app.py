@@ -50548,48 +50548,77 @@ def _research_candidate_is_owner(user):
 def research_candidate_observe():
     # OFF (default) -> the feature does not exist. Unauthorized is ALSO 404 (dark). CSRF is enforced by the
     # global before_request hook for this POST.
+    import uuid as _uuid
+    corr = _uuid.uuid4().hex[:12]
+
+    def _rclog(status, code=''):
+        # observability: correlation id + op kind + coarse status + sanitized code ONLY — never the
+        # thesis/identity/email/sources or the record id.
+        try:
+            app.logger.info('research_candidate op=observe corr=%s status=%s code=%s', corr, status, code)
+        except Exception:
+            pass
+
     if not RESEARCH_CANDIDATE_ENABLED:
         abort(404)
     user = get_current_user()
     if not _research_candidate_is_owner(user):
+        _rclog(404, 'not_owner')
         abort(404)
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
+        _rclog(422, 'not_json')
         return jsonify({'ok': False, 'error': 'JSON body required'}), 422
-    player_ref = str(data.get('player_ref', '') or '').strip()
-    event_id = str(data.get('event_id', '') or '').strip()
-    thesis = str(data.get('thesis', '') or '').strip()
-    idempotency_key = str(data.get('idempotency_key', '') or '').strip()
+    # STRICT types: never str()-coerce a number/dict/list into a governed field.
+    for fld in ('player_ref', 'event_id', 'thesis', 'idempotency_key'):
+        if not isinstance(data.get(fld), str):
+            _rclog(422, 'bad_type')
+            return jsonify({'ok': False, 'error': f'{fld} must be a string'}), 422
+    player_ref = data['player_ref'].strip()
+    event_id = data['event_id'].strip()
+    thesis = data['thesis'].strip()
+    idempotency_key = data['idempotency_key'].strip()
     acted = data.get('acted', False)
     sources_in = data.get('sources', [])
     if not (player_ref and event_id and thesis and idempotency_key):
+        _rclog(422, 'missing')
         return jsonify({'ok': False, 'error': 'missing required fields'}), 422
     if len(player_ref) > 200 or len(event_id) > 200 or len(thesis) > 2000 or len(idempotency_key) > 200:
+        _rclog(422, 'too_large')
         return jsonify({'ok': False, 'error': 'field too large'}), 422
     if not isinstance(acted, bool):      # strict: no truthy coercion (matches the store contract)
+        _rclog(422, 'acted_type')
         return jsonify({'ok': False, 'error': 'acted must be a boolean'}), 422
-    if isinstance(sources_in, (str, bytes)) or not isinstance(sources_in, (list, tuple)):
+    if not isinstance(sources_in, (list, tuple)):
+        _rclog(422, 'sources_type')
         return jsonify({'ok': False, 'error': 'sources must be a list'}), 422
-    sources = [str(s).strip() for s in sources_in]
+    if any(not isinstance(s, str) for s in sources_in):   # each source must ALREADY be a string
+        _rclog(422, 'source_type')
+        return jsonify({'ok': False, 'error': 'each source must be a string'}), 422
+    sources = [s.strip() for s in sources_in]
     if len(sources) > 20 or any((not s or len(s) > 500) for s in sources):
+        _rclog(422, 'sources_invalid')
         return jsonify({'ok': False, 'error': 'invalid sources'}), 422
-    observer_id = str((user or {}).get('user_id', '') or '').strip()   # server-derived account id
-    if not observer_id:
+    observer_id = (user or {}).get('user_id')           # server-derived immutable account id
+    if not isinstance(observer_id, str) or not observer_id.strip():
+        _rclog(422, 'no_account')
         return jsonify({'ok': False, 'error': 'no account id'}), 422
     from services import research_candidate_boundary as rcb   # lazy: ON-path only
     try:
-        result = rcb.capture(observer_id=observer_id, player_ref=player_ref, event_id=event_id,
+        result = rcb.capture(observer_id=observer_id.strip(), player_ref=player_ref, event_id=event_id,
                              thesis=thesis, sources=sources, acted=acted, idempotency_key=idempotency_key)
     except rcb.Conflict:
+        _rclog(409, 'conflict')
         return jsonify({'ok': False, 'error': 'conflict'}), 409
-    except rcb.InvalidInput as exc:
-        return jsonify({'ok': False, 'reason': str(exc)}), 422
-    except rcb.BoundaryError:             # ConfigError / Unavailable -> calm 503
+    except rcb.InvalidInput as exc:                     # user-selection abstention / input rejection
+        code = (exc.args[0] if exc.args else 'invalid')
+        _rclog(422, str(code))
+        return jsonify({'ok': False, 'reason': str(code)}), 422
+    except rcb.BoundaryError as exc:                    # ConfigError / Unavailable (incl. artifact-health) -> calm 503
+        code = (exc.args[0] if exc.args else exc.__class__.__name__)
+        _rclog(503, str(code))
         return jsonify({'ok': False, 'error': 'unavailable'}), 503
-    try:
-        app.logger.info('research_candidate.observe status=%s', result.get('status'))  # sanitized: no PII
-    except Exception:
-        pass
+    _rclog(200, result.get('status'))
     return jsonify({'ok': True, 'status': result['status'], 'id': result['id']}), 200
 
 
