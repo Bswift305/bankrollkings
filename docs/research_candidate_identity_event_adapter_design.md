@@ -1,137 +1,172 @@
-# Research Candidate — Governed NFL Identity + Event Adapter (DESIGN ONLY)
+# Research Candidate — Governed NFL Identity + Event Adapter (DESIGN ONLY — Rev 2)
 
-**Status: DESIGN ONLY. No code, route, flag, schema edit, or deploy.** Date 2026-10-31. This is the first
-2D1 prerequisite (the second — the idempotency registry, schema v3 — is BUILT). It is authorized to begin
-after: the registry closed (`docs/research_candidate_idempotency_registry_design.md`, BUILT) and the
-identity feasibility receipt confirmed an abstain-capable join (`docs/research_candidate_2d1_identity_feasibility.md`:
-event binding authoritative; name→`player_id` 80% of names / 92% of rows, with a governed abstain tail).
+**Status: DESIGN ONLY — Rev 2. No code, route, flag, schema edit, or deploy.** Date 2026-10-31. First 2D1
+prerequisite (second = the idempotency registry, schema v3, BUILT). Rev 1 resolved player and event
+independently and let resolution evidence evaporate before storage. **Rev 2** binds player and event
+through a single board row, freezes source-season + artifact-health contracts around one immutable read of
+each artifact, makes the reason codes mutually exclusive, and persists non-forgeable resolution provenance
+with the observation.
 
-The adapter turns an owner's loosely-typed NFL observation request into the **authoritative, governed
-inputs** the store's sole writer (`capture_observation`) demands — or **abstains**, returning a typed
-unavailability with a reason code and writing nothing. It is RESEARCH_ONLY, carries zero authority, and
-**never fabricates identity**: no fuzzy matching, no short-form inference, no user-supplied kickoff.
+The adapter turns an owner's **board selection** into the authoritative, governed inputs the store's sole
+writer (`capture_observation`) demands — or **abstains**, returning a typed unavailability with a reason
+code and writing nothing. RESEARCH_ONLY, zero authority, **never fabricates identity**: no fuzzy matching,
+no short-form inference, no user-supplied kickoff, no independently-supplied player+event pair.
 
 ---
 
-## 1. Why an adapter (the gap it closes)
+## 1. Request is a single board selection (player⟂event binding)
 
-`capture_observation(observer_id, entity: EntityIdentity, event: EventIdentity, thesis, sources, acted,
-idempotency_key)` already refuses a non-`RESOLVED` entity and a non-future event, and canonicalizes the
-event instant to UTC. But it takes identity/event as **already-governed objects**. Nothing today maps an
-owner's input (a player the owner names, a game they mean) to:
+The request identifies **one current-board selection**, not a player and an event chosen separately. A
+valid selection is a `(normalized Player, EventId)` pair that **exists as a row in one props snapshot**.
+This is the core Rev-2 correction: the adapter never resolves two independently-supplied values. A valid
+player id combined with an unrelated (but individually valid) event **abstains** with
+`PLAYER_EVENT_MISMATCH`. The player id is resolved from *that row's* `Player`; the event id + kickoff come
+from *that same row*. The binding `(EventId, player_id)` is the unit of resolution and of provenance.
 
-1. an immutable **player id**, 2. a canonical **display identity**, 3. a governed **event id**, 4. an
-authoritative **kickoff**, 5. explicit **unresolved/ambiguous/missing** behavior.
+## 2. Artifacts, season, and health — one immutable read each
 
-The adapter is that mapping, and it is the ONLY thing allowed to construct the `EntityIdentity`/
-`EventIdentity` handed to `capture_observation`. The owner never types a player id or a kickoff.
+- **Props board** `data/props/NFL_Props.csv` — `Player`, `EventId`, `EventCommenceAtUTC`.
+- **Roster** `data/tracking/_nflverse_stats_<season>.parquet` — `player_id`, `player_display_name`.
 
-## 2. Inputs
+Contracts (fail closed on every one):
 
-- **From the owner (the request):** a player reference (a display name as shown on the board) and an event
-  reference (the specific upcoming game — surfaced as a pick from the current slate, never a free-text
-  kickoff). Plus the human `thesis`, optional `sources`, `acted`. The owner selects from board rows; they do
-  not supply ids or times.
-- **From persisted artifacts (read-only, no paid fetch):**
-  - the props board `data/props/NFL_Props.csv` — columns `Player`, `EventId`, `EventCommenceAtUTC` (the
-    kickoff; confirmed 100% present/parseable, zero conflicting kickoffs);
-  - the roster `data/tracking/_nflverse_stats_<season>.parquet` — `player_id` + `player_display_name`
-    (auto-discovered latest season; confirmed 0 id→>1-name duplicates).
+1. **Current-season roster, not "latest filename".** The resolver determines the **current NFL season**
+   from the governed season calendar (the same Week-1 table the app's completed-week logic uses —
+   `NFL_SEASON_WEEK1_THURSDAY`), and loads **that** season's roster. A roster whose embedded season ≠ the
+   resolver's current season → `ROSTER_SEASON_MISMATCH`. A missing/undiscoverable roster → `ROSTER_UNAVAILABLE`.
+2. **Health gates.** Missing props → `PROPS_UNAVAILABLE`; props whose last-refresh signal is older than the
+   configured freshness window (board must be current) → `PROPS_STALE`; props missing required columns or
+   unreadable → `PROPS_SCHEMA_INVALID`. Roster missing `player_id`/display columns or unreadable →
+   `ROSTER_UNAVAILABLE`.
+3. **One immutable read + fingerprint.** Each artifact is read **once** into an in-memory snapshot; its
+   **SHA-256** is computed over those exact bytes; every index (name→id, the `(EventId, player)` row set,
+   the per-EventId kickoff set) is built from that single snapshot. A request resolves against one
+   consistent `(props_sha256, roster_sha256)` pair.
+4. **Fingerprint-keyed cache.** Built indexes are cached under `(props_sha256, roster_sha256, season,
+   resolver_version)`. When **either** artifact's SHA-256 changes, the cached authority is invalidated and
+   rebuilt — a formerly-valid cached resolution never survives an artifact change.
 
-## 3. The five authoritative facts
+## 3. Resolution order (first failing gate wins — outcomes are mutually exclusive)
 
-| Fact | Source | Rule |
-|---|---|---|
-| Immutable player id | roster `player_id` | via the EXACT normalized name→id index (§4); abstain if not exactly one |
-| Canonical display | roster `player_display_name` | the roster's display, NOT the owner's typed string |
-| Event id | props `EventId` | taken from the selected board row; abstain if blank |
-| Authoritative kickoff | props `EventCommenceAtUTC` | parsed as tz-aware UTC; abstain if blank/unparseable/conflicting |
-| Unresolved/ambiguous/missing | — | explicit abstention with a reason code (§5); never a guess |
+1. Artifact health: `PROPS_UNAVAILABLE` / `PROPS_STALE` / `PROPS_SCHEMA_INVALID` /
+   `ROSTER_UNAVAILABLE` / `ROSTER_SEASON_MISMATCH`.
+2. Event presence: the referenced `EventId` is absent from the snapshot → `EVENT_NOT_FOUND`.
+3. **Binding:** `(normalized Player, EventId)` is not a row in the snapshot → `PLAYER_EVENT_MISMATCH`.
+4. Kickoff: the bound row's `EventCommenceAtUTC` is blank/unparseable → `KICKOFF_MISSING`; the `EventId`
+   carries >1 distinct kickoff in the snapshot → `KICKOFF_CONFLICT`; the kickoff is not in the future at
+   resolution → `EVENT_PAST` (the store re-checks this under its lock, so a kickoff that passes between
+   resolution and capture is still refused).
+5. Identity: the normalized board name is absent from the roster → `NAME_UNRESOLVED`; it maps to **>1**
+   `player_id` → `NAME_AMBIGUOUS`; the matched `player_id` maps to **>1** display names (alias guard,
+   fail-closed even though the receipt showed 0) → `PLAYER_ID_ALIAS_CONFLICT`.
 
-On success the adapter returns `EntityIdentity(canonical_id=player_id, display=player_display_name,
-resolution=RESOLVED)` and `EventIdentity(canonical_id=EventId, event_effective=<EventCommenceAtUTC, UTC>)`.
-The store then re-checks `event_effective > now` under the lock, so a game that kicks off between resolution
-and capture is still refused downstream.
+On success: `EntityIdentity(canonical_id=player_id, display=player_display_name, resolution=RESOLVED)` and
+`EventIdentity(canonical_id=EventId, event_effective=<EventCommenceAtUTC as tz-aware UTC>)`.
 
-## 4. Exact-match resolver + per-refresh collision audit
+### Reason codes (closed, mutually exclusive)
 
-- **Normalization:** casefold + whitespace-collapse only (the identity audit's `norm`). **No** fuzzy
-  distance, **no** short-form/initial expansion, **no** nickname tables.
-- **Index:** from the current roster, build `normalized_display → {player_id}`. A normalized name mapping to
-  **exactly one** `player_id` is *authoritative*; **zero** ids = unresolved; **>1** ids = ambiguous.
-- **Collision audit (every roster refresh):** recompute the index and record the set of ambiguous
-  (name→>1 id) names and the unresolved set. These shift week to week (the receipt showed 3 roster
-  collisions and 84 unresolved against the current board). A name that becomes non-unique **loses
-  authority immediately** — the adapter abstains on it even if it resolved last week. The audit is a
-  read-only report; it never mutates the roster.
-- **Stability note:** the receipt showed 0 id→>1-name duplicates, so a resolved name's id is a stable 1:1.
-  That is a precondition the audit re-verifies; if it ever fails, the adapter abstains store-wide on the
-  affected ids rather than pick one.
+`PROPS_UNAVAILABLE`, `PROPS_STALE`, `PROPS_SCHEMA_INVALID`, `ROSTER_UNAVAILABLE`, `ROSTER_SEASON_MISMATCH`,
+`EVENT_NOT_FOUND`, `PLAYER_EVENT_MISMATCH`, `KICKOFF_MISSING`, `KICKOFF_CONFLICT`, `EVENT_PAST`,
+`NAME_UNRESOLVED`, `NAME_AMBIGUOUS`, `PLAYER_ID_ALIAS_CONFLICT`.
 
-## 5. Abstention taxonomy (typed, reason-coded — never zero-filled)
+Rev-1's `NAME_COLLISION` is **removed** — it duplicated `NAME_AMBIGUOUS` (name→>1 id). The id→>1-names
+guard is the separately named `PLAYER_ID_ALIAS_CONFLICT`. Rev-1's `EVENT_ID_MISSING` is **removed** (a row
+with no usable event is reached as `EVENT_NOT_FOUND` or `PLAYER_EVENT_MISMATCH`).
 
-The adapter returns either a `ResolvedObservationInput` (§6) or an `Abstention(reason_code, dimension)`.
-It writes nothing on abstention. Reason codes (closed set):
+## 4. Resolution provenance (persisted, non-forgeable)
 
-- `NAME_UNRESOLVED` — the normalized board name is absent from the roster.
-- `NAME_AMBIGUOUS` — the normalized name maps to >1 `player_id`.
-- `NAME_COLLISION` — the name is in the current collision-audit set (non-authoritative this refresh).
-- `EVENT_ID_MISSING` — the selected row has a blank `EventId`.
-- `KICKOFF_MISSING` — `EventCommenceAtUTC` is blank/unparseable.
-- `KICKOFF_CONFLICT` — the `EventId` carries >1 distinct kickoff on the board (ambiguous event).
-- `EVENT_PAST` — the kickoff is not in the future at resolution time (the store re-checks under lock).
-- `ROSTER_UNAVAILABLE` — no roster artifact discovered / missing `player_id`|display columns (fail closed).
+A successful resolution carries, and MUST persist with the observation:
 
-Abstentions are **surfaced** (count + reason), never silently dropped and never coerced to a neutral/zero
-identity. An abstained request is simply not an observation.
+- `resolver_version` (adapter/resolver version);
+- `props_sha256`;
+- `roster_sha256` + `roster_season`;
+- the selected binding `(EventId, player_id)`;
+- `resolved_at` (tz-aware UTC).
 
-## 6. Output contract
+**Mechanism — reserved system-source references.** Provenance is carried as **reserved, system-only source
+references** under a non-user-forgeable scheme `bkres:` — e.g. `bkres:resolver/v1`,
+`bkres:props-sha256/<hex>`, `bkres:roster-sha256/<hex>`, `bkres:roster-season/2026`,
+`bkres:binding/<EventId>/<player_id>`, `bkres:resolved-at/<iso-utc>` — distinct from owner-entered
+`sources`. This needs a small **store (2B-family) refinement** built with the adapter (design it now,
+implement with the adapter, with its own QC):
+
+- `capture_observation` gains a route-supplied `system_sources` input; it **rejects any owner `sources`
+  entry in the `bkres:` namespace** (anti-forgery enforced at the sole writer, not only the route), and
+  **requires** every `system_sources` entry to be a well-formed `bkres:` reference.
+- Stored `sources` = the canonical union (owner + system); provenance therefore rides in the observation
+  and its `content_hash`.
+- **Idempotency is preserved:** the request fingerprint is computed over **owner sources only** (plus the
+  authoritative identity/event/thesis/acted) and **excludes `bkres:` system sources**. The authoritative
+  identity is stable regardless of *when* it was resolved, so an exact retry — even re-resolved at a new
+  instant against the same artifacts — is still a no-op; the first stored observation's provenance stands.
+  (Reserved sources are evidence of resolution, not owner intent, so they must not perturb the fingerprint.)
+
+Provenance cannot disappear before storage: the adapter returns it with the resolved input; the route
+passes it as `system_sources`; the store persists it in the same capture transaction. The future
+owner-only route **rejects owner sources using the reserved namespace** and stores the resolution
+references with the observation.
+
+## 5. Output contract
 
 ```
-resolve(player_ref, event_ref) -> ResolvedObservationInput | Abstention
+resolve(board_selection) -> ResolvedObservationInput | Abstention
 
 ResolvedObservationInput:
-  entity: EntityIdentity   # RESOLVED, canonical_id = roster player_id, display = roster display name
-  event:  EventIdentity    # canonical_id = EventId, event_effective = EventCommenceAtUTC (tz-aware UTC)
+  entity:  EntityIdentity        # RESOLVED; canonical_id = roster player_id, display = roster display name
+  event:   EventIdentity         # canonical_id = EventId, event_effective = EventCommenceAtUTC (tz-aware UTC)
+  system_sources: tuple[str]     # reserved bkres: provenance refs (§4); route passes straight to the store
 
 Abstention:
-  reason_code: one of §5
-  dimension:   "player" | "event"
+  reason_code: one of §3
+  dimension:   "artifact" | "event" | "binding" | "player"
 ```
 
-The caller (a future owner-only route, still blocked) passes a `ResolvedObservationInput`'s `entity`/`event`
-straight into `capture_observation` with the owner's `observer_id`, `thesis`, `sources`, `acted`, and an
-opaque `idempotency_key`. An `Abstention` maps to a tiered unavailable (e.g. 422) — never a record.
+The future owner-only route passes `entity`/`event`/`system_sources` into `capture_observation` with the
+owner's `observer_id`, `thesis`, owner `sources`, `acted`, and an opaque `idempotency_key`. An `Abstention`
+maps to a tiered unavailable (e.g. 422) — never a record.
 
-## 7. What it must NOT do
+## 6. What it must NOT do
 
-- No fuzzy/approximate matching, no short-form or nickname expansion, no cross-season carry of a name whose
-  id changed.
-- No user-supplied or synthesized kickoff; the kickoff is the persisted Odds `EventCommenceAtUTC` only.
-- No synthesized `player_id`; a missing/ambiguous id abstains.
-- No authority, no score, no sort delta, no promotion — the adapter resolves identity only; `SUPPORTED`/
-  `UNSUPPORTED` remain unconstructible upstream.
-- No writes to the roster/props; the audit is read-only.
+- No fuzzy/approximate matching, no short-form/nickname expansion, no cross-season carry of a name whose id
+  changed, no "latest filename" roster.
+- No independently-supplied player+event; resolution is always through one bound board row.
+- No user-supplied/synthesized kickoff or `player_id`; a missing/ambiguous id or event abstains.
+- No owner-supplied `bkres:` source (rejected at the store); no authority/score/sort/promotion — identity
+  resolution only. `SUPPORTED`/`UNSUPPORTED` remain unconstructible upstream.
+- No writes to props/roster; the index build and collision audit are read-only.
 
-## 8. Proposed QC (adversarial — to accompany the build, before any route)
+## 7. Proposed QC (adversarial — build alongside the adapter, before any route)
 
-1. Exact single match → `RESOLVED` entity with `canonical_id == player_id`, display from the roster.
-2. Unresolved / ambiguous / collision names → the correct `Abstention` code, no `EntityIdentity` built.
-3. Blank `EventId` / blank-or-unparseable kickoff / conflicting kickoff → the correct event `Abstention`.
-4. A past kickoff → `EVENT_PAST` abstention (and, end-to-end, the store refuses a future-turned-past event
-   under the lock).
-5. Missing roster / missing `player_id`|display columns → `ROSTER_UNAVAILABLE` (fail closed), no build.
-6. Collision-audit shift: a name authoritative in one roster becomes ambiguous in the next → abstains.
-7. The resolved `event_effective` is tz-aware UTC and equals the persisted `EventCommenceAtUTC` instant.
-8. No fuzzy fallback: a near-miss name (one edit away) does NOT resolve — it abstains `NAME_UNRESOLVED`.
-9. End-to-end: a `ResolvedObservationInput` feeds `capture_observation` and records exactly once; an
-   `Abstention` never reaches the store.
+1. Exact single match on a real board row → `RESOLVED` entity (`canonical_id == player_id`, roster display)
+   + `EventIdentity` from the same row; `system_sources` carry all five provenance facts.
+2. **Valid player paired with the wrong event** (both individually valid, not a board row) →
+   `PLAYER_EVENT_MISMATCH`, nothing built.
+3. **Event absent from the current board** → `EVENT_NOT_FOUND`.
+4. **Roster wrong season** (embedded season ≠ resolver current season) → `ROSTER_SEASON_MISMATCH`;
+   missing roster → `ROSTER_UNAVAILABLE`.
+5. **Stale / schema-invalid props** → `PROPS_STALE` / `PROPS_SCHEMA_INVALID`; missing props →
+   `PROPS_UNAVAILABLE`.
+6. Name unresolved / `NAME_AMBIGUOUS` / `PLAYER_ID_ALIAS_CONFLICT` each produce the correct code; a
+   near-miss (one edit away) does NOT fuzzy-resolve — it abstains `NAME_UNRESOLVED`.
+7. Kickoff blank/unparseable → `KICKOFF_MISSING`; EventId with >1 kickoff → `KICKOFF_CONFLICT`; past
+   kickoff → `EVENT_PAST` (and end-to-end, the store refuses a future-turned-past event under its lock).
+8. **Artifact change invalidates a formerly-valid cached resolution:** resolve once; change the props (or
+   roster) bytes so its SHA-256 changes; the cached authority is rebuilt and the stale index is not reused.
+9. **Provenance fingerprints change with source content:** two resolutions against different artifact bytes
+   carry different `props_sha256`/`roster_sha256` in `system_sources`.
+10. **Owner forgery rejected:** an owner `sources` entry in the `bkres:` namespace is rejected by the store
+    (sole-writer anti-forgery), no record written.
+11. **End-to-end provenance retention:** a `ResolvedObservationInput` fed through `capture_observation`
+    records exactly once, and the stored observation retains `resolver_version`, both artifact SHA-256s,
+    `roster_season`, the `(EventId, player_id)` binding, and `resolved_at`; an exact retry (re-resolved at a
+    new instant against the same artifacts) is still a no-op (owner-source-only fingerprint).
 
-## 9. Boundary
+## 8. Boundary
 
-Design only. Building this is a new module + its QC, to be approved and landed BEFORE any 2D1 owner-only
-route, flag, boundary module, or unit file. It performs **no paid fetch** (persisted artifacts only), holds
-**zero authority**, and **abstains** rather than guess. 2D1 production routing stays blocked until this
-adapter is **designed → approved → built** and wired behind the dark flag.
+Design only. Building this is a new resolver module + the small `capture_observation` `system_sources`
+refinement + their QC, to be approved and landed BEFORE any 2D1 owner-only route, flag, boundary module, or
+unit file. **No paid fetch** (persisted artifacts only), **zero authority**, **abstains** rather than guess.
+2D1 production routing stays blocked until this adapter (and the store refinement) are
+**designed → approved → built** and wired behind the dark flag.
 
 **STOP — returned for review.** No code, route, flag, schema edit, or deployment has been made.
