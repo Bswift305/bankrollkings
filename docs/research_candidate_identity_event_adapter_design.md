@@ -1,10 +1,14 @@
-# Research Candidate — Governed NFL Identity + Event Adapter (DESIGN ONLY — Rev 2.1)
+# Research Candidate — Governed NFL Identity + Event Adapter (DESIGN ONLY — Rev 2.2)
 
-**Status: DESIGN ONLY — Rev 2.1. No code, route, flag, schema edit, or deploy.** Date 2026-10-31. First
-2D1 prerequisite (second = the idempotency registry, schema v3, BUILT). Rev 2 bound player+event through one
-board row and persisted provenance. **Rev 2.1** freezes the health contracts to named, versioned sources,
-replaces route-supplied provenance strings with a typed `ResolutionEvidence` object the store validates,
-freezes the reserved-reference grammar, and states idempotent-provenance behavior exactly.
+**Status: DESIGN ONLY — Rev 2.2. No code, route, flag, schema edit, or deploy.** Date 2026-10-31. First
+2D1 prerequisite (second = the idempotency registry, schema v3, BUILT). Rev 2.1 froze the health contracts
+and the typed evidence object. **Rev 2.2** freezes four details that affect persistence and future replay:
+(1) extract the NFL season contract out of `app.py` so nothing imports the monolith; (2) bind freshness to
+the same open file handle (no TOCTOU) and require the roster's embedded `season` column; (3) tighten
+`ResolutionEvidence` (registered resolver id, strict integer season, round-trip-parseable references); and
+(4) advance the store to **schema v4** because every governed observation must now carry one complete
+evidence set — v3 is rejected with no migration, and reopen validates the provenance without pinning
+historical observations to the current season.
 
 The adapter turns an owner's **board selection** into the authoritative, governed inputs the store's sole
 writer (`capture_observation`) demands — or **abstains**, returning a typed unavailability with a reason
@@ -24,30 +28,41 @@ binding `(EventId, player_id)` is the unit of resolution and of provenance.
 ## 2. Frozen health / season / freshness contracts
 
 Artifacts: props `data/props/NFL_Props.csv` (`Player`, `EventId`, `EventCommenceAtUTC`, `SourceUpdatedAtUTC`);
-roster `data/tracking/_nflverse_stats_<season>.parquet` (`player_id`, `player_display_name`). Each is read
-**once** into a snapshot, SHA-256'd over those exact bytes, and all indexes built from that single read; a
-request resolves against one consistent `(props_sha256, roster_sha256)` pair. The index cache is keyed on
+roster `data/tracking/_nflverse_stats_<season>.parquet` (`player_id`, `player_display_name`, **`season`**).
+
+**No `app.py` import — a pure season contract module.** `_nfl_expected_completed_week()` and
+`NFL_SEASON_WEEK1_THURSDAY` currently live in `app.py`. They are extracted into a pure, side-effect-free
+module (e.g. `services/nfl_season_contract.py`); `app.py`, the adapter, and the store all consume that one
+implementation. The adapter/store **never import `app.py`**. A **parity QC** proves `app.py`'s existing
+completed-week / season behavior is unchanged after the extraction (the app delegates to the module).
+
+**Same-handle snapshot (no TOCTOU).** Each artifact is **opened once**; its bytes, its SHA-256, and its
+CLOCK-B mtime (`os.fstat(fd)` on that same descriptor) all come from the **same open handle** — the adapter
+never hashes one file version and then reads mtime or rows from a replacement. The bytes are parsed
+in-memory (e.g. `BytesIO`) from that one snapshot. A request resolves against one consistent
+`(props_sha256, roster_sha256)` pair; the index cache is keyed on
 `(props_sha256, roster_sha256, season, resolver_version)` and invalidated whenever either SHA-256 changes.
 
 **Named contracts (no hand-picked thresholds):**
 
-- **Current NFL season** = `_nfl_expected_completed_week()` → `NFL_SEASON_WEEK1_THURSDAY` (`app.py`). If the
-  governed calendar has **no entry** for the candidate season (cannot resolve) → `SEASON_UNAVAILABLE`
-  (fail closed; no roster load attempted). The season is derived by the resolver, never supplied.
-- **Roster season** must equal that current season (the roster is season-partitioned, so "stale roster" ==
-  "wrong season"): embedded season ≠ current → `ROSTER_SEASON_MISMATCH`; missing/undiscoverable →
-  `ROSTER_UNAVAILABLE`; unreadable or missing `player_id`/`player_display_name` → `ROSTER_SCHEMA_INVALID`.
-  There is **no** declared roster refresh-cadence family, so roster freshness is exactly current-season
-  correctness — the adapter does not invent a cadence.
+- **Current NFL season** = the extracted season contract's completed-week/season resolver (the same logic
+  `app.py` uses today). No calendar entry for the candidate season → `SEASON_UNAVAILABLE` (fail closed; no
+  roster load). The season is derived, never supplied.
+- **Roster season** is read from the roster's embedded **`season` column** (part of its schema contract),
+  not the filename, and must equal the current season (season-partitioned, so "stale roster" == "wrong
+  season"): embedded season ≠ current → `ROSTER_SEASON_MISMATCH`; missing/undiscoverable →
+  `ROSTER_UNAVAILABLE`; unreadable or missing `player_id`/`player_display_name`/`season` →
+  `ROSTER_SCHEMA_INVALID`. No roster refresh-cadence family is declared, so roster freshness is exactly
+  current-season correctness.
 - **Props staleness clock** = the ONE declared freshness contract `services/freshness_contract.py`,
-  `refresh_cadence_hours("props", "NFL")` — **CLOCK B** (artifact file mtime vs refresh cadence), today
-  **30.0h**, the SAME clock `qc_odds_feed` / `generate_run_status` / `report_feed_availability` use, so the
-  adapter can never call the board FRESH when the platform calls it STALE. File-age over the contract
-  window → `PROPS_STALE`. Missing props → `PROPS_UNAVAILABLE`.
+  `refresh_cadence_hours("props", "NFL")` — **CLOCK B** (the same handle's `fstat` mtime vs refresh
+  cadence), today **30.0h**, the SAME clock `qc_odds_feed` / `generate_run_status` /
+  `report_feed_availability` use, so the adapter can never call the board FRESH when the platform calls it
+  STALE. File-age over the window → `PROPS_STALE`. Missing props → `PROPS_UNAVAILABLE`.
 - **Props freshness metadata (fail closed, no silent mtime-only pass).** The bound row's `SourceUpdatedAtUTC`
   (provider `last_update`, tz-aware UTC) **must be present and parseable**. Absent/unparseable →
-  `PROPS_SCHEMA_INVALID`. This metadata requirement is independent of the CLOCK-B staleness gate; the
-  adapter never treats absent freshness metadata as fresh and never silently substitutes mtime for it.
+  `PROPS_SCHEMA_INVALID`. Independent of the CLOCK-B staleness gate; absent freshness metadata is never
+  treated as fresh and mtime is never silently substituted for it.
 - **Props schema.** Missing required columns or an unreadable file → `PROPS_SCHEMA_INVALID`.
 
 ## 3. Resolution order (first failing gate wins — outcomes mutually exclusive)
@@ -92,15 +107,19 @@ ResolutionEvidence (frozen value object, in the research-candidate domain):
   resolved_at:    datetime       # tz-aware UTC
 ```
 
-`capture_observation(..., evidence: ResolutionEvidence)` — a store (2B-family) refinement, designed here —
+`capture_observation(..., evidence: ResolutionEvidence)` — a store (schema-v4) refinement, designed here —
+takes `evidence` as a **mandatory** argument (no governed observation may be written without it) and
 **validates before any write** (reject → fail closed, no record, no reservation):
 
 - `props_sha256` / `roster_sha256` match `^[0-9a-f]{64}$`; `resolver_version` matches `^v\d+(\.\d+)*$`;
-  `resolver_id` non-empty;
+- `resolver_id` **equals the registered adapter id** (a store-side constant / small allow-list), not merely
+  non-empty — an unregistered resolver is rejected;
+- `roster_season` is a **strict `int`** — booleans and non-integers are rejected (`isinstance(x, int) and
+  not isinstance(x, bool)`);
 - `resolved_at` is tz-aware UTC;
 - `evidence.event_id == event.canonical_id` **and** `evidence.player_id == entity.canonical_id`;
-- `evidence.roster_season ==` the **governed current season** (the store re-derives it via the §2 calendar,
-  so season-binding is enforced by the store, not trusted from the route).
+- `evidence.roster_season ==` the **governed current season** (the store re-derives it via the §2 season
+  contract, so season-binding at capture is enforced by the store, not trusted from the route).
 
 The **store** then serializes the validated object into canonical reserved references (§5) and persists
 them with the observation (in `sources_json` + `content_hash`), **excluded from the request fingerprint**
@@ -127,6 +146,13 @@ bkres:v1:resolved-at=<iso8601-utc>     # canonical: YYYY-MM-DDTHH:MM:SS[.ffffff]
 escaped), making each reference unambiguously parseable. Callers never handcraft these; they pass the typed
 object and the store generates and parses the `bkres:v1:` forms.
 
+**Round-trip invariant.** The store's parser accepts a reserved-reference set **only if it parses back into
+exactly one complete `ResolutionEvidence`**: all seven fields present, **each exactly once**, **no missing
+field, no duplicate field, no extra `bkres:v1:` field**, and the parsed `event`/`player` equal the stored
+`EventIdentity`/`EntityIdentity`. `serialize(evidence)` then `parse(...)` must reproduce the original
+evidence; any deviation fails closed. This is enforced both when writing (serialize is total) and on reopen
+(§6a).
+
 ## 6. Idempotent provenance behavior (explicit)
 
 - The request fingerprint **excludes** resolution evidence entirely (it covers owner `sources` + the
@@ -140,6 +166,24 @@ object and the store generates and parses the `bkres:v1:` forms.
 - If the **current resolution abstains before store invocation**, **no idempotency lookup is implied** — the
   adapter short-circuits with an `Abstention` and `capture_observation` is never called, so there is no key
   lookup and no historical record is consulted.
+
+## 6a. Persisted evidence invariant — schema v4
+
+This refinement changes the persisted observation invariant: **every governed observation must carry exactly
+one complete `ResolutionEvidence` set.** Existing schema-v3 observations do not. Because nothing is deployed,
+the store advances to **`SCHEMA_VERSION = 4`** and **rejects v1/v2/v3 on open with no migration**.
+`capture_observation`'s `evidence` is mandatory; an observation cannot be written without it.
+
+**Reopen rules (capture-time vs durable invariants are distinct):**
+
+- Every `observation_private` row's reserved `bkres:v1:` references **parse back to exactly one complete
+  evidence set** (§5) whose `event_id`/`player_id` **equal the stored `EventIdentity`/`EntityIdentity`** —
+  otherwise `StoreIntegrityError` (fail closed). This joins the existing observation↔registry both-direction
+  reconcile.
+- Reopen does **NOT** require the stored `roster_season` to equal the *current* season. Otherwise every
+  prior-season observation would invalidate the database the moment the calendar advances. **Current-season
+  equality is a capture-time gate only** (§4); once stored, the season is historical fact and stays valid.
+  Reopen validates the provenance **grammar + binding + completeness**, never current-season recency.
 
 ## 7. Proposed QC (adversarial — build alongside the adapter, before any route)
 
@@ -171,13 +215,35 @@ object and the store generates and parses the `bkres:v1:` forms.
     SHA-256s, season, the `(EventId, player_id)` binding, and `resolved_at`. A **retry with changed artifact
     fingerprints** (same semantic intent + key) returns the **original** record and its **original**
     provenance **unchanged**; the newly-resolved evidence is discarded.
+12. **App ↔ season-resolver parity:** the extracted season module and `app.py`'s delegating call produce
+    identical completed-week/season results across a span of dates (existing app behavior unchanged).
+13. **Same-handle snapshot metadata:** SHA-256 and CLOCK-B mtime are taken from one `fstat` on the open
+    handle; a file swapped after the handle is opened cannot split the hash from the mtime/rows.
+14. **Incomplete / duplicate / extra provenance:** a reserved set missing a field, with a duplicated
+    `bkres:v1:` field, or with an extra field fails to parse → rejected on write and on reopen.
+15. **Unregistered resolver id:** `evidence.resolver_id` ≠ the registered adapter id → store rejects, no
+    record. Strict-int season: a boolean or non-int `roster_season` → rejected.
+16. **Schema v4 rejects v3:** a v3 (or v1/v2) store fails closed on open (`SchemaVersionError`), no migration,
+    no mutation.
+17. **Reopen after the calendar advances:** a store of prior-season observations reopens cleanly when the
+    current season has moved on — provenance grammar + binding validate, and `roster_season` recency is NOT
+    required at reopen.
 
-## 8. Boundary
+## 8. Boundary + build sequence
 
-Design only. Building this is a new resolver module + the `capture_observation` `ResolutionEvidence`
-refinement + their QC, to be approved and landed BEFORE any 2D1 owner-only route, flag, boundary module, or
-unit file. **No paid fetch** (persisted artifacts only), **zero authority**, **abstains** rather than guess.
-2D1 production routing stays blocked until this adapter and the store refinement are
-**designed → approved → built** and wired behind the dark flag.
+Design only. Building this is staged, each step approved before the next, and all BEFORE any 2D1 owner-only
+route/flag/boundary/unit:
+
+1. **Extract `services/nfl_season_contract.py`** (pure, side-effect-free) + the app parity QC; `app.py`
+   delegates to it. No behavior change.
+2. **Store schema-v4 refinement:** mandatory `evidence: ResolutionEvidence`, the `bkres:v1:` serialize/parse
+   with the round-trip + reopen invariants, reserved-namespace owner-source rejection, `SCHEMA_VERSION`→4
+   rejecting v3; migrate the existing store/backup/idempotency QC fixtures to capture **with** evidence.
+3. **The resolver module** (`services/nfl_identity_event_adapter.py`, name TBD) + its abstain/health/binding
+   QC.
+
+**No paid fetch** (persisted artifacts only), **zero authority**, **abstains** rather than guess. 2D1
+production routing stays blocked until all three are **designed → approved → built** and wired behind the
+dark flag.
 
 **STOP — returned for review.** No code, route, flag, schema edit, or deployment has been made.
