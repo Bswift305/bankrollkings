@@ -62,6 +62,7 @@ def std_props_df():
         ("Conf Player", "evtC", _iso(FUTURE2), SU_OK),
         ("Past Player", "evtP", _iso(PAST), SU_OK),         # kickoff in the past -> EVENT_PAST
         ("No Source", "evtNS", _iso(FUTURE), ""),           # bound-row SourceUpdatedAtUTC blank -> PROPS_SCHEMA_INVALID
+        ("Josh Alen", "evtNM", _iso(FUTURE), SU_OK),        # one edit from "Josh Allen" -> must NOT resolve
     ]
     return pd.DataFrame(rows, columns=["Player", "EventId", "EventCommenceAtUTC", "SourceUpdatedAtUTC"])
 
@@ -155,6 +156,56 @@ def test_all_abstention_codes():
               "ROSTER_SEASON_MISMATCH (roster is a different season)")
 
 
+# =========================================================================== near-miss never fuzzy-resolves
+def test_near_miss_never_resolves():
+    print("\n[B2] a one-edit name never fuzzy-resolves -> NAME_UNRESOLVED (exact match only)")
+    with tmp() as d:
+        a, _, _ = setup(d)
+        r = a.resolve("Josh Alen", "evtNM")    # roster has "Josh Allen"; one deletion away
+        check(is_abstain(r, "NAME_UNRESOLVED"),
+              "a near-miss (one edit) does NOT resolve to the close roster name")
+
+
+# =========================================================================== roster season + identity validation
+def test_roster_season_and_identity_validation():
+    print("\n[B3] roster season/identity validated WITHOUT coercion (no float season, no 'nan' identity)")
+    def roster(mut):
+        r = std_roster_df()
+        return mut(r)
+    cases = {
+        "fractional season": lambda r: r.assign(season=[2026.5, 2026, 2026, 2026, 2026]),
+        "float-typed season": lambda r: r.assign(season=[2026.0, 2026.0, 2026.0, 2026.0, 2026.0]),
+        "null season": lambda r: r.assign(season=[None, 2026, 2026, 2026, 2026]),
+    }
+    for name, mut in cases.items():
+        with tmp() as d:
+            a, _, _ = setup(d, roster_df=roster(mut))
+            check(is_abstain(a.resolve("Josh Allen", "evt1"), "ROSTER_SCHEMA_INVALID"),
+                  f"{name} -> ROSTER_SCHEMA_INVALID (not coerced/accepted)")
+    # null / blank identity columns (validated before string conversion -> never an authoritative "nan")
+    def _set(col, val):
+        def mut(r):
+            r = r.copy(); r.loc[0, col] = val; return r
+        return mut
+    for name, mut in {
+        "null player_id": _set("player_id", None),
+        "blank player_id": _set("player_id", "   "),
+        "null display": _set("player_display_name", None),
+        "blank display": _set("player_display_name", "   "),
+    }.items():
+        with tmp() as d:
+            a, _, _ = setup(d, roster_df=mut(std_roster_df()))
+            check(is_abstain(a.resolve("Josh Allen", "evt1"), "ROSTER_SCHEMA_INVALID"),
+                  f"{name} -> ROSTER_SCHEMA_INVALID (fails closed, not indexed as 'nan')")
+    # a valid numpy-int season still resolves (regression guard)
+    with tmp() as d:
+        import numpy as np
+        r = std_roster_df().assign(season=np.array([2026] * 5, dtype="int64"))
+        a, _, _ = setup(d, roster_df=r)
+        check(isinstance(a.resolve("Josh Allen", "evt1"), ad.ResolvedObservationInput),
+              "a valid numpy int64 season is still supported")
+
+
 # =========================================================================== single-snapshot / TOCTOU
 def test_single_snapshot_no_toctou():
     print("\n[C] each artifact is read ONCE: bytes + sha + mtime are one consistent snapshot")
@@ -170,6 +221,39 @@ def test_single_snapshot_no_toctou():
               "a later read reflects the replacement (each call is its own single snapshot)")
         check(hashlib.sha256(data1).hexdigest() == sha1,
               "the first snapshot's sha still matches its own bytes (not split from a replacement)")
+
+
+# =========================================================================== integrated replacement race
+def test_integrated_replacement_race():
+    print("\n[C2] replacing the props artifact AFTER its snapshot but BEFORE parsing uses the CAPTURED bytes")
+    with tmp() as d:
+        a, pp, rp = setup(d)
+        original = std_props_df()
+        orig_sha = hashlib.sha256(open(pp, "rb").read()).hexdigest()
+        replacement = original[original["Player"] != "Josh Allen"]   # a DIFFERENT board (no Josh/evt1)
+        real = ad._read_artifact
+        state = {"swapped": False}
+
+        def racing_read(path):
+            data, sha, mt = real(path)              # capture the snapshot first
+            if path == pp and not state["swapped"]:  # then replace the file on disk, mid-resolve
+                state["swapped"] = True
+                _csv(pp, replacement)
+            return data, sha, mt
+
+        ad._read_artifact = racing_read
+        try:
+            r = a.resolve("Josh Allen", "evt1")
+        finally:
+            ad._read_artifact = real
+        disk_sha = hashlib.sha256(open(pp, "rb").read()).hexdigest()
+        check(isinstance(r, ad.ResolvedObservationInput),
+              "resolve used the captured snapshot (Josh/evt1 present), not the replacement")
+        if isinstance(r, ad.ResolvedObservationInput):
+            check(r.evidence.props_sha256 == orig_sha,
+                  "evidence props_sha256 == the CAPTURED bytes' hash")
+            check(disk_sha != orig_sha and r.evidence.props_sha256 != disk_sha,
+                  "the on-disk file is now the replacement, but neither the rows nor the hash came from it")
 
 
 # =========================================================================== cache invalidation by fingerprint
@@ -247,9 +331,11 @@ if __name__ == "__main__":
     print("=" * 80)
     print("NFL IDENTITY + EVENT ADAPTER — STEP 3 QC (governed resolve/abstain, synthetic fixtures)")
     print("=" * 80)
-    for t in (test_success_and_utc_kickoff, test_all_abstention_codes, test_single_snapshot_no_toctou,
-              test_cache_keyed_by_fingerprint, test_collision_change_on_refresh,
-              test_exactly_one_reason_type, test_end_to_end_capture_and_provenance):
+    for t in (test_success_and_utc_kickoff, test_all_abstention_codes, test_near_miss_never_resolves,
+              test_roster_season_and_identity_validation, test_single_snapshot_no_toctou,
+              test_integrated_replacement_race, test_cache_keyed_by_fingerprint,
+              test_collision_change_on_refresh, test_exactly_one_reason_type,
+              test_end_to_end_capture_and_provenance):
         t()
     print("\n" + "=" * 80)
     print("Clean:", not fails)

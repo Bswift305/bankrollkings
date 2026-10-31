@@ -26,6 +26,7 @@ artifacts only (no paid fetch). The store validates this resolver's id against i
 from __future__ import annotations
 
 import hashlib
+import numbers
 import os
 import re
 from dataclasses import dataclass, field
@@ -79,8 +80,12 @@ def _norm(s) -> str:
 
 def _read_artifact(path: str):
     """Read one artifact ONCE: bytes, SHA-256, and the descriptor's mtime from the SAME open fd (no
-    TOCTOU — a file swapped after the open cannot split the hash from the mtime or the parsed rows)."""
-    fd = os.open(path, os.O_RDONLY)
+    TOCTOU — a file swapped after the open cannot split the hash from the mtime or the parsed rows).
+
+    O_BINARY is required: on Windows `os.open` defaults to TEXT mode and `os.read` would translate
+    CRLF->LF, so the SHA-256 would not be of the file's raw bytes and would differ from Linux (prod). With
+    O_BINARY (a no-op on POSIX) the hash is always over the exact on-disk bytes on both platforms."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
     try:
         st = os.fstat(fd)
         chunks = []
@@ -143,13 +148,29 @@ class NflIdentityEventAdapter:
             return Abstention("ROSTER_SCHEMA_INVALID", "artifact", "roster unreadable")
         if not set(ROSTER_COLUMNS).issubset(roster.columns):
             return Abstention("ROSTER_SCHEMA_INVALID", "artifact", "roster missing required columns")
-        try:
-            seasons = {int(x) for x in roster["season"].dropna().unique()}
-        except (TypeError, ValueError):
-            return Abstention("ROSTER_SCHEMA_INVALID", "artifact", "roster season column not integer")
+        # Embedded season: validate WITHOUT coercion — non-null, integer-typed (numpy/py ints ok),
+        # non-boolean, and every row exactly the governed season. A null/fractional/float value is
+        # ROSTER_SCHEMA_INVALID (never silently coerced or dropped).
+        season_col = roster["season"]
+        if season_col.isna().any():
+            return Abstention("ROSTER_SCHEMA_INVALID", "artifact", "null season value")
+        seasons = set()
+        for v in season_col.tolist():
+            if isinstance(v, bool) or not isinstance(v, numbers.Integral):
+                return Abstention("ROSTER_SCHEMA_INVALID", "artifact",
+                                  "non-integer season value (no coercion)")
+            seasons.add(int(v))
         if seasons != {season}:
             return Abstention("ROSTER_SEASON_MISMATCH", "artifact",
                               f"roster seasons {sorted(seasons)} != current {season}")
+        # Identity columns: validate BEFORE any string conversion so a null player_id / display never
+        # becomes an authoritative "nan". A null/blank identity on ANY row fails closed (it is neither
+        # indexed nor silently discarded, because a dropped row could conceal a collision).
+        pid_col, disp_col = roster["player_id"], roster["player_display_name"]
+        if pid_col.isna().any() or disp_col.isna().any():
+            return Abstention("ROSTER_SCHEMA_INVALID", "artifact", "null roster identity value")
+        if (pid_col.astype(str).str.strip() == "").any() or (disp_col.astype(str).str.strip() == "").any():
+            return Abstention("ROSTER_SCHEMA_INVALID", "artifact", "blank roster identity value")
 
         idx = self._index(psha, rsha, season, props, roster)
 
@@ -225,11 +246,11 @@ class NflIdentityEventAdapter:
         for (nm, eid), grp in p[(p["_nm"] != "") & (p["_eid"] != "")].groupby(["_nm", "_eid"]):
             source_updated_ok[(nm, eid)] = bool(grp["_su_ok"].all())
 
-        # roster is already verified to be exactly the current season; build + collision-audit the index
+        # roster is already verified (current season; non-null/non-blank identities), so build from EVERY
+        # row — no silent filtering that could hide a collision — and collision-audit the index.
         r = roster[["player_id", "player_display_name"]].copy()
         r["player_id"] = r["player_id"].astype(str).str.strip()
         r["player_display_name"] = r["player_display_name"].astype(str)
-        r = r[(r["player_id"] != "") & (r["player_display_name"].str.strip() != "")]
         r["_nm"] = r["player_display_name"].map(_norm)
         name_to_ids: dict = {}
         id_to_displays: dict = {}
