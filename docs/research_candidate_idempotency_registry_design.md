@@ -1,116 +1,158 @@
-# Research Candidate — Idempotency-Intent Registry (DESIGN ONLY, schema v3)
+# Research Candidate — Idempotency-Intent Registry (DESIGN ONLY — Rev 2, schema v3)
 
-**Status: DESIGN ONLY — schema/trigger/API proposal + adversarial QC plan, for approval before any
-code.** Date 2026-10-31. This is the second 2D1 prerequisite (the first is the identity/event adapter,
-`docs/research_candidate_2d1_identity_feasibility.md`). No code, route, flag, or deployment here.
+**Status: DESIGN ONLY — Rev 2. Schema/trigger/API proposal + adversarial QC plan, for approval before any
+code.** Date 2026-10-31. Second 2D1 prerequisite (first = the identity/event adapter,
+`docs/research_candidate_2d1_identity_feasibility.md`). No code, route, flag, schema edit, or deploy.
 
-## Why a registry, not a per-observation column
+Rev 2 fixes the nested-transaction impossibility, binds the registry to the real record in the DB, freezes
+the old per-table idempotency constraint, removes unsupported observation-correction semantics, narrows
+the fingerprint to persisted intent, and corrects the privacy wording.
 
-A one-off `request_fingerprint` column on `observation_private` would (a) not generalize to the other
-record kinds, (b) entangle idempotency with the frozen record row, and (c) still require the caller to
-have allocated a `record_seq`/clocks before the check. A **governed idempotency registry** centralizes the
-"same intent → same result, without re-allocating" guarantee and keys it on intent, not on the
-server-generated sequence/clocks (the Rev-3 contradiction).
+## Why a registry (unchanged)
+
+A governed `idempotency_registry` keyed on intent, not on the server-generated sequence/clocks, so an
+exact retry returns the original result **without allocating a sequence**, and a changed payload
+conflicts. Centralized so the rule cannot diverge per call site.
+
+## Rev 2 frozen decisions
+
+1. **No nested transactions.** `capture_observation()` opens **one** `BEGIN IMMEDIATE` and uses
+   **internal, transaction-participating primitives** — `_reserve_seq_in_txn()` and
+   `_insert_observation_in_txn()` — that do **not** begin their own transaction. The public `next_seq()` /
+   `record_observation()` (each of which begins its own txn) are **not** called inside the capture txn.
+2. **The registry is bound to the real record in the DB** (composite FK + triggers, below): a registry row
+   cannot name a mismatched kind, id, or observer.
+3. **The registry is authoritative; the old per-table idempotency constraint is removed in v3.** The 2B
+   global `observation_private.idempotency_key UNIQUE` is dropped (two observers may legitimately use the
+   same opaque token — the registry scopes by `observer_id`). The `idempotency_key` lives **only** in the
+   registry; record tables no longer carry it.
+4. **No observation correction semantics.** `UserObservation` has **no** `supersedes` field; a new
+   idempotency_key creates a **distinct, independent observation**, not a correction. Observation
+   correction/supersession stays **deferred** until its own lineage contract exists.
+5. **Fingerprint covers only PERSISTED observation intent**, taken from canonical objects (no invisible
+   fields): `observer_id`, `EntityIdentity`, `EventIdentity` (its `event_effective` included), `thesis`,
+   `sources`, `acted`. **`category`/`sub_label` are NOT part of the observation contract** (they belong to
+   candidate promotion, deferred) and are excluded. The API accepts the canonical `EntityIdentity` /
+   `EventIdentity` **objects** (not loose id + event-effective args), preventing cross-field mismatch.
+6. **Privacy wording corrected:** the registry holds **pseudonymous/linkable** data — a `UserId` and a
+   thesis-derived digest — it contains **no direct email and no cleartext thesis**, and remains
+   privacy-governed. (Not "no PII".)
+
+## Canonicalization (frozen)
+
+- **Strings** (thesis, sources, display) are **Unicode NFC-normalized** before hashing
+  (`unicodedata.normalize("NFC", s)`).
+- **Timestamps** serialize as **tz-aware UTC ISO-8601** (`event_effective` from `EventIdentity`).
+- **Sources** are a **set**: deduplicated and **sorted** before hashing, so order does not change identity.
+- The fingerprint is `sha256(canonical_json({...}))` using the existing deterministic `canonical_json`
+  (sorted keys, no NaN/Inf, string keys). It is a **digest**, never cleartext thesis.
 
 ## Scope + fingerprint
 
-- **Scope (the key):** `(record_kind, observer_id, idempotency_key)`.
-  - `record_kind` ∈ the four kinds (2D1 uses only `observation`).
-  - `observer_id` = the immutable account `UserId` (pseudonymous uuid — **not** email).
-  - `idempotency_key` = the caller's **opaque** token. **No thesis text and no PII (email) ever appear in
-    the key.**
-- **Request fingerprint (stored as a sha256, never cleartext):** canonical hash over the **semantic
-  intent** only —
-  `{record_kind, observer_id, category, sub_label, entity_canonical_id, event_canonical_id,
-  event_effective, thesis, sources(sorted), acted}` —
-  and it **EXCLUDES** `record_seq`, `observed_at`, and `bk_captured`. Thesis participates in the *hash*
-  (so a changed payload is detected) but its **text is never stored**; the registry stores only the digest.
-- **Binding:** the registry row binds the resulting `record_id` + `record_seq`, so a repeat returns the
-  original result without allocating anything.
+- **Scope (key):** `(record_kind, observer_id, idempotency_key)`. `observer_id` = the immutable account
+  `UserId` (pseudonymous uuid, never email); `idempotency_key` = the caller's opaque token (no thesis/PII).
+- **Fingerprint (stored as a 64-hex digest):** over `{record_kind, observer_id,
+  entity=EntityIdentity.canonical_dict(), event=EventIdentity.canonical_dict() (incl. event_effective),
+  thesis(NFC), sources(NFC, sorted-unique), acted}` — **excluding** `record_seq`, `observed_at`,
+  `bk_captured`.
 
 ## Proposed schema (SCHEMA_VERSION → 3; v2 rejected, no migration)
 
 ```sql
--- SCHEMA_VERSION = 3. A v2 store opens as an unsupported version -> SchemaVersionError, no migration
--- (nothing is deployed). (Also drops the 2B-era per-table idempotency_key UNIQUE in favor of the registry,
---  OR keeps it as a secondary guard — decided at implementation; the registry is authoritative.)
+-- SCHEMA_VERSION = 3. Opening a v2 store -> SchemaVersionError (no migration, no mutation; undeployed).
+-- v3 also DROPS observation_private.idempotency_key and its UNIQUE (the registry is authoritative, decision 3),
+-- and adds a composite-unique on record_registry so the registry can bind to it by (seq, kind, id).
+
+-- record_registry gains the composite UNIQUE needed as a FK target:
+--   UNIQUE (record_seq, kind, record_id)   -- trivially unique (record_seq is PK); enables the FK below
 
 CREATE TABLE IF NOT EXISTS idempotency_registry (
-  record_kind        TEXT NOT NULL CHECK (record_kind IN ('observation','candidate','outcome','finding')),
-  observer_id        TEXT NOT NULL,                 -- immutable account UserId (pseudonymous), never email
-  idempotency_key    TEXT NOT NULL,                 -- caller opaque token (no thesis/PII)
-  request_fingerprint TEXT NOT NULL,                -- sha256 of the semantic intent (never cleartext thesis)
-  bound_record_seq   INTEGER NOT NULL,              -- the result this key produced
-  bound_record_id    TEXT NOT NULL,
-  created_at         TEXT NOT NULL,                 -- tz-aware UTC
+  record_kind         TEXT NOT NULL CHECK (record_kind = 'observation'),   -- 2D1: observations ONLY
+  observer_id         TEXT NOT NULL,                 -- immutable account UserId (pseudonymous), never email
+  idempotency_key     TEXT NOT NULL,                 -- caller opaque token (no thesis/PII)
+  request_fingerprint TEXT NOT NULL,                 -- sha256 of persisted semantic intent (never cleartext)
+  bound_record_seq    INTEGER NOT NULL,
+  bound_record_id     TEXT NOT NULL,
+  created_at          TEXT NOT NULL,                 -- tz-aware UTC
   PRIMARY KEY (record_kind, observer_id, idempotency_key),
-  FOREIGN KEY (bound_record_seq) REFERENCES record_registry(record_seq)
+  FOREIGN KEY (bound_record_seq, record_kind, bound_record_id)
+      REFERENCES record_registry(record_seq, kind, record_id)             -- binds kind + id + seq (decision 2)
 );
 
--- write-once: the registry is append-only (a correction is a NEW key, never an edit of an existing one).
+-- observer binding: for an observation, the bound record must be an observation_private row whose
+-- observer equals this registry row's observer_id. Future record_kinds are refused until they declare a
+-- governed lineage-to-observer binding (the CHECK above already restricts 2D1 to 'observation').
+CREATE TRIGGER idempotency_registry_observer_bind BEFORE INSERT ON idempotency_registry
+WHEN NEW.record_kind = 'observation' AND NOT EXISTS (
+  SELECT 1 FROM observation_private o
+  WHERE o.record_seq = NEW.bound_record_seq AND o.observation_id = NEW.bound_record_id
+    AND o.observer = NEW.observer_id)
+BEGIN SELECT RAISE(ABORT, 'idempotency row does not bind a matching observation_private(observer, id, seq)'); END;
+
+-- write-once: a correction is a NEW key, never an edit of an existing binding.
 CREATE TRIGGER idempotency_registry_no_update BEFORE UPDATE ON idempotency_registry
 BEGIN SELECT RAISE(ABORT, 'idempotency_registry is immutable'); END;
 CREATE TRIGGER idempotency_registry_no_delete BEFORE DELETE ON idempotency_registry
 BEGIN SELECT RAISE(ABORT, 'idempotency_registry is append-only'); END;
 ```
 
-The `bound_record_seq` FK into `record_registry` ties every idempotency row to a real committed record;
-the PK enforces one binding per `(kind, observer, key)`; the write-once triggers make the binding
-immutable.
+The composite FK ties `(seq, kind, id)` to a real `record_registry` row; the observer-bind trigger ties
+`observer_id` to the actual `observation_private.observer`; the `CHECK(record_kind='observation')` keeps
+other kinds out of the registry until each declares its own observer lineage.
 
-## Proposed API (store-owned; caller never pre-allocates a sequence)
-
-A single governed capture entry point owns the whole flow so the check precedes allocation:
+## Proposed API (store-owned; single transaction; canonical objects)
 
 ```
-capture_observation(*, observer_id, category, sub_label, entity, event, event_effective,
-                     thesis, sources, acted, idempotency_key) -> {status, record_id, record_seq}
+capture_observation(*, observer_id, entity: EntityIdentity, event: EventIdentity,
+                    thesis, sources, acted, idempotency_key) -> {status, record_id, record_seq}
 ```
 
-Flow, in one `BEGIN IMMEDIATE` transaction:
-1. `fp = _request_fingerprint(...)` over the semantic fields above (excludes seq + clocks).
-2. look up `(record_kind='observation', observer_id, idempotency_key)` in `idempotency_registry`:
-   - **found + fingerprint == stored** → return `{status:'noop', bound_record_id, bound_record_seq}` —
-     **no `next_seq()`, no record insert**;
+One `BEGIN IMMEDIATE` txn:
+1. `fp = _request_fingerprint(observer_id, entity, event, thesis, sources, acted)` (NFC + sorted sources;
+   excludes seq/clocks).
+2. look up `('observation', observer_id, idempotency_key)`:
+   - **found + fingerprint == stored** → return the bound `record_id`/`record_seq` — **no reservation, no
+     insert**;
    - **found + fingerprint != stored** → raise `IdempotencyConflict` (route → 409);
-   - **not found** → `next_seq()` (durable reservation) → set server clocks (tz-aware UTC) → build the
-     `UserObservation` → persist it (record + `record_registry` bind + tips as in 2B) → insert the
-     `idempotency_registry` row binding `(record_seq, record_id, fp)` → return `{status:'recorded', …}`.
-3. corrections are a **new key** + an explicit `supersedes` on the record (never an edit of a registry
-   row).
+   - **not found** → `_reserve_seq_in_txn()` (durable reservation, no nested BEGIN) → set tz-aware UTC
+     clocks → build the `UserObservation` → `_insert_observation_in_txn()` (record + `record_registry`
+     bind + tips, no nested BEGIN) → insert the `idempotency_registry` row → return.
+3. A new `idempotency_key` yields a **distinct observation**; it is **not** a correction (decision 4).
 
-`record_observation(obs, idempotency_key)` (the 2B primitive) stays for tests/replay;
-`capture_observation` is the governed 2D1 path. The fingerprint helper lives in the store (centralized,
-deterministic, `canonical_json`-based) so no caller can diverge.
+`record_observation(obs, idempotency_key)` / `next_seq()` remain as standalone (own-transaction)
+primitives for tests and replay; the governed 2D1 path is `capture_observation`, which never nests them.
 
-## Adversarial QC plan (to implement with the schema, before 2D1 routes)
+## Adversarial QC plan (implement with the schema, before 2D1 routes)
 
-1. **Exact retry → true no-op:** same scope + same fingerprint returns the original `record_id`/`seq`;
-   assert **no new `record_seq` was allocated** (reservation count unchanged) and no second record row.
-2. **Clocks/seq excluded:** two captures identical except for server clocks/sequence produce the **same
-   fingerprint** → no-op (directly fixes the Rev-3 contradiction).
-3. **Different fingerprint, same key → conflict:** same `(kind,observer,key)` with changed thesis/entity/
-   event/event_effective/acted/sources → `IdempotencyConflict` (409); no record written.
-4. **Scope isolation:** same `idempotency_key` under a different `observer_id`, or a different
-   `record_kind`, are independent (both recorded).
-5. **Correction path:** a correction uses a **new** key + `supersedes`; it is a new record, and the old
-   binding is untouched (immutable).
-6. **No PII in the registry:** assert the stored columns contain the opaque key + a 64-hex fingerprint +
-   ids only — **never** thesis text or an email; the fingerprint is a digest, not cleartext.
-7. **Write-once registry:** direct `UPDATE`/`DELETE` on `idempotency_registry` aborts.
-8. **FK integrity:** a registry row cannot bind a `bound_record_seq` absent from `record_registry`;
-   reopen `foreign_key_check` catches an orphan.
-9. **v3 rejects v2:** opening a v2-schema store raises `SchemaVersionError` with **no migration and no
-   mutation** (the AT test pattern, bumped to v3).
-10. **Concurrency:** two connections, same `(kind,observer,key)` + same fingerprint, racing → exactly one
-    record and one binding; both callers receive the **same** bound id (the registry PK + `BEGIN
-    IMMEDIATE` serialize; the loser sees the committed binding and returns the no-op).
+1. **No nested transaction:** `capture_observation` completes within a single `BEGIN IMMEDIATE` (assert no
+   "cannot start a transaction within a transaction" and that `_reserve_seq_in_txn`/
+   `_insert_observation_in_txn` issue no `BEGIN`).
+2. **Exact retry → true no-op:** same scope + same fingerprint returns the original id/seq; **no new
+   reservation consumed**, no second record.
+3. **Clocks/seq excluded:** two captures differing only in server clocks/seq → same fingerprint → no-op.
+4. **Different fingerprint, same key → 409** (no record written).
+5. **Two observers, same token:** independent records (scope includes `observer_id`) — the dropped
+   per-table UNIQUE no longer collides them.
+6. **Mismatched kind/id/observer rejected by the DB:** a registry row whose `(bound_record_seq, kind,
+   bound_record_id)` is not in `record_registry` → FK error; whose `observer_id` ≠
+   `observation_private.observer` → the observer-bind trigger aborts; `record_kind != 'observation'` →
+   CHECK/trigger aborts.
+7. **No observation supersession:** `UserObservation` exposes no `supersedes`; a new key makes a distinct
+   observation, and there is no correction path.
+8. **Invisible-field rejection:** the fingerprint inputs are a subset of PERSISTED `UserObservation`
+   fields — `category`/`sub_label` are absent from capture and the fingerprint.
+9. **No cleartext PII:** the registry stores an opaque key, a 64-hex digest, ids, and a UTC timestamp —
+   never an email or thesis text; privacy-governed (pseudonymous/linkable).
+10. **Write-once + v3 gate:** `UPDATE`/`DELETE` on the registry abort; a v2-schema store opens as
+    `SchemaVersionError` with no migration/mutation.
+11. **Concurrency:** two connections racing the same scope+key+fingerprint → exactly one record + one
+    binding; both callers get the same bound id (PK + `BEGIN IMMEDIATE` serialize).
 
 ## Boundaries
 
-Design only. Implementing this is a **store (2B-family) change** — schema v3 + triggers + the
-`capture_observation` API + the adversarial QC — to be approved and landed **before** any 2D1 route,
-flag, boundary, or unit file. No deletion/erasure is implied (the registry is append-only; erasure remains
-the separately-governed open question). `SUPPORTED`/`UNSUPPORTED` remain unconstructible.
+Design only — implementing this is a **store (2B-family) change** (schema v3 incl. dropping the old
+per-table idempotency column, the composite FK + observer-bind triggers, the internal txn primitives, the
+`capture_observation` API, and the adversarial QC) to be approved and landed **before** any 2D1 route,
+flag, boundary, or unit file. No deletion/erasure implied. `SUPPORTED`/`UNSUPPORTED` remain unconstructible.
 
 **STOP — returned for review.** No code, schema edit, route, flag, or deployment has been made.
