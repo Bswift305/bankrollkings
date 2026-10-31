@@ -378,7 +378,11 @@ def parse_market_rows(event: dict, bookmaker: dict, allowed_markets: Iterable[st
     # pregame ordering (the existing LastUpdated is Eastern display, tz-stripped, and stays unchanged).
     event_id = str(event.get("id") or "")
     commence_utc = to_utc_iso(event.get("commence_time"))
-    source_updated_utc = to_utc_iso(bookmaker.get("last_update"))
+    # SourceUpdatedAtUTC is sourced per MARKET below (market.last_update). A raw-capture diagnostic confirmed
+    # the event-odds response carries the authoritative provider update time at the MARKET level (present +
+    # parseable per market), NOT the bookmaker level (absent) -- which is why the old bookmaker-level read
+    # left it blank. NEVER fall back to fetched_at for it (that would mislabel our fetch time as the
+    # provider's source time); it stays blank when a market has no parseable UTC last_update.
     fetched_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
     rows = []
 
@@ -386,6 +390,9 @@ def parse_market_rows(event: dict, bookmaker: dict, allowed_markets: Iterable[st
         market_key = market.get("key")
         if market_key not in allowed_markets or market_key not in MARKET_STAT_MAP:
             continue
+
+        # authoritative provider source time for THIS market (zero-offset UTC; '' when absent/naive).
+        market_updated_utc = to_utc_iso(market.get("last_update"))
 
         over_under_map: dict[tuple[str, float], dict] = {}
         for outcome in market.get("outcomes", []):
@@ -415,7 +422,7 @@ def parse_market_rows(event: dict, bookmaker: dict, allowed_markets: Iterable[st
                     # Additive provable-UTC provider identity + clocks (2026-10-24 capture-precision fix).
                     "EventId": event_id,
                     "EventCommenceAtUTC": commence_utc,
-                    "SourceUpdatedAtUTC": source_updated_utc,
+                    "SourceUpdatedAtUTC": market_updated_utc,
                     "CurrentLine": float(line),
                     "OverOdds": pd.NA,
                     "UnderOdds": pd.NA,

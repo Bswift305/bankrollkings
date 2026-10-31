@@ -4,7 +4,8 @@
 Proves, with synthetic Odds API payloads (NO paid request):
   * EventId survives parse_market_rows -> build_dataframe unchanged;
   * commence_time becomes EventCommenceAtUTC as an equivalent canonical UTC 'Z' value;
-  * bookmaker last_update becomes SourceUpdatedAtUTC as canonical UTC;
+  * the MARKET's last_update becomes SourceUpdatedAtUTC as canonical UTC (the provider carries the
+    authoritative source time per market, not per bookmaker -- RC 2D1 producer correction);
   * missing / malformed / timezone-NAIVE provider timestamps become '' (never assumed UTC);
   * the existing LastUpdated (Eastern display) column is unchanged and still present;
   * build_dataframe keeps the three additive columns; no existing column is dropped.
@@ -26,13 +27,15 @@ def _mk_event(eid="evt-123", commence="2026-10-26T17:00:00Z"):
 
 def _mk_book(last_update="2026-10-25T13:30:00Z"):
     mkey = next(iter(fp.MARKET_STAT_MAP))  # any supported market key
-    bk = {"key": "draftkings", "title": "DraftKings",
-          "markets": [{"key": mkey, "outcomes": [
-              {"description": "Jordan Love", "name": "Over", "point": 245.5, "price": -110},
-              {"description": "Jordan Love", "name": "Under", "point": 245.5, "price": -110},
-          ]}]}
+    market = {"key": mkey, "outcomes": [
+        {"description": "Jordan Love", "name": "Over", "point": 245.5, "price": -110},
+        {"description": "Jordan Love", "name": "Under", "point": 245.5, "price": -110},
+    ]}
+    # the provider carries the authoritative source time at the MARKET level (RC 2D1 correction), so the
+    # fixture puts last_update on the market -- the bookmaker level is deliberately left without one.
     if last_update is not None:
-        bk["last_update"] = last_update
+        market["last_update"] = last_update
+    bk = {"key": "draftkings", "title": "DraftKings", "markets": [market]}
     return bk, mkey
 
 
