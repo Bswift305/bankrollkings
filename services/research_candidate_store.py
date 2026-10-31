@@ -22,6 +22,13 @@ The database enforces, on its own (triggers + composite foreign keys + a durable
     so a value is never reissued after a restart and an unclaimed reservation is a persistent,
     intentional GAP; two connections cannot reserve the same value; a claim consumes a reservation.
 
+TWO-TRANSACTION CONTRACT (honest): reservation and claim are SEPARATE transactions.
+  1. `next_seq()` reserves the sequence in its OWN committed transaction (claimed=0).
+  2. the record write is a SEPARATE transaction that atomically does registry-insert -> claim
+     (reservation 0->1) -> record-insert -> trigger-maintained tip; it commits or rolls back as a unit.
+  A crash BETWEEN the two leaves a permanent, unclaimed-reservation GAP (never reissued). A crash or
+  rollback DURING the record write leaves no registry/claim/record/tip residue.
+
 The Slice-1 `InMemoryResearchStore` replay adds the SEMANTIC checks SQLite cannot express (binding,
 summary reconciliation, fail-closed conclusions, pre-event ordering) and verifies every content hash.
 
@@ -50,7 +57,9 @@ from services.research_candidate import (
     SubLabel, TemporalFacts, UserObservation, canonical_json, content_hash,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2   # v2 = durable reservation + composite lineage FKs + bind/tip triggers + registry
+#                      constraints. v1 stores are structurally incompatible and fail closed on open
+#                      (nothing is deployed, so no migration is provided).
 
 
 # --------------------------------------------------------------------------- errors
@@ -281,30 +290,40 @@ BEGIN SELECT RAISE(ABORT, 'record_registry is immutable'); END;
 CREATE TRIGGER IF NOT EXISTS record_registry_no_delete BEFORE DELETE ON record_registry
 BEGIN SELECT RAISE(ABORT, 'record_registry is append-only'); END;
 
--- reservations: may only transition claimed 0->1 (same seq), never un-claim or delete (gaps are permanent).
+-- reservations: may only transition claimed 0->1 (same seq), never un-claim or delete (gaps are permanent),
+-- and a claim requires the matching registry row (so a claimed reservation can never be orphaned).
 CREATE TRIGGER IF NOT EXISTS seq_reservation_claim_only BEFORE UPDATE ON seq_reservation
 WHEN NOT (OLD.claimed = 0 AND NEW.claimed = 1 AND OLD.record_seq = NEW.record_seq)
 BEGIN SELECT RAISE(ABORT, 'reservation may only transition 0->1 for the same seq'); END;
+CREATE TRIGGER IF NOT EXISTS seq_reservation_claim_needs_registry BEFORE UPDATE ON seq_reservation
+WHEN OLD.claimed = 0 AND NEW.claimed = 1
+ AND NOT EXISTS (SELECT 1 FROM record_registry r WHERE r.record_seq = NEW.record_seq)
+BEGIN SELECT RAISE(ABORT, 'cannot claim a reservation with no matching record_registry row'); END;
 CREATE TRIGGER IF NOT EXISTS seq_reservation_no_delete BEFORE DELETE ON seq_reservation
 BEGIN SELECT RAISE(ABORT, 'reservations are permanent (intentional gaps)'); END;
 
--- record<->registry BIND: a record can only be inserted when its matching (seq,kind,id) registry row exists.
+-- record<->registry BIND: a record can only be inserted when its matching (seq,kind,id) registry row
+-- exists AND its sequence has a CLAIMED reservation (binds record <-> registry <-> reservation).
 CREATE TRIGGER IF NOT EXISTS observation_registry_bind BEFORE INSERT ON observation_private
 WHEN NOT EXISTS (SELECT 1 FROM record_registry r
                  WHERE r.record_seq=NEW.record_seq AND r.kind='observation' AND r.record_id=NEW.observation_id)
-BEGIN SELECT RAISE(ABORT, 'observation has no matching record_registry (seq,observation,id)'); END;
+  OR NOT EXISTS (SELECT 1 FROM seq_reservation s WHERE s.record_seq=NEW.record_seq AND s.claimed=1)
+BEGIN SELECT RAISE(ABORT, 'observation needs a matching registry row + a claimed reservation'); END;
 CREATE TRIGGER IF NOT EXISTS candidate_registry_bind BEFORE INSERT ON research_candidate
 WHEN NOT EXISTS (SELECT 1 FROM record_registry r
                  WHERE r.record_seq=NEW.record_seq AND r.kind='candidate' AND r.record_id=NEW.candidate_id)
-BEGIN SELECT RAISE(ABORT, 'candidate has no matching record_registry (seq,candidate,id)'); END;
+  OR NOT EXISTS (SELECT 1 FROM seq_reservation s WHERE s.record_seq=NEW.record_seq AND s.claimed=1)
+BEGIN SELECT RAISE(ABORT, 'candidate needs a matching registry row + a claimed reservation'); END;
 CREATE TRIGGER IF NOT EXISTS outcome_registry_bind BEFORE INSERT ON candidate_outcome
 WHEN NOT EXISTS (SELECT 1 FROM record_registry r
                  WHERE r.record_seq=NEW.record_seq AND r.kind='outcome' AND r.record_id=NEW.outcome_id)
-BEGIN SELECT RAISE(ABORT, 'outcome has no matching record_registry (seq,outcome,id)'); END;
+  OR NOT EXISTS (SELECT 1 FROM seq_reservation s WHERE s.record_seq=NEW.record_seq AND s.claimed=1)
+BEGIN SELECT RAISE(ABORT, 'outcome needs a matching registry row + a claimed reservation'); END;
 CREATE TRIGGER IF NOT EXISTS finding_registry_bind BEFORE INSERT ON evaluated_finding
 WHEN NOT EXISTS (SELECT 1 FROM record_registry r
                  WHERE r.record_seq=NEW.record_seq AND r.kind='finding' AND r.record_id=NEW.finding_id)
-BEGIN SELECT RAISE(ABORT, 'finding has no matching record_registry (seq,finding,id)'); END;
+  OR NOT EXISTS (SELECT 1 FROM seq_reservation s WHERE s.record_seq=NEW.record_seq AND s.claimed=1)
+BEGIN SELECT RAISE(ABORT, 'finding needs a matching registry row + a claimed reservation'); END;
 
 -- current-tip GUARD + APPLY (DB maintains the tip; cross-lineage/stale/duplicate successors abort).
 CREATE TRIGGER IF NOT EXISTS candidate_tip_guard BEFORE INSERT ON research_candidate
@@ -426,13 +445,19 @@ class ResearchCandidateStore:
                 (kind,)).fetchone()[0]
             if orphan_reg:
                 raise StoreIntegrityError(f"registry: {orphan_reg} '{kind}' row(s) with no matching record")
-        # every claimed registry seq must have a claimed reservation; reservations cover claims
+        # claimed reservations <-> registry rows, BOTH directions (no orphan on either side)
         bad_res = self.conn.execute(
             "SELECT COUNT(*) FROM record_registry r WHERE NOT EXISTS "
             "(SELECT 1 FROM seq_reservation s WHERE s.record_seq=r.record_seq AND s.claimed=1)"
         ).fetchone()[0]
         if bad_res:
             raise StoreIntegrityError(f"{bad_res} registry row(s) without a claimed reservation")
+        orphan_claim = self.conn.execute(
+            "SELECT COUNT(*) FROM seq_reservation s WHERE s.claimed=1 AND NOT EXISTS "
+            "(SELECT 1 FROM record_registry r WHERE r.record_seq=s.record_seq)"
+        ).fetchone()[0]
+        if orphan_claim:
+            raise StoreIntegrityError(f"{orphan_claim} claimed reservation(s) with no registry row")
         maxres = int(self.conn.execute(
             "SELECT COALESCE(MAX(record_seq), 0) FROM seq_reservation").fetchone()[0])
         if maxres < maxc:
@@ -644,8 +669,8 @@ class ResearchCandidateStore:
                 return {"status": "noop", "id": hit[idcol] if idcol in hit.keys() else rid,
                         "record_seq": hit["record_seq"]}
             validate()            # Slice-1 semantic invariants (binding, reconcile, fail-closed, ...)
-            claim()               # reservation -> registry (bind) + allocator, in this txn
-            insert()              # record INSERT fires bind + tip triggers; rollback undoes all of it
+            claim()               # this txn: registry INSERT -> reservation claim (0->1) + allocator
+            insert()              # record INSERT fires bind + tip triggers; rollback undoes ALL of it
             self.conn.execute("COMMIT")
             return {"status": "recorded", "id": rid, "record_seq": seq}
         except Exception:

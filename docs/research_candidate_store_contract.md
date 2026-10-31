@@ -123,13 +123,17 @@ Mapping to the ten required areas:
    same `BEGIN IMMEDIATE` txn as each insert, so `record_seq` is strictly monotonic and never reused or
    regressed across process restarts (the Slice-1 `_max_claimed` persisted). `next_seq()` is ADVISORY (per-process, no durable reservation); the durable claim is the registry
    insert at write time. An unclaimed `next_seq()` value or a rolled-back write leaves an INTENTIONAL
-   GAP and is never reused as a record sequence (the registry PK + monotonic allocator forbid it).
+   GAP and is never reused as a record sequence (the registry PK + monotonic allocator forbid it). A crash BETWEEN the reservation txn and the
+   record-write txn leaves a permanent unclaimed gap; a rollback DURING the record write leaves no
+   registry/claim/record/tip residue.
 3. **Append-only correction linkage.** `supersedes` references the prior `record_seq`; candidate
    supersession is lineage-bound (same `observation_id`, prior must be current); outcomes form a version
    chain with one current; findings supersede by `record_seq`. FKs + the Slice-1 guards enforce it.
 4. **Content hashes + schema version.** `schema_meta.version = SCHEMA_VERSION`; unknown → fail closed, no
-   auto-migration. Canonical serialization (`canonical_json`) keeps hashes stable.
-5. **Crash-safe / atomic transactions.** One `BEGIN IMMEDIATE` txn per write
+   auto-migration. `SCHEMA_VERSION` is **2** (the durable-reservation + composite-FK + trigger schema); a v1 store is
+   structurally incompatible and fails closed on open (nothing deployed, so no migration). Canonical serialization (`canonical_json`) keeps hashes stable.
+5. **Crash-safe / atomic transactions (two-transaction contract).** `next_seq()` reserves the
+   sequence in its OWN committed transaction; the record write is a SEPARATE `BEGIN IMMEDIATE` txn
    (`WAL`/`synchronous=FULL`/`foreign_keys=ON`/`busy_timeout`); partial writes roll back.
 6. **Duplicate / idempotency.** A caller-supplied immutable `idempotency_key` (UNIQUE per table), per Rev-2
    decision 5: exact retry → noop returning the existing record; same key + different content →

@@ -405,11 +405,50 @@ def test_replay_and_tamper():
         s = store.next_seq()
         store.conn.execute("INSERT INTO record_registry(record_seq,kind,record_id) VALUES (?, 'observation', 'tamper')",
                            (s,))
+        store.conn.execute("UPDATE seq_reservation SET claimed=1 WHERE record_seq=?", (s,))  # bind needs this
         raw_insert(store, "observation_private", base, observation_id="tamper", idempotency_key="tamper-k",
                    record_seq=s, content_hash="TAMPERED_HASH")
         expect_raises(rcs.StoreIntegrityError, store.replay_validate,
                       "a row whose stored content hash does not recompute is detected on replay")
         store.close()
+
+
+# =========================================================================== AT schema version bump (v1 rejected)
+def test_v1_schema_rejected():
+    print("\n[AT] SCHEMA_VERSION bumped: an earlier v1 store is rejected without mutation")
+    check(rcs.SCHEMA_VERSION >= 2, "SCHEMA_VERSION advanced past 1 for the incompatible schema change")
+    with tmp() as d:
+        path = os.path.join(d, "r.db")
+        rcs.ResearchCandidateStore(path).close()
+        raw = sqlite3.connect(path)
+        raw.execute("UPDATE schema_meta SET version=1 WHERE id=1")   # simulate an earlier v1 store
+        raw.commit()
+        before = [r[0] for r in raw.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY sql")]
+        raw.close()
+        expect_raises(rcs.SchemaVersionError, lambda: rcs.ResearchCandidateStore(path),
+                      "a v1 schema is rejected (fail closed, no migration)")
+        raw2 = sqlite3.connect(path)
+        after = [r[0] for r in raw2.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY sql")]
+        v = raw2.execute("SELECT version FROM schema_meta WHERE id=1").fetchone()[0]
+        raw2.close()
+        check(before == after and v == 1, "the rejected v1 open mutated nothing")
+
+
+# =========================================================================== AU reservation integrity bidirectional
+def test_reservation_integrity_bidirectional():
+    print("\n[AU] a claimed reservation cannot exist without a registry row (trigger + reopen)")
+    with tmp() as d:
+        store = rcs.ResearchCandidateStore(os.path.join(d, "r.db"))
+        s = store.next_seq()   # reserved (claimed=0), NO registry row
+        expect_raises(sqlite3.Error,
+                      lambda: store.conn.execute("UPDATE seq_reservation SET claimed=1 WHERE record_seq=?", (s,)),
+                      "flipping a reservation to claimed with no registry row is rejected immediately")
+        # the reverse direction (registry without a claimed reservation) is caught on reopen
+        store.conn.execute("INSERT INTO record_registry(record_seq,kind,record_id) VALUES (?, 'observation', 'x')",
+                           (store.next_seq(),))
+        store.close()
+        expect_raises(rcs.StoreIntegrityError, lambda: rcs.ResearchCandidateStore(os.path.join(d, "r.db")),
+                      "a registry row without a claimed reservation is caught on reopen")
 
 
 if __name__ == "__main__":
@@ -420,7 +459,8 @@ if __name__ == "__main__":
               test_current_tips_db_maintained, test_unsupported_schema_zero_mutation,
               test_registry_binding, test_lineage_and_one_current_db_enforced, test_reopen_reconcile,
               test_foreign_key_check_disables_store, test_durable_reservation,
-              test_pseudonymous_and_guards, test_replay_and_tamper):
+              test_pseudonymous_and_guards, test_replay_and_tamper, test_v1_schema_rejected,
+              test_reservation_integrity_bidirectional):
         t()
     print("\n" + "=" * 80)
     print("Clean:", not fails)
