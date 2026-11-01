@@ -164,7 +164,9 @@ FEEDS = [
     ("odds/NBA_Odds.csv", "Odds API game lines", "NBA board / lines"),
     ("odds/WNBA_Odds.csv", "Odds API game lines", "WNBA board / lines"),
     ("odds/NFL_Odds.csv", "Odds API game lines", "NFL game-lines board"),
-    ("schedules/NCAAF_Odds.csv", "Odds API / CFBD lines", "CFB game-lines board"),
+    # F7 split: the Odds API is the sole writer of NCAAF_Odds.csv; CFBD writes its own unpriced artifacts.
+    ("schedules/NCAAF_Odds.csv", "Odds API game lines", "CFB game-lines board"),
+    ("odds/NCAAF_CFBD_Lines.csv", "CFBD provider lines (no price)", "CFB context tools (Best Spots / matchup)"),
     ("props/NFL_Props.csv", "Odds API player props", "NFL props board"),
     ("props/NCAAF_Props.csv", "Odds API player props", "CFB props"),
     ("props/NBA_Props.csv", "Odds API player props", "NBA props board"),

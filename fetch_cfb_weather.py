@@ -11,7 +11,8 @@ CFB it is NOT proven, so it is surfaced as CONTEXT, never as an edge -- the hone
 Dome games are marked and skipped.
 
 Output: data/scenarios/cfb_weather.json (committable). Run in the CFB refresh lane.
-Kickoff times + this-week matchups come from data/odds/NCAAF_Odds.csv.
+Kickoff times + this-week matchups come from the CFBD-owned data/schedules/NCAAF_CFBD_Schedule.csv
+(F7), falling back to the Odds-API data/odds/NCAAF_Odds.csv when the CFBD schedule is absent.
 """
 from __future__ import annotations
 import json
@@ -26,6 +27,9 @@ from fetch_game_lines import load_local_env
 
 BASE_DIR = Path(__file__).resolve().parent
 ODDS_PATH = BASE_DIR / "data" / "odds" / "NCAAF_Odds.csv"
+# F7: the CFBD-owned schedule (full FBS slate, CFBD school names -- the names the CFB matchup card joins
+# cfb_weather.json on). Fallback: the Odds-API file. Read-only; this script never writes either.
+CFBD_SCHEDULE_PATH = BASE_DIR / "data" / "schedules" / "NCAAF_CFBD_Schedule.csv"
 import bk_runtime
 OUT_PATH = bk_runtime.scenario_write_path("cfb_weather.json")
 WIND_FLAG = 15.0  # mph: outdoor wind at/above this leans the total down (context)
@@ -76,15 +80,27 @@ def _kickoff_utc(date_str, time_str):
     return None
 
 
+def _slate_path():
+    """CFBD schedule first (non-empty), else the Odds API file; None when neither exists."""
+    for p in (CFBD_SCHEDULE_PATH, ODDS_PATH):
+        try:
+            if p.exists() and p.stat().st_size > 0 and len(pd.read_csv(p, nrows=1)):
+                return p
+        except Exception:
+            continue
+    return ODDS_PATH if ODDS_PATH.exists() else None
+
+
 def build():
     key = os.getenv("CFBD_API_KEY")
     if not key:
         raise SystemExit("No CFBD_API_KEY in environment or .env(.local)")
-    if not ODDS_PATH.exists():
-        raise SystemExit(f"No slate at {ODDS_PATH}")
+    slate_path = _slate_path()
+    if slate_path is None:
+        raise SystemExit(f"No slate at {CFBD_SCHEDULE_PATH} or {ODDS_PATH}")
     venues = _team_venues(key)
 
-    odds = pd.read_csv(ODDS_PATH)
+    odds = pd.read_csv(slate_path)
     games = odds.groupby(["Away", "Home"]).agg(Date=("Date", "first"), Time=("Time", "first")).reset_index()
 
     # collect one venue per game (home team's), keep outdoor ones for a bulk forecast
