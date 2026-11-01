@@ -468,10 +468,14 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
 - **NBA season phase — yearly chore, fails loud.** Phase (PRESEASON/REGULAR/POSTSEASON/OFFSEASON/
   **UNKNOWN**) comes only from `NBA_SEASON_CONFIG` in `services/nba_season_phase.py`
   (`app.NBA_POSTSEASON_DATES` & co. are delegates). Each season enter the official opening night,
-  Play-In start and latest-possible Finals date; unconfigured dates are UNKNOWN, never guessed as
-  regular season. `_nba_default_postseason()` fails CLOSED: UNKNOWN ⇒ postseason unless the date is
-  before the configured Play-In start. `qc_nba_season_phase_contract.py` FAILS (dated) when today or
-  the next 60 days are UNKNOWN.
+  regular-season end, Play-In start, playoffs start and latest-possible Finals date **plus a
+  `provenance` block** (URLs, quoted lines, retrieval date, `unpublished`); unconfigured dates are
+  UNKNOWN, never guessed. After `regular_end`, before the Play-In = `PRE_POSTSEASON_BREAK` (not
+  REGULAR). `_nba_default_postseason()` fails CLOSED: UNKNOWN ⇒ postseason unless the date is
+  before the configured Play-In start. `qc_nba_season_phase_contract.py` FAILS when today is UNKNOWN
+  and its 60-day look-ahead fails from (first UNKNOWN date − 60). **2026-27 is configured (retrieved
+  2026-11-01); the Finals end is unpublished, so 2027-04-18+ is UNKNOWN and the look-ahead starts
+  failing 2027-02-17** — enter the official latest-possible Finals date before then.
 - Premium nav icons are raster PNG from generated art — not vectorizable without a redraw.
 
 ---
