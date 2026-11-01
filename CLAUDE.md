@@ -240,6 +240,14 @@ templates/       → render what the route passes
   prelaunch verification was silently dead while the code was fine. A section that
   cannot run yields an **incomplete** report — never zero-filled, because zeros read
   as a pass.
+- **Season gate = `season_utils.season_state()`** — ACTIVE / OFF_SEASON / UNKNOWN from
+  schedule artifacts (events in the next 7 Eastern days) + the static `SEASON_WINDOWS`
+  calendar envelope. **Props presence is not an input.** `run_daily.py` skips an
+  OFF_SEASON NBA/WNBA/MLB step *before* running it (no provider call); UNKNOWN fails
+  open. The calendar is what prevents a deadlock: the schedule files are written by
+  the very steps being skipped, so without it a frozen off-season schedule would keep
+  a sport off forever. If a league moves its calendar (lockout, later finals), edit
+  `SEASON_WINDOWS`. QC: `qc_season_activation.py`.
 
 ---
 

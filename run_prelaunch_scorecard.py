@@ -129,28 +129,16 @@ def _resolved_count(path: Path) -> tuple[int, int]:
 
 
 def _active_sports() -> set:
-    """Sports that currently have live data.
+    """Sports that are NOT authoritatively off-season.
 
-    Off-season sports (no props loaded) are treated as N/A by the launch gate
-    instead of hard FAILs, so an in-season launch (NBA/MLB/WNBA) can certify GO.
-    Each off-season check reactivates automatically when that sport's props return.
+    Off-season sports are treated as N/A by the launch gate instead of hard FAILs, so an in-season
+    launch can certify GO. Delegates to the ONE governed season state (season_utils.season_state:
+    schedule/calendar evidence, Eastern date -- never props presence) that the daily operator, the Edge
+    Engine pipeline and the scorecard runner use, so stale off-season props rows no longer keep a sport
+    "active" here, and an UNKNOWN state fails open (judged strictly).
     """
-    mapping = {
-        "NBA": "NBA_Props.csv",
-        "WNBA": "WNBA_Props.csv",
-        "MLB": "MLB_Props.csv",
-        "NFL": "NFL_Props.csv",
-        "NCAAF": "NCAAF_Props.csv",
-    }
-    active = set()
-    for sport, fname in mapping.items():
-        path = BASE_DIR / "data" / "props" / fname
-        try:
-            if path.exists() and not pd.read_csv(path).empty:
-                active.add(sport)
-        except Exception:
-            pass
-    return active
+    from season_utils import active_sports
+    return active_sports(base_dir=BASE_DIR)
 
 
 def _route_sport(path: str):

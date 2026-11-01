@@ -66,6 +66,8 @@ def main() -> int:
         f"Started: {datetime.now().isoformat(timespec='seconds')}",
         "",
     ]
+    # Governed season state (season_utils.season_state): a sport is absent from this set only when it
+    # is authoritatively OFF_SEASON by schedule/calendar evidence; ACTIVE and UNKNOWN failures are real.
     active = active_sports()
     failed = False
     for label, script in STEPS:

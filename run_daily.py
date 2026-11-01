@@ -7,7 +7,13 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from season_utils import active_sports, is_preseason_step, nfl_preseason_active, sport_for_label
+from season_utils import (
+    GOVERNED_SPORTS,
+    is_preseason_step,
+    nfl_preseason_active,
+    season_states,
+    sport_for_label,
+)
 from services.env_loader import load_local_env
 
 
@@ -244,6 +250,134 @@ def _run_step(label: str, command: list[str], timeout: int) -> tuple[bool, str]:
     return proc.returncode == 0, "\n".join(parts)
 
 
+# Sports whose provider-calling steps are PRE-EXECUTION season-gated: the operator's --sports set. The
+# football steps keep their existing always-run, self-gating behaviour (they no-op cheaply off-season and
+# some, e.g. rosters/nflverse builds, are wanted year-round); NFL preseason keeps its own window gate.
+PRE_GATED_SPORTS = frozenset({"NBA", "WNBA", "MLB"})
+
+
+def _sports_arg_index(command: list[str]):
+    try:
+        i = command.index("--sports")
+    except ValueError:
+        return None
+    return i + 1 if i + 1 < len(command) else None
+
+
+def gate_step(label: str, command: list[str], states: dict):
+    """Pre-execution season gate for ONE step, decided BEFORE anything runs.
+
+    Returns (command_to_run_or_None, skip_reason_or_None, note_or_None):
+      - a step whose sport (by label) is pre-gated and authoritatively OFF_SEASON -> (None, reason, None):
+        it is not executed at all, so it makes no provider call;
+      - a multi-sport step (`--sports a,b,c`) runs with its off-season pre-gated sports REMOVED from the
+        argument; it is skipped only when every sport it serves is off-season (e.g. the WNBA-block
+        candidate archive still archives NBA while WNBA is off-season);
+      - ACTIVE and UNKNOWN (fail-open) run unchanged.
+    """
+    def _off(sport: str):
+        st = states.get(sport)
+        return st if (sport in PRE_GATED_SPORTS and st is not None and st.off_season) else None
+
+    idx = _sports_arg_index(command)
+    if idx is not None:
+        served = [s.strip() for s in command[idx].split(",") if s.strip()]
+        off = [s for s in served if _off(s.upper())]
+        if not off:
+            return command, None, None
+        keep = [s for s in served if s not in off]
+        why = "; ".join(f"{s.upper()} {_off(s.upper()).reason}" for s in off)
+        if not keep:
+            return None, why, None
+        narrowed = list(command)
+        narrowed[idx] = ",".join(keep)
+        return narrowed, None, f"--sports narrowed to {','.join(keep)} (off-season: {why})"
+    sport = sport_for_label(label)
+    st = _off(sport) if sport else None
+    if st is not None:
+        return None, f"{sport} {st.reason}", None
+    return command, None, None
+
+
+def execute_steps(steps, states: dict, runner, *, preseason_open: bool, continue_on_error: bool,
+                  pre_refresh_health_label: str = "Odds feed health"):
+    """Run the operator's step list with the pre-execution gates. `runner(label, command, timeout)` ->
+    (ok, output). Returns (log_lines, step_outcomes, failed). Pure apart from `runner` and print()."""
+    lines: list[str] = []
+    step_outcomes: list[dict] = []
+    failed = False
+    for label, command, timeout in steps:
+        # Season-gate NFL preseason jobs: outside the preseason window the preseason Odds sport key
+        # has no events, so this step is SKIPPED (not run) -- it must never FAIL the operator. Because
+        # the operator aborts on the first FAIL, an out-of-window preseason fetch that errored would
+        # otherwise stall every downstream refresh (the Oct 23 class of incident). Skipping it is
+        # visible in the log and costs no API credits; in-window (August) it runs and a real failure
+        # is still a FAIL.
+        if is_preseason_step(label) and not preseason_open:
+            print(f"[SKIP (out of preseason window)] {label}")
+            lines += [
+                f"[SKIP (out of preseason window)] {label}",
+                "Command: " + " ".join(command),
+                "(skipped: NFL preseason window closed -- not run, cannot fail the operator)",
+                "",
+            ]
+            step_outcomes.append({"label": label, "status": "SKIP (out of preseason window)"})
+            continue
+        # PRE-EXECUTION season gate (F2v2): an authoritatively OFF_SEASON sport's steps are never run --
+        # no provider call, no empty-slice validator failure to relabel afterwards. UNKNOWN fails open.
+        run_cmd, skip_reason, note = gate_step(label, command, states)
+        if run_cmd is None:
+            tag = f"SKIP (off-season: {skip_reason})"
+            print(f"[{tag}] {label}")
+            lines += [
+                f"[{tag}] {label}",
+                "Command: " + " ".join(command),
+                "(not run: governed season state is OFF_SEASON -- no provider call made)",
+                "",
+            ]
+            step_outcomes.append({"label": label, "status": "SKIP (off-season)", "reason": skip_reason})
+            continue
+        if note:
+            print(f"[NOTE] {label}: {note}")
+        print(f"[RUN] {label}")
+        ok, output = runner(label, run_cmd, timeout)
+        if ok:
+            status = "PASS"
+        elif label == pre_refresh_health_label:
+            # The pre-refresh Odds-feed health check runs FIRST, before this run's refresh steps, so a
+            # stale feed here reflects the state BEFORE recovery -- NOT the outcome of this run. It must
+            # not stay recorded as a blocking failure once the refreshes below make the feeds current. It
+            # is a pre-flight WARNING; the authoritative check is "Odds feed health (post-refresh)" after
+            # all refreshes (added below), whose result does block.
+            status = "WARN (pre-refresh; authoritative check runs post-refresh)"
+        elif "PROVIDER_QUOTA_EXHAUSTED" in (output or ""):
+            # A provider's monthly quota is exhausted (e.g. CFBD 429). This is a documented EXTERNAL
+            # outage with a persistent backoff, not a code failure to retry -- report it truthfully as a
+            # SKIP, not PASS and not FAIL. Run Status still reflects it as DEGRADED (provider outage).
+            status = "SKIP (PROVIDER_QUOTA_EXHAUSTED)"
+        else:
+            # Post-hoc relabel for steps the pre-gate does not cover (e.g. football steps, which always
+            # run): only an authoritatively OFF_SEASON sport may turn a failure into a SKIP. ACTIVE and
+            # UNKNOWN failures are real. (Props presence no longer decides this -- see season_utils.)
+            sport = sport_for_label(label)
+            st = states.get(sport) if sport else None
+            status = "SKIP (off-season)" if (st is not None and st.off_season) else "FAIL"
+        print(f"[{status}] {label}")
+        lines += [
+            f"[{status}] {label}",
+            "Command: " + " ".join(run_cmd),
+            *([f"Note: {note}"] if note else []),
+            output or "(no output)",
+            "",
+        ]
+        step_outcomes.append({"label": label, "status": status})
+        if status == "FAIL":
+            failed = True
+            if not continue_on_error:
+                break
+    return lines, step_outcomes, failed
+
+
 def _parse_sports(raw: str) -> set[str]:
     sports = {item.strip().lower() for item in raw.split(",") if item.strip()}
     valid = {"nba", "wnba", "mlb"}
@@ -295,68 +429,24 @@ def main() -> int:
         f"Sports: {', '.join(sorted(sports)).upper()}",
         "",
     ]
-    active = active_sports()
-    failed = False
-    PRE_REFRESH_HEALTH_LABEL = "Odds feed health"
+    # ONE governed season snapshot (season_utils.season_state: schedule/calendar evidence, Eastern date,
+    # never props presence) decides every gate in this run, BEFORE any step executes.
+    states = season_states(GOVERNED_SPORTS)
+    for sport, st in states.items():
+        line = f"Season state: {sport}={st.state} ({st.reason})"
+        print(line)
+        lines.append(line)
+    lines.append("")
     # Structured per-step outcomes written to data/tracking/Last_Operator_Summary.json so Run Status
     # and the incident diag read a MACHINE-READABLE record of what each step did -- never re-parse the
     # free-text operator log (which conflated nested child messages with steps during the Oct 2026
     # incident). Additive: does not change the operator's abort/continue control flow.
-    step_outcomes: list[dict] = []
-    preseason_open = nfl_preseason_active()
-    for label, command, timeout in steps:
-        # Season-gate NFL preseason jobs: outside the preseason window the preseason Odds sport key
-        # has no events, so this step is SKIPPED (not run) -- it must never FAIL the operator. Because
-        # the operator aborts on the first FAIL, an out-of-window preseason fetch that errored would
-        # otherwise stall every downstream refresh (the Oct 23 class of incident). Skipping it is
-        # visible in the log and costs no API credits; in-window (August) it runs and a real failure
-        # is still a FAIL.
-        if is_preseason_step(label) and not preseason_open:
-            print(f"[SKIP (out of preseason window)] {label}")
-            lines += [
-                f"[SKIP (out of preseason window)] {label}",
-                "Command: " + " ".join(command),
-                "(skipped: NFL preseason window closed -- not run, cannot fail the operator)",
-                "",
-            ]
-            step_outcomes.append({"label": label, "status": "SKIP (out of preseason window)"})
-            continue
-        print(f"[RUN] {label}")
-        ok, output = _run_step(label, command, timeout)
-        if ok:
-            status = "PASS"
-        elif label == PRE_REFRESH_HEALTH_LABEL:
-            # The pre-refresh Odds-feed health check runs FIRST, before this run's refresh steps, so a
-            # stale feed here reflects the state BEFORE recovery -- NOT the outcome of this run. It must
-            # not stay recorded as a blocking failure once the refreshes below make the feeds current. It
-            # is a pre-flight WARNING; the authoritative check is "Odds feed health (post-refresh)" after
-            # all refreshes (added below), whose result does block.
-            status = "WARN (pre-refresh; authoritative check runs post-refresh)"
-        elif "PROVIDER_QUOTA_EXHAUSTED" in (output or ""):
-            # A provider's monthly quota is exhausted (e.g. CFBD 429). This is a documented EXTERNAL
-            # outage with a persistent backoff, not a code failure to retry -- report it truthfully as a
-            # SKIP, not PASS and not FAIL. Run Status still reflects it as DEGRADED (provider outage).
-            status = "SKIP (PROVIDER_QUOTA_EXHAUSTED)"
-        else:
-            # Same season gate the Edge Engine pipeline and the scorecard runner
-            # already use: a sport with no live props has no data for its refresh
-            # to work on, so its failure is expected and must not fire the daily
-            # alert. (2026-09-09: NBA's board QC correctly reports "no upcoming
-            # schedule" all summer, which failed the whole run every night.)
-            sport = sport_for_label(label)
-            status = "SKIP (off-season)" if sport and sport not in active else "FAIL"
-        print(f"[{status}] {label}")
-        lines += [
-            f"[{status}] {label}",
-            "Command: " + " ".join(command),
-            output or "(no output)",
-            "",
-        ]
-        step_outcomes.append({"label": label, "status": status})
-        if status == "FAIL":
-            failed = True
-            if not args.continue_on_error:
-                break
+    step_lines, step_outcomes, failed = execute_steps(
+        steps, states, _run_step,
+        preseason_open=nfl_preseason_active(),
+        continue_on_error=args.continue_on_error,
+    )
+    lines += step_lines
 
     # AUTHORITATIVE post-refresh Odds-feed health. The pre-refresh check above only saw the pre-recovery
     # state; this one runs AFTER every refresh, so a feed that recovered during the run is no longer a
@@ -396,6 +486,7 @@ def main() -> int:
         "finished_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "log": log_path.name,
         "sports": sorted(sports),
+        "season_states": {s: {"state": st.state, "reason": st.reason} for s, st in states.items()},
         "blocking_failure": bool(failed),
         "failed_steps": failed_steps,
         "provider_exhausted_steps": provider_exhausted,

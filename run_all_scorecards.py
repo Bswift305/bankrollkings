@@ -36,6 +36,10 @@ SCORECARDS = [
     # window. The operator aborts on the first FAIL, so an out-of-window preseason fetch that errored
     # would stall every downstream refresh (the Oct 23 incident class). Pure; cheap.
     ("Daily Operator Season-Gate QC", "qc_daily_operator_season_gate.py", 60),
+    # Governed season state (Nov 2026, F2v2): ACTIVE / OFF_SEASON / UNKNOWN from schedule + calendar
+    # evidence (never props presence). OFF_SEASON steps are skipped BEFORE execution (zero provider
+    # calls, proven with a recording stub runner); UNKNOWN fails open. Pure; temp fixtures; no network.
+    ("Season Activation QC", "qc_season_activation.py", 60),
     # Cross-sport Quick Tools smoke (renders every /tools/* surface + exercises their
     # logic paths). Cheap, cross-sport (no season gate), so a broken tool is a hard FAIL.
     ("Quick Tools QC", "qc_quick_tools.py", 300),
@@ -356,6 +360,8 @@ def main() -> int:
         f"Started: {datetime.now().isoformat(timespec='seconds')}",
         "",
     ]
+    # Governed season state (season_utils.season_state): a sport is absent from this set only when it
+    # is authoritatively OFF_SEASON by schedule/calendar evidence; ACTIVE and UNKNOWN failures are real.
     active = active_sports()
     failed = False
     for label, script, timeout in SCORECARDS:
