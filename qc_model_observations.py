@@ -9,7 +9,7 @@ from services.model_observations import ModelObservationStore
 def _capture(store, **overrides):
     row = dict(dedup_key="q1", model_id="nfl_qb_rushing_yards", event_id="game-1",
                entity_id="espn:123", market="rushing_yards", direction="OVER", line=35.5,
-               price=-110, sportsbook="Book", quote_captured_at="2026-10-18T10:00:00Z",
+               price=-110, sportsbook="Book", quote_captured_at="2026-10-18T10:00:00Z",  # synthetic-fixture
                event_start="2026-10-18T20:00:00Z",
                inputs={"qb_rush_attempts_l5": 7.2, "opponent_qb_rush_allowed": 31.4},
                lineage={"player": "nflverse", "market": "odds_api_player_props"},

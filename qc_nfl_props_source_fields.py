@@ -28,8 +28,8 @@ def _mk_event(eid="evt-123", commence="2026-10-26T17:00:00Z"):
 def _mk_book(last_update="2026-10-25T13:30:00Z"):
     mkey = next(iter(fp.MARKET_STAT_MAP))  # any supported market key
     market = {"key": mkey, "outcomes": [
-        {"description": "Jordan Love", "name": "Over", "point": 245.5, "price": -110},
-        {"description": "Jordan Love", "name": "Under", "point": 245.5, "price": -110},
+        {"description": "Jordan Love", "name": "Over", "point": 245.5, "price": -110},  # synthetic-fixture
+        {"description": "Jordan Love", "name": "Under", "point": 245.5, "price": -110},  # synthetic-fixture
     ]}
     # the provider carries the authoritative source time at the MARKET level (RC 2D1 correction), so the
     # fixture puts last_update on the market -- the bookmaker level is deliberately left without one.

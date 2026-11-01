@@ -31,6 +31,7 @@ ARCHIVE = BASE_DIR / "data" / "tracking" / "BuyLow_Archive.csv"
 OUT_ROWS = BASE_DIR / "data" / "tracking" / "Signal_Grades.csv"
 OUT_SUMMARY = BASE_DIR / "data" / "tracking" / "Signal_Grades_Summary.json"
 MIN_SAMPLE = 20          # below this, a cohort's hit rate is "too few to read"
+PRICE_BASIS = "captured_price_only"   # ROI only from a price the archive captured; never assumed
 
 
 # --------------------------------------------------------------------------- resolvers
@@ -99,11 +100,11 @@ def resolve_cfb_team(row) -> dict | None:
                 "detail": f"wk{g['week']} vs {opp}: push"}
     covered = cover > 0
     hit = covered if kind == "buy_low" else (not covered)
-    # price = the ATS bet the signal implies (standard -110). Hit already encodes
-    # "the implied bet won" (cover for buy_low, no-cover for a sell-high fade), so ROI
-    # is honest at -110 for both sides. Lets the scoreboard show ROI, not just hit rate.
+    # No price: the archive captured the LINE but never a book quote, so there is no bet price to
+    # grade ROI against. An assumed -110 here was a fabricated price feeding price-performance
+    # learning (removed 2026-11-01). Hit rate stands; ROI abstains until a real price is captured.
     return {"resolved": True, "hit": bool(hit), "outcome": g["margin"], "move": round(cover, 1),
-            "price": -110,
+            "price_status": "UNAVAILABLE",
             "detail": f"wk{g['week']} vs {opp}: margin {g['margin']:+}, ATS {cover:+.1f}"}
 
 
@@ -123,10 +124,12 @@ def grade_archive(df: pd.DataFrame) -> pd.DataFrame:
             r.update(Resolved=0, Hit="", Outcome="", Move="", BetPrice="", GradeDetail="pending")
         elif res.get("push"):
             r.update(Resolved=1, Hit="push", Outcome=res.get("outcome"), Move=res.get("move"),
-                     BetPrice=res.get("price", ""), GradeDetail=res.get("detail"))
+                     BetPrice=res.get("price", ""), PriceStatus=res.get("price_status", ""),
+                     GradeDetail=res.get("detail"))
         else:
             r.update(Resolved=1, Hit=int(bool(res["hit"])), Outcome=res.get("outcome"),
-                     Move=res.get("move"), BetPrice=res.get("price", ""), GradeDetail=res.get("detail"))
+                     Move=res.get("move"), BetPrice=res.get("price", ""),
+                     PriceStatus=res.get("price_status", ""), GradeDetail=res.get("detail"))
         recs.append(r)
     return pd.DataFrame(recs)
 
@@ -197,10 +200,14 @@ def main() -> int:
             "pending": int((graded["Resolved"] == 0).sum()),
         },
         "min_sample": MIN_SAMPLE,
+        # Readers treat a summary WITHOUT this marker as legacy (pre-2026-11-01 summaries priced CFB
+        # ATS at an assumed -110) and never present its ROI as verified.
+        "price_basis": PRICE_BASIS,
         "note": ("A graded record, not an edge claim. Pending rows have no post-snapshot game "
                  "yet; cohorts under the sample floor read 'too few'. ROI is shown beside hit "
-                 "rate where the signal implies a real bet (ATS at -110) -- a hit rate without "
-                 "price hides what each result pays. Out-of-sample or it does not count."),
+                 "rate only where a real bet price was captured; the CFB ATS lens captured the "
+                 "line but no book price, so its ROI abstains (no assumed -110). "
+                 "Out-of-sample or it does not count."),
     }
     with open(OUT_SUMMARY, "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2)

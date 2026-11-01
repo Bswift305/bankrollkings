@@ -4,10 +4,17 @@ Step 3.1 scope: Today's Cards (/tools/daily-card) renders the SHARED editor part
 affordance intact (legs with full data-* provenance, swap modal, reroll, save-image, bench pool, and the
 editing JS). Step 3.2 extends this to prove the King's Tickets surface produces IDENTICAL ordered leg
 identities from the same builder (the two surfaces cannot drift). Read-only; owner-bypass.
+
+Deterministic: the editor + drift checks run against a PINNED SYNTHETIC SLATE (fixture legs with fresh
+single-book quotes patched into app._card_pools), so they execute in every environment -- a data-less
+worktree or CI no longer skips them into a red test. The LIVE slate is then checked separately with an
+explicit supported no-data assertion: it must render either the editor or the honest empty state.
 """
 from __future__ import annotations
 
+import copy
 import re
+from datetime import datetime, timedelta, timezone
 
 import app
 
@@ -19,6 +26,35 @@ REQUIRED = ['class="dc-grid"', 'class="dc-leg"', 'class="dc-swap"', 'dc-reroll',
             'eligibleAdds', 'window.confirm', 'grid.addEventListener']
 LEG_RE = re.compile(r'class="dc-leg" data-game="([^"]*)" data-price="([^"]*)" data-tier="([^"]*)" '
                     r'data-sport="([^"]*)" data-reason="([^"]*)" data-label="([^"]*)"')
+
+
+def _synthetic_pools():
+    """A fixed slate: 6 floors + 3 swings on 9 distinct games, each with a complete, fresh quote."""
+    at = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    def leg(i, tier, price, hit):
+        game, line = f"SYN{i}A @ SYN{i}H", 40.5 + i
+        label = f"Synthetic Player {i} Rec Yds {line:g}+"
+        return {'sport': 'NFL', 'kind': 'prop', 'tier': tier, 'label': label, 'player': f"Synthetic Player {i}",
+                'line': line, 'game': game, 'price': price, 'hit': hit, 'sample': 12,
+                'reason': f"synthetic fixture leg {i}", 'score': hit, 'book': 'SyntheticBook', 'quote_at': at,
+                'quote': {'book': 'SyntheticBook', 'price': price, 'line': line, 'event': game,
+                          'market': 'player_reception_yds', 'selection': f"Synthetic Player {i} Over {line:g}",
+                          'updated_utc': at}}
+    floors = [leg(i, 'floor', -150 - 5 * i, 90 - i) for i in range(6)]
+    swings = [leg(10 + i, 'swing', 130 + 10 * i, 60 - i) for i in range(3)]
+    return floors, swings
+
+
+def _with_synthetic_slate(fn):
+    fx = _synthetic_pools()
+    orig_pools, orig_dmap = app._card_pools, app._game_date_map
+    app._card_pools = lambda *a, **k: copy.deepcopy(fx)
+    app._game_date_map = lambda: {}
+    try:
+        return fn()
+    finally:
+        app._card_pools, app._game_date_map = orig_pools, orig_dmap
 
 
 def _render(path):
@@ -39,6 +75,21 @@ def legs_by_card(html):
 
 
 def run_qc():
+    issues, notes = _with_synthetic_slate(_run_structure)
+    # LIVE slate: explicit supported no-data assertion -- the editor OR the honest empty state, never neither.
+    code, html = _render('/tools/daily-card')
+    if code != 200:
+        issues.append(f"live /tools/daily-card returned {code}")
+    elif 'class="dc-grid"' in html:
+        notes.append("live slate: shared editor rendered")
+    elif 'bkn-empty' in html:
+        notes.append("live slate: no executable legs -> honest empty state rendered (supported no-data state)")
+    else:
+        issues.append("live slate rendered neither the shared editor nor the empty state")
+    return {'issues': issues, 'notes': notes}
+
+
+def _run_structure():
     issues, notes = [], []
     code, html = _render('/tools/daily-card')
     if code != 200:
@@ -56,9 +107,9 @@ def run_qc():
     nlegs = sum(len(c) for c in cards)
     if cards and nlegs:
         # every leg carries full provenance tuple (game, price, tier, sport, reason, label)
-        notes.append(f"{len(cards)} card(s), {nlegs} legs; every leg carries data-* provenance")
+        notes.append(f"synthetic slate: {len(cards)} card(s), {nlegs} legs; every leg carries data-* provenance")
     else:
-        notes.append("no cards on the current slate (empty state) -- structure check skipped")
+        issues.append("synthetic slate produced no cards -- the structure check could not run")
     # the partial file exists and is the single source
     import os
     if not os.path.exists('templates/_ticket_editor.html'):
@@ -92,7 +143,7 @@ def run_qc():
         issues.append(f"existing /tools/daily-card URL no longer resolves ({sc})")
     else:
         notes.append("existing Today's Cards URL still resolves (compatibility intact)")
-    return {'issues': issues, 'notes': notes}
+    return issues, notes
 
 
 def main():

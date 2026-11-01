@@ -33,10 +33,11 @@
 </form>
 
 {% if not available %}
-  <div class="bkn-empty">No card could be built from the current slate for these settings &mdash; try <b>Everything</b> for the source, or widen the sizes. Cards fill in as this slate&rsquo;s props and lines load.</div>
+  <div class="bkn-empty">{% if context_lines %}<b>No fresh executable prices available.</b> No card is built from a stale or incomplete price; the analysis below is context only &mdash; worth examining, not a bet to place.{% else %}No card could be built from the current slate for these settings &mdash; try <b>Everything</b> for the source, or widen the sizes. Cards fill in as this slate&rsquo;s props and lines load.{% endif %}</div>
 {% else %}
   {% include "_ticket_editor.html" %}
 {% endif %}
+{% include "_unpriced_context_lines.html" %}
 </div>
 {% endblock %}
 

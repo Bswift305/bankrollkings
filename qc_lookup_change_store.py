@@ -26,7 +26,7 @@ def _item(**updates) -> ObservedChangeInput:
         entity_type="player",
         entity_id="nfl:espn:123",
         field="market_quote:nfl:player_rush_yds:draftkings:a@b",
-        current_value={"line": 40.5, "over_price": -110, "under_price": -110},
+        current_value={"line": 40.5, "over_price": -110, "under_price": -110},  # synthetic-fixture
         dataset="odds_api_player_props",
         source="The Odds API",
         source_observation_id="quote-1",
@@ -250,7 +250,7 @@ def qc_file_ingestion_and_ambiguity():
         pd.DataFrame([
             {"Player": "Runner One", "Stat": "Rush Yds", "MarketKey": "player_rush_yds",
              "Line": 40.5, "Game": "A@B", "Book": "DraftKings", "LastUpdated": "2026-10-18 05:00",
-             "OverOdds": -110, "UnderOdds": -110},
+             "OverOdds": -110, "UnderOdds": -110},  # synthetic-fixture
             # Same player/book/market/game, simultaneous alternate line: both rows must abstain.
             {"Player": "Runner Two", "Stat": "Rush Yds", "MarketKey": "player_rush_yds",
              "Line": 30.5, "Game": "C@D", "Book": "FanDuel", "LastUpdated": "2026-10-18 05:00",
@@ -260,7 +260,7 @@ def qc_file_ingestion_and_ambiguity():
              "OverOdds": 120, "UnderOdds": -140},
             {"Player": "Unknown Player", "Stat": "Rush Yds", "MarketKey": "player_rush_yds",
              "Line": 10.5, "Game": "E@F", "Book": "BetMGM", "LastUpdated": "2026-10-18 05:00",
-             "OverOdds": -110, "UnderOdds": -110},
+             "OverOdds": -110, "UnderOdds": -110},  # synthetic-fixture
         ]).to_csv(props, index=False)
         with _store(root) as store:
             first = ingest_file(store, props, roster, captured_at="2026-10-18T12:00:00Z")

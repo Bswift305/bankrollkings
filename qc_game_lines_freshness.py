@@ -25,8 +25,8 @@ def _odds_fixture(age_hours):
     ts = (datetime.now() - timedelta(hours=age_hours)).strftime("%Y-%m-%dT%H:%M:%S")
     return pd.DataFrame([{
         "Date": "2026-10-26", "Time": "1:00 PM", "Away": "Dallas Cowboys", "Home": "Philadelphia Eagles",
-        "AwayML": 120, "HomeML": -140, "Spread": -2.5, "SpreadOdds": -110, "Total": 47.5,
-        "OverOdds": -110, "UnderOdds": -110, "Book": "DraftKings", "GameID": "DALPHI",
+        "AwayML": 120, "HomeML": -140, "Spread": -2.5, "SpreadOdds": -110, "Total": 47.5,  # synthetic-fixture
+        "OverOdds": -110, "UnderOdds": -110, "Book": "DraftKings", "GameID": "DALPHI",  # synthetic-fixture
         "LastUpdated": ts,
     }])
 

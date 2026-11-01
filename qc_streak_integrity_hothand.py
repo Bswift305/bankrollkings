@@ -40,9 +40,9 @@ def run_qc():
         'old guy': glog([(3, 90), (4, 95)], season=2025),                  # most recent game not current -> excluded
     }
     log = pd.concat(list(idx.values()), ignore_index=True)
-    props = pd.DataFrame([{'Player': 'Nico Collins', 'Stat': 'Receiving Yards', 'Line': 60.5, 'OverOdds': -110, 'Book': 'DK'},
-                          {'Player': 'Miss Guy', 'Stat': 'Receiving Yards', 'Line': 60.5, 'OverOdds': -110, 'Book': 'DK'},
-                          {'Player': 'Old Guy', 'Stat': 'Receiving Yards', 'Line': 60.5, 'OverOdds': -110, 'Book': 'DK'}])
+    props = pd.DataFrame([{'Player': 'Nico Collins', 'Stat': 'Receiving Yards', 'Line': 60.5, 'OverOdds': -110, 'Book': 'DK'},  # synthetic-fixture
+                          {'Player': 'Miss Guy', 'Stat': 'Receiving Yards', 'Line': 60.5, 'OverOdds': -110, 'Book': 'DK'},  # synthetic-fixture
+                          {'Player': 'Old Guy', 'Stat': 'Receiving Yards', 'Line': 60.5, 'OverOdds': -110, 'Book': 'DK'}])  # synthetic-fixture
     real_lcc = app._load_cached_csv
     keys = ('_nfl_player_week_data', '_nfl_player_index', '_load_cached_csv', '_nfl_expected_completed_week',
             '_nfl_injury_source_state', '_nfl_player_availability', '_nfl_player_log_signature',
