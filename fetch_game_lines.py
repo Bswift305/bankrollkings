@@ -370,6 +370,73 @@ def append_line_movement_snapshot(df: pd.DataFrame, sport: str) -> None:
     print(f"Updated current movement summary at {current_path}")
 
 
+# Sports whose game lines use slate-aware validation (incident 2026-11-01, bk-daily F5). Every other sport
+# keeps the unchanged absolute-collapse validate_feed path.
+GAME_LINES_SLATE_SPORTS = {"americanfootball_nfl", "americanfootball_ncaaf"}
+MANIFEST_KICKOFF_GRACE_MINUTES = 30   # a game kicking off this close to the fetch may already be off the board
+
+
+def _eligible_line_events(sport: str, days: int, now_utc: datetime, base_dir: Path | None = None):
+    """INDEPENDENT event manifest for game-lines slate validation.
+
+    Source: the LATEST snapshot in data/tracking/<PREFIX>_LineMovementHistory.csv -- written only by this
+    fetcher AFTER a previous candidate passed validation and was atomically published (and never by the CFBD
+    slate job, which overwrites data/odds/NCAAF_Odds.csv but not this file). Restricted to events that are
+    STILL SCHEDULED inside this fetch's window: kickoff (Eastern Date+Time) after now + grace and no later
+    than now + days. Games already played (the Sunday rollover) drop out; a game the books still list that
+    the candidate lost stays in the denominator. Never derived from the candidate.
+
+    Returns (eligible_ids: set[str], info: dict). eligible_ids is empty when no usable manifest exists.
+    """
+    base = Path(base_dir) if base_dir is not None else BASE_DIR
+    prefix = SPORT_TRACKING_PREFIX.get(sport, sport.upper().replace("-", "_"))
+    rel = Path("data") / "tracking" / f"{prefix}_LineMovementHistory.csv"
+    info = {"source": str(rel).replace("\\", "/"), "snapshot_at": None, "age_hours": None,
+            "event_rows": 0, "snapshot_events": 0, "reason": None}
+    p = base / rel
+    if not p.exists():
+        info["reason"] = "no line-movement history file"
+        return set(), info
+    want = {"SnapshotAt", "GameID", "Date", "Time"}
+    try:
+        h = pd.read_csv(p, usecols=lambda c: c in want, dtype=str, low_memory=False)
+    except Exception as exc:
+        info["reason"] = f"unreadable history: {type(exc).__name__}"
+        return set(), info
+    if h.empty or not want.issubset(h.columns):
+        info["reason"] = "history empty or missing SnapshotAt/GameID/Date/Time"
+        return set(), info
+    snap_ts = pd.to_datetime(h["SnapshotAt"], errors="coerce", utc=True, format="mixed")
+    if snap_ts.isna().all():
+        info["reason"] = "no parseable SnapshotAt"
+        return set(), info
+    latest = snap_ts.max()
+    snap = h[snap_ts == latest].copy()
+    info["snapshot_at"] = latest.isoformat()
+    now_ts = pd.Timestamp(now_utc)
+    now_ts = now_ts.tz_localize("UTC") if now_ts.tzinfo is None else now_ts.tz_convert("UTC")
+    info["age_hours"] = round((now_ts - latest).total_seconds() / 3600.0, 2)
+    snap["GameID"] = snap["GameID"].fillna("").astype(str).str.strip()
+    snap = snap[snap["GameID"] != ""]
+    info["snapshot_events"] = int(snap["GameID"].nunique())
+    kick = pd.to_datetime(snap["Date"].fillna("").astype(str).str.strip() + " " +
+                          snap["Time"].fillna("").astype(str).str.strip(), errors="coerce")
+    try:
+        kick = kick.dt.tz_localize("America/New_York", ambiguous="NaT", nonexistent="NaT").dt.tz_convert("UTC")
+    except Exception as exc:
+        info["reason"] = f"kickoff localization failed: {type(exc).__name__}"
+        return set(), info
+    lo = now_ts + pd.Timedelta(minutes=MANIFEST_KICKOFF_GRACE_MINUTES)
+    hi = now_ts + pd.Timedelta(days=int(days))
+    in_window = kick.notna() & (kick > lo) & (kick <= hi)
+    eligible = snap[in_window]
+    ids = set(eligible["GameID"].tolist())
+    info["event_rows"] = int(len(eligible))
+    if not ids:
+        info["reason"] = "latest snapshot has no still-scheduled in-window events"
+    return ids, info
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch game lines from The Odds API")
     parser.add_argument("--api-key", help="The Odds API key. Prefer ODDS_API_KEY env var.")
@@ -410,6 +477,7 @@ def main() -> int:
 
     all_rows: list[dict] = []
     fetch_failed = False
+    fetch_start_dt = datetime.now(timezone.utc)
     try:
         all_rows = fetch_odds_rows(api_key, sport, args.bookmakers, markets, args.regions, args.days)
         print(f"Loaded {len(all_rows)} bookmaker rows from the standard /odds endpoint")
@@ -438,13 +506,53 @@ def main() -> int:
     # schema, non-finite lines, timestamp regression, conflicting duplicates, wrong-sport path, implausible
     # collapse) must NOT replace last-known-good (incident 2026-10-23).
     from services.atomic_csv import atomic_write_csv, CsvValidationError
-    from services.feed_validation import GAME_LINES_SPEC, validate_feed
+    from services.feed_validation import (
+        FOOTBALL_GAME_LINES_SLATE_SPEC, GAME_LINES_SPEC, candidate_sha256, validate_feed,
+        validate_game_lines_slate,
+    )
     try:
         prior = pd.read_csv(output_path) if output_path.exists() else None
     except Exception:
         prior = None
-    ok, errs = validate_feed(df, GAME_LINES_SPEC, prior_df=prior, path=output_path,
-                             sport_tokens=_sport_tokens(sport), allow_collapse=bool(getattr(args, "allow_collapse", False)))
+    allow_collapse = bool(getattr(args, "allow_collapse", False))
+    if sport in GAME_LINES_SLATE_SPORTS:
+        # Slate-aware (incident 2026-11-01): after a slate is played the forward window legitimately shrinks,
+        # so reconcile against the INDEPENDENT still-scheduled manifest instead of a prior holding played
+        # games. No usable manifest -> fail closed to the unchanged absolute collapse rule.
+        import uuid
+        eligible_ids, minfo = _eligible_line_events(sport, args.days, fetch_start_dt)
+        slate_facts = {
+            "run_id": uuid.uuid4().hex,
+            "sport": sport,
+            "candidate_sha256": candidate_sha256(df),
+            "candidate_rows": len(df),
+            "provider_errors": int(fetch_failed),
+            "eligible_event_ids": sorted(eligible_ids),
+            "manifest_source": minfo.get("source"),
+            "manifest_snapshot_at": minfo.get("snapshot_at"),
+            "manifest_age_hours": minfo.get("age_hours"),
+            "manifest_event_rows": minfo.get("event_rows"),
+            "bookmakers": [b.strip() for b in str(args.bookmakers).split(",") if b.strip()],
+            "fetch_start": fetch_start_dt.isoformat(timespec="seconds"),
+            "fetch_end": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "window_end": (fetch_start_dt + timedelta(days=int(args.days))).isoformat(timespec="seconds"),
+        }
+        print(f"Eligible-event manifest: {minfo.get('source')} snapshot {minfo.get('snapshot_at')} "
+              f"(age {minfo.get('age_hours')}h): {len(eligible_ids)} still-scheduled in-window events"
+              + (f" [{minfo.get('reason')}]" if minfo.get("reason") else ""))
+        ok, errs, vreceipt = validate_game_lines_slate(df, FOOTBALL_GAME_LINES_SLATE_SPEC, prior_df=prior,
+                                                       path=output_path, sport_tokens=_sport_tokens(sport),
+                                                       slate_facts=slate_facts, allow_collapse=allow_collapse)
+        print("---- VALIDATION RECEIPT (game-lines slate-aware) ----")
+        for k in ("run_id", "sport", "candidate_sha256", "receipt_sha_bound", "baseline_mode", "manifest_reason",
+                  "manifest_source", "manifest_snapshot_at", "manifest_age_hours", "prior_rows",
+                  "candidate_rows", "candidate_events", "eligible_events", "covered_events", "event_coverage",
+                  "manifest_event_rows", "candidate_rows_on_eligible", "bookmakers", "fetch_start", "fetch_end",
+                  "window_end", "provider_errors", "allow_collapse", "decision", "reason_code"):
+            print(f"  {k}: {vreceipt.get(k)}")
+    else:
+        ok, errs = validate_feed(df, GAME_LINES_SPEC, prior_df=prior, path=output_path,
+                                 sport_tokens=_sport_tokens(sport), allow_collapse=allow_collapse)
     if not ok:
         print("Strong validation FAILED, preserving existing files:")
         for e in errs:

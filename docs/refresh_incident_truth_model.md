@@ -213,6 +213,33 @@ The next scheduled NBA fetch publishes **only if its own candidate satisfies the
 fetch, no `--allow-collapse`, validator never weakened for other feeds; on failure the prior stays
 byte-identical and status stays degraded.
 
+### Slate-aware game-lines validation (NFL + NCAAF, incident 2026-11-01 / bk-daily F5)
+Sunday 2026-11-01 prod `bk-daily` "Football line movement" failed on NCAAF: `68 rows < 50% of prior 164`.
+After Saturday's CFB slate is played the forward window legitimately shrinks, but the absolute collapse
+test compared against a prior still holding the played games — recurs every Sunday, NCAAF lines stuck at
+last-known-good. (The CFBD slate job, which runs later in the same chain, also rewrites
+`data/odds/NCAAF_Odds.csv`, so the prod "prior" may be CFBD consensus rows, not the Odds API's.)
+Fix (`fetch_game_lines.py` → `services.feed_validation.validate_game_lines_slate`, spec
+`FOOTBALL_GAME_LINES_SLATE_SPEC`, routed for `GAME_LINES_SLATE_SPORTS` = NFL + NCAAF only):
+- **Independent manifest** = the LATEST snapshot in `data/tracking/<PREFIX>_LineMovementHistory.csv`
+  (written only after a previous candidate passed validation and published; never written by CFBD; never
+  the candidate), restricted to events STILL SCHEDULED in this fetch's window (Eastern kickoff > now + 30
+  min, ≤ now + `--days`). Keyed by Odds API `GameID` — exact match, no name fuzzing.
+- **CURRENT_SLATE** (manifest present, ≤ 192h old): receipt bound to this candidate (sha, run_id, sport,
+  rows), zero provider errors, event coverage ≥ 90% of the still-scheduled events, and no
+  forward-window row collapse (candidate rows on those events < 50% of the manifest's rows on them =
+  books dropped).
+- **ABSOLUTE_FALLBACK** (manifest missing / no still-scheduled events / stale): fail closed to the
+  unchanged absolute collapse rule, reason `MANIFEST_MISSING_ABSOLUTE_FALLBACK` /
+  `MANIFEST_STALE_ABSOLUTE_FALLBACK`.
+- Structural checks, empty-slice rejection, atomic publish and last-known-good preservation are
+  unchanged. `--allow-collapse` bypasses only the count checks (absolute, coverage, forward), never
+  structural or receipt checks. `GAME_LINES_SPEC` (NBA/WNBA/MLB/NFL-preseason) is untouched.
+Replaying every local NCAAF/NFL snapshot transition offline: all four NCAAF Sunday rollovers that the old
+rule rejected (e.g. 2026-10-18 165→67, 6/6 still-scheduled events covered) now publish; a 1-book subset
+fetch (NFL 2026-10-10, 44→14) is still rejected (`FORWARD_WINDOW_COLLAPSE`). QC
+`qc_game_lines_slate_validation.py`.
+
 ## 7. Quota reconciliation (directive #4/#8) — BUILT
 
 - **Append-only ledger:** `services/odds_quota.py` `QuotaRecorder.write_ledger(...)` appends one line per

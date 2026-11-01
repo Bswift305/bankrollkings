@@ -50,6 +50,7 @@ class FeedSpec:
     comparable_event_ratio: float = 0.5         # event counts within this ratio of each other are "similar"
     event_coverage_min: float = 1.0             # fraction of eligible (markets-posted) events that must have rows
     rows_per_event_min: float = 0.0             # normalized density floor in CURRENT_SLATE mode
+    manifest_max_age_hours: float = 0.0         # game-lines slate mode: an older manifest snapshot is unusable
 
 
 def _finite_series(s):
@@ -295,6 +296,134 @@ def validate_feed_slate(df, spec: FeedSpec, prior_df=None, path=None, sport_toke
     return ok, errors, receipt
 
 
+def validate_game_lines_slate(df, spec: FeedSpec, prior_df=None, path=None, sport_tokens=None,
+                              slate_facts=None, allow_collapse=False):
+    """Slate-aware validation for GAME LINES (incident 2026-11-01, bk-daily F5). Returns (ok, errors, receipt).
+
+    The absolute row-count collapse test compares the candidate against a prior that still carries games
+    which have since been PLAYED (e.g. Saturday's CFB slate on a Sunday run), so a legitimately smaller
+    forward window false-positives every week. Here the comparison is reconciled against an INDEPENDENT
+    manifest instead: the events of the last validated game-lines snapshot that are STILL SCHEDULED inside
+    this fetch's window (kickoff after the fetch, before the window end). Assembled by the fetcher from the
+    line-movement history -- never from the candidate.
+
+    Structural checks (schema, non-finite, empty slice, wrong-sport path, timestamp regression, conflicting
+    duplicates) always apply. Then:
+      - CURRENT_SLATE (manifest present + fresh): a receipt bound to THIS candidate (sha, run_id, sport,
+        candidate_rows), zero provider errors, event coverage |covered & eligible| / |eligible| >=
+        spec.event_coverage_min, and NO forward-window row collapse (candidate rows on the manifest events
+        < collapse_ratio x the manifest's rows on those same events = books/rows went missing).
+      - ABSOLUTE_FALLBACK (manifest missing, empty, or older than spec.manifest_max_age_hours): fail closed
+        to the UNCHANGED absolute collapse rule vs the prior, with an explicit reason code.
+    `allow_collapse` (the existing explicit operator override) bypasses the count-type checks only --
+    absolute collapse, coverage and forward collapse -- never structural or receipt checks.
+
+    `slate_facts` keys: run_id, sport, candidate_sha256, candidate_rows, provider_errors,
+      eligible_event_ids (manifest: still-scheduled in-window events), manifest_source,
+      manifest_snapshot_at, manifest_age_hours, manifest_event_rows (manifest rows on eligible events),
+      bookmakers, fetch_start, fetch_end, window_end.
+    """
+    errors = _structural_errors(df, spec, prior_df, path, sport_tokens)
+    structural_ok = not errors
+    facts = dict(slate_facts or {})
+    eligible_ids = {str(x) for x in (facts.get("eligible_event_ids") or [])}
+    cand_ids = _distinct(df, spec.event_col) if df is not None else set()
+    covered_ids = cand_ids & eligible_ids
+    eligible, covered = len(eligible_ids), len(covered_ids)
+    event_coverage = round(covered / eligible, 4) if eligible else 0.0
+    manifest_age = facts.get("manifest_age_hours")
+    manifest_rows = int(facts.get("manifest_event_rows") or 0)
+    cand_rows_on_eligible = 0
+    if df is not None and spec.event_col in getattr(df, "columns", []) and eligible_ids:
+        cand_rows_on_eligible = int(df[spec.event_col].astype(str).str.strip().isin(eligible_ids).sum())
+    declared_sha = facts.get("candidate_sha256")
+    actual_sha = candidate_sha256(df) if df is not None else ""
+    candidate_rows = facts.get("candidate_rows")
+    provider_errors = int(facts.get("provider_errors") or 0)
+    n = len(df) if df is not None else 0
+
+    manifest_reason = None
+    if slate_facts is None or eligible <= 0:
+        manifest_reason = "MANIFEST_MISSING"
+    elif manifest_age is None or (spec.manifest_max_age_hours and float(manifest_age) > spec.manifest_max_age_hours):
+        manifest_reason = "MANIFEST_STALE"
+    mode = "CURRENT_SLATE" if manifest_reason is None else "ABSOLUTE_FALLBACK"
+
+    reason_code = None
+    if any(e.startswith("missing required column") for e in errors):
+        reason_code = "STRUCTURAL_REJECT"
+    elif mode == "ABSOLUTE_FALLBACK":
+        # Fail closed to the pre-existing rule -- byte-for-byte the same comparison validate_feed makes.
+        if prior_df is not None and not allow_collapse:
+            pn = len(prior_df)
+            if pn >= 5 and n < spec.collapse_ratio * pn:
+                errors.append(f"implausible row-count collapse: {n} rows < {spec.collapse_ratio:.0%} of prior "
+                              f"{pn} (pass an explicit override if intended) [{manifest_reason}: no usable "
+                              "independent event manifest to reconcile a smaller slate against]")
+        reason_code = f"{manifest_reason}_ABSOLUTE_FALLBACK"
+    else:
+        if not declared_sha or not facts.get("run_id") or not facts.get("sport"):
+            errors.append("no/incomplete response-shape receipt supplied for CURRENT_SLATE validation")
+            reason_code = "RESPONSE_RECEIPT_MISSING"
+        elif declared_sha != actual_sha:
+            errors.append(f"response-shape receipt not bound to this candidate (declared sha "
+                          f"{str(declared_sha)[:12]} != actual {actual_sha[:12]})")
+            reason_code = "RESPONSE_RECEIPT_MISSING"
+        elif candidate_rows is not None and int(candidate_rows) != n:
+            errors.append(f"receipt candidate_rows {candidate_rows} != frame rows {n}")
+            reason_code = "RESPONSE_RECEIPT_MISSING"
+        elif provider_errors > 0:
+            errors.append(f"{provider_errors} provider error(s) during the current-slate fetch")
+            reason_code = "CURRENT_SLATE_INCOMPLETE"
+        elif not allow_collapse and event_coverage < spec.event_coverage_min:
+            missing = sorted(eligible_ids - covered_ids)[:6]
+            errors.append(f"partial event coverage: {covered}/{eligible} still-scheduled manifest events have "
+                          f"rows (< required {spec.event_coverage_min:.0%}); missing e.g. {missing}")
+            reason_code = "CURRENT_SLATE_INCOMPLETE"
+        elif (not allow_collapse and manifest_rows >= 5
+              and cand_rows_on_eligible < spec.collapse_ratio * manifest_rows):
+            errors.append(f"forward-window row collapse: {cand_rows_on_eligible} rows on the still-scheduled "
+                          f"manifest events < {spec.collapse_ratio:.0%} of the manifest's {manifest_rows}")
+            reason_code = "FORWARD_WINDOW_COLLAPSE"
+        elif structural_ok:
+            reason_code = "CURRENT_SLATE_COMPLETE"
+        else:
+            reason_code = "CURRENT_SLATE_INCOMPLETE"
+
+    ok = (len(errors) == 0)
+    if not ok and reason_code in (None, "CURRENT_SLATE_COMPLETE"):
+        reason_code = "CURRENT_SLATE_INCOMPLETE"
+    receipt = {
+        "run_id": facts.get("run_id"),
+        "sport": facts.get("sport"),
+        "candidate_sha256": actual_sha,
+        "receipt_sha_bound": bool(declared_sha and declared_sha == actual_sha),
+        "baseline_mode": mode,
+        "manifest_reason": manifest_reason,
+        "manifest_source": facts.get("manifest_source"),
+        "manifest_snapshot_at": facts.get("manifest_snapshot_at"),
+        "manifest_age_hours": manifest_age,
+        "manifest_event_rows": manifest_rows,
+        "prior_rows": int(len(prior_df)) if prior_df is not None else 0,
+        "candidate_rows": int(n),
+        "candidate_events": len(cand_ids),
+        "eligible_events": eligible,
+        "covered_events": covered,
+        "event_coverage": event_coverage,
+        "candidate_rows_on_eligible": cand_rows_on_eligible,
+        "missing_event_ids": sorted(eligible_ids - covered_ids),
+        "bookmakers": list(facts.get("bookmakers") or []),
+        "fetch_start": facts.get("fetch_start"),
+        "fetch_end": facts.get("fetch_end"),
+        "window_end": facts.get("window_end"),
+        "provider_errors": provider_errors,
+        "allow_collapse": bool(allow_collapse),
+        "decision": "PUBLISH" if ok else "REJECT",
+        "reason_code": reason_code,
+    }
+    return ok, errors, receipt
+
+
 # Per-feed specs (the authoritative current-market artifacts the narrow recovery fetches publish).
 GAME_LINES_SPEC = FeedSpec(
     kind="game_lines",
@@ -305,6 +434,27 @@ GAME_LINES_SPEC = FeedSpec(
     value_cols=("Spread", "Total", "SpreadOdds"),
     identity_cols=("Away", "Home"),
     min_rows=1,
+)
+
+# NFL + NCAAF game lines OPT IN to the game-lines slate model (incident 2026-11-01, bk-daily F5): after a
+# slate is PLAYED the forward window legitimately shrinks (Sunday after Saturday's CFB slate), so an absolute
+# collapse vs a prior that still holds the played games is a false positive. Identical structural checks to
+# GAME_LINES_SPEC; GAME_LINES_SPEC itself (NBA/WNBA/MLB/NFL-preseason) is unchanged.
+FOOTBALL_GAME_LINES_SLATE_SPEC = FeedSpec(
+    kind="game_lines",
+    required_cols=GAME_LINES_SPEC.required_cols,
+    numeric_cols=GAME_LINES_SPEC.numeric_cols,
+    timestamp_col=GAME_LINES_SPEC.timestamp_col,
+    id_cols=GAME_LINES_SPEC.id_cols,
+    value_cols=GAME_LINES_SPEC.value_cols,
+    identity_cols=GAME_LINES_SPEC.identity_cols,
+    min_rows=GAME_LINES_SPEC.min_rows,
+    collapse_ratio=GAME_LINES_SPEC.collapse_ratio,
+    slate_aware=True,
+    event_col="GameID",                  # Odds API event id: exact match manifest<->candidate, no name fuzzing
+    book_col="Book",
+    event_coverage_min=0.9,              # multi-day lookahead manifest; tolerates ~1 pulled/postponed game in 10
+    manifest_max_age_hours=192.0,        # an 8-day-old schedule snapshot is too old to reconcile against
 )
 
 PLAYER_PROPS_SPEC = FeedSpec(
