@@ -514,7 +514,7 @@ legacy = pd.DataFrame([
     [DAY, "19:30", "Georgia Bulldogs", "Alabama Crimson Tide", "Georgia Bulldogs", "Alabama Crimson Tide",
      135, -155, -3.0, -108, 51.0, -112, -108, "DraftKings", "abc123def", fresh],
     # pre-F7 residue: the old CFBD writer's row for a game the Odds API does not cover
-    [DAY, "12:00 PM", "Troy", "Army", "Troy", "Army", 150, -170, -4.0, -110, 44.5, -110, -110,
+    [DAY, "12:00 PM", "Troy", "Army", "Troy", "Army", 150, -170, -4.0, -110, 44.5, -110, -110,  # synthetic-fixture
      "CFBD consensus", "402", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")],
 ], columns=W1_COLS)
 for p in ("odds/NCAAF_Odds.csv", "schedules/NCAAF_Odds.csv"):
@@ -528,7 +528,7 @@ try:
     ms = appmod.load_ncaaf_schedule()
     ok(not mo.empty and not mo["Book"].astype(str).str.contains("CFBD", case=False).any(),
        "load_ncaaf_game_market_odds: CFBD residue row dropped, Odds API row kept")
-    ok(not (mo[[c for c in PRICE_KEYS if c in mo.columns]] == -110).any().any(),
+    ok(not (mo[[c for c in PRICE_KEYS if c in mo.columns]] == -110).any().any(),  # synthetic-fixture
        "load_ncaaf_game_market_odds: no -110 reaches a market reader")
     ok("Book" not in ms.columns or not ms["Book"].astype(str).str.contains("CFBD", case=False).any(),
        "load_ncaaf_schedule: CFBD-book residue dropped from the schedule frame")
