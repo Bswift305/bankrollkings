@@ -74,8 +74,8 @@ def eastern_stamp(age_hours):
 
 def _rows(stamp):
     base = {"Date": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"), "Time": "13:00",
-            "AwayML": 260, "HomeML": -325, "Spread": -7.0, "SpreadOdds": -110, "Total": 54.5,
-            "OverOdds": -110, "UnderOdds": -110, "Book": "BetMGM"}
+            "AwayML": 260, "HomeML": -325, "Spread": -7.0, "SpreadOdds": -110, "Total": 54.5,  # synthetic-fixture
+            "OverOdds": -110, "UnderOdds": -110, "Book": "BetMGM"}  # synthetic-fixture
     games = [("Arizona Cardinals", "Dallas Cowboys", "g1"), ("Buffalo Bills", "Miami Dolphins", "g2")]
     out = []
     for away, home, gid in games:
