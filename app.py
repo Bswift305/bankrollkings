@@ -17799,6 +17799,7 @@ def build_market_player_page(sport, name):
     name = str(name or '').strip()
     label = {'nba': 'NBA', 'wnba': 'WNBA'}.get(sport, sport.upper())
     out = {'sport': sport, 'sport_label': label, 'player': name, 'found': False, 'team': '',
+           'team_status': '',
            'markets': [], 'source': 'The Odds API (licensed) player props', 'data_through': ''}
     if sport not in _entity_links.MARKET_PLAYER_SPORTS or not name:
         return out
@@ -17840,6 +17841,11 @@ def build_market_player_page(sport, name):
         # Stable, readable order: by stat then line.
         markets.sort(key=lambda m: (m['stat'], m['line']))
         out['markets'] = markets[:80]
+        # F3b: the licensed props feed has the matchup but not the player's side, and the NBA.com-derived
+        # team sources are gated -> abstain VISIBLY instead of silently dropping the team (never inferred
+        # from the Game string). Stats enabled: unchanged (blank team simply omitted, as before).
+        if not out['team'] and _nba_market_gated(sport):
+            out['team_status'] = _nba_source_gate.TEAM_MAPPING_UNAVAILABLE
     try:
         fn = {'nba': 'NBA_Props.csv', 'wnba': 'WNBA_Props.csv'}[sport]
         p = DATA_DIR / 'props' / fn

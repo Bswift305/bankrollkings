@@ -18,7 +18,7 @@
   .mp-empty{color:var(--text-muted);font:500 13px/1.6 'Helvetica Neue',Arial;padding:18px 0;}
 </style>
 <div class="mp-wrap">
-  <h1 class="mp-h">{{ player }} <span style="font:600 12px/1 'Helvetica Neue',Arial;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">· {{ sport_label }}{% if team %} · {{ team }}{% endif %}</span></h1>
+  <h1 class="mp-h">{{ player }} <span style="font:600 12px/1 'Helvetica Neue',Arial;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">· {{ sport_label }}{% if team %} · {{ team }}{% elif team_status == 'TEAM_MAPPING_UNAVAILABLE' %} · <span data-team-status="TEAM_MAPPING_UNAVAILABLE">Team unavailable (data-rights gated)</span>{% endif %}</span></h1>
   <p class="mp-sub">Source: {{ source }}{% if data_through %} · data through {{ data_through }}{% endif %}.</p>
 
   {% if not found %}

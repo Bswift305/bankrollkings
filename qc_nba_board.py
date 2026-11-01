@@ -7,6 +7,7 @@ import pandas as pd
 
 from app import (
     apply_current_team_context,
+    build_current_team_map,
     build_live_props_board,
     load_canonical_live_props,
     load_current_team_overrides,
@@ -18,6 +19,7 @@ from app import (
     load_schedule,
     postseason_only_enabled,
 )
+from services import nba_source_gate as _nba_source_gate
 from services.qc_tracking import append_qc_run_log
 
 
@@ -55,9 +57,42 @@ def _load_live_props():
     return list(board or [])
 
 
+def classify_team_mapping(resolved_props, team_map) -> tuple[dict | None, dict | None]:
+    """Return (issue, abstention) for prop rows that resolved without a team.
+
+    * No missing teams -> (None, None).
+    * NBA stats gate OFF *and* the team map is EMPTY -> an explicit, non-failing abstention
+      (TEAM_MAPPING_UNAVAILABLE): the only team sources are NBA.com-derived and gated, and the licensed
+      props feed has the matchup but not the player's side. Nothing is inferred from the Game string.
+    * Otherwise (stats enabled, or gated with a NON-empty map) -> the MEDIUM defect, exactly as before.
+    """
+    if resolved_props is None or resolved_props.empty or "Team" not in resolved_props.columns:
+        return None, None
+    missing_team_mask = resolved_props["Team"].isna() | resolved_props["Team"].astype(str).str.strip().eq("")
+    missing_team_count = int(missing_team_mask.sum())
+    if not missing_team_count:
+        return None, None
+    if _nba_source_gate.team_mapping_gated(team_map):
+        return None, {
+            "status": _nba_source_gate.TEAM_MAPPING_UNAVAILABLE,
+            "label": f"{_nba_source_gate.TEAM_MAPPING_UNAVAILABLE} (data-rights gated)",
+            "row_count": missing_team_count,
+            "message": (
+                f"{missing_team_count} resolved prop rows have no team: NBA stats are data-rights gated "
+                "(BK_NBA_STATS_ENABLED off) and the team map is empty. Abstained, not inferred from Game."
+            ),
+        }
+    return {
+        "severity": "medium",
+        "category": "props_data",
+        "message": f"{missing_team_count} resolved prop rows are still missing team mapping.",
+    }, None
+
+
 def run_qc() -> dict:
     today = pd.Timestamp(datetime.now().date())
     issues: list[dict] = []
+    abstentions: list[dict] = []
 
     playoff_logs = load_playoff_gamelogs()
     playoff_results = load_playoff_results()
@@ -129,28 +164,27 @@ def run_qc() -> dict:
             "message": "Upcoming NBA schedule does not include today or later.",
         })
 
+    player_snapshot = load_player_snapshot()
+    current_team_overrides = load_current_team_overrides()
+    team_map = build_current_team_map(gamelogs, player_snapshot, current_team_overrides)
     resolved_props = props_df.copy()
     if not props_df.empty:
         resolved_props = apply_current_team_context(
             props_df,
             gamelogs,
-            load_player_snapshot(),
-            load_current_team_overrides(),
+            player_snapshot,
+            current_team_overrides,
         )
     canonical_props = load_canonical_live_props(
         gamelogs,
-        load_player_snapshot(),
-        load_current_team_overrides(),
+        player_snapshot,
+        current_team_overrides,
     )
-    if not resolved_props.empty and "Team" in resolved_props.columns:
-        missing_team_mask = resolved_props["Team"].isna() | resolved_props["Team"].astype(str).str.strip().eq("")
-        missing_team_count = int(missing_team_mask.sum())
-        if missing_team_count:
-            issues.append({
-                "severity": "medium",
-                "category": "props_data",
-                "message": f"{missing_team_count} resolved prop rows are still missing team mapping.",
-            })
+    team_issue, team_abstention = classify_team_mapping(resolved_props, team_map)
+    if team_issue:
+        issues.append(team_issue)
+    if team_abstention:
+        abstentions.append(team_abstention)
 
     if not canonical_props.empty:
         dup_mask = canonical_props.duplicated(subset=["Player", "Stat", "Game"], keep=False)
@@ -268,6 +302,8 @@ def run_qc() -> dict:
         "live_prop_rows": len(live_props),
         "issue_count": len(issues),
         "issues": issues,
+        "abstention_count": len(abstentions),
+        "abstentions": abstentions,
     }
     append_qc_run_log("nba_board", report)
     return report
@@ -284,6 +320,8 @@ def main() -> int:
     print(f"Schedule through: {report['schedule_max'] or 'missing'}")
     print(f"Live prop rows checked: {report['live_prop_rows']}")
     print(f"Issues found: {report['issue_count']}")
+    for item in report.get("abstentions", []):
+        print(f"[ABSTAIN] {item['label']}: {item['row_count']} rows. {item['message']}")
     print()
     if not report["issues"]:
         print("No blocking NBA QC issues detected.")
