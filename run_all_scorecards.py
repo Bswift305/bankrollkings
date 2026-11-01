@@ -40,6 +40,10 @@ SCORECARDS = [
     # evidence (never props presence). OFF_SEASON steps are skipped BEFORE execution (zero provider
     # calls, proven with a recording stub runner); UNKNOWN fails open. Pure; temp fixtures; no network.
     ("Season Activation QC", "qc_season_activation.py", 60),
+    # Season-calendar coverage contract: every date in the next 60 days must be covered by a VERIFIED
+    # season_calendar.py entry. Unverified-only => WATCH (not blocking); an uncovered date or a
+    # structurally unsound calendar => FAIL. Pure; no network.
+    ("Season Calendar Coverage QC", "qc_season_calendar_coverage.py", 60),
     # Cross-sport Quick Tools smoke (renders every /tools/* surface + exercises their
     # logic paths). Cheap, cross-sport (no season gate), so a broken tool is a hard FAIL.
     ("Quick Tools QC", "qc_quick_tools.py", 300),

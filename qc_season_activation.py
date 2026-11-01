@@ -16,6 +16,10 @@ This QC proves, with synthetic fixtures in a temp dir, a fixed Eastern "today", 
   * stale props + no events => OFF_SEASON;
   * the Eastern boundary (a 01:00 UTC game belongs to the previous Eastern date);
   * the calendar re-opens a sport whose on-disk schedule is frozen (no deadlock);
+  * precedence: schedule evidence supersedes the calendar (ACTIVE outside the window and past its
+    coverage); absence evidence never skips inside a window; an EXPIRED calendar is UNKNOWN (fail-open);
+  * the governed calendar (season_calendar.py): provenance present, structure sound, coverage contract
+    fires exactly at the 60-day look-ahead (injected 'today' + synthetic calendar), unverified reported;
   * NFL preseason pre-skip unchanged; football steps are not pre-gated;
   * --continue-on-error semantics; prod-shaped fixture (NFL/NCAAF/NBA active, MLB/WNBA off-season).
 Prints [ok]/[FAIL] per case; exits 1 on any failure.
@@ -35,7 +39,7 @@ import run_daily
 import season_utils as su
 from services import timeutils
 
-TODAY = date(2026, 11, 1)  # NFL/NCAAF/NBA in season; MLB (WS over) and WNBA (Finals over) out
+TODAY = date(2026, 11, 8)  # NFL/NCAAF/NBA in season; MLB + WNBA past their audited windows (end Nov 3)
 RESULTS: list[tuple[bool, str]] = []
 DAILY_SPORTS = {"nba", "wnba", "mlb"}
 
@@ -84,7 +88,7 @@ def case(fn) -> None:
 
 
 def prod_fixture(b: Path) -> None:
-    """Shaped like prod on 2026-11-01: stale MLB/WNBA props + last-season schedules; live NFL/NCAAF/NBA."""
+    """Shaped like prod in early Nov 2026: stale MLB/WNBA props + last-season schedules; live NFL/NCAAF/NBA."""
     for s in ("MLB", "WNBA", "NFL", "NCAAF", "NBA"):
         props(b, s)
     schedule(b, "MLB", [-6, -5, -4]); odds(b, "MLB", [-31])        # WS ended; lines 89-96h stale
@@ -193,9 +197,10 @@ def main() -> int:
     case(c_midseason_outage)
 
     def c_tail(b):
-        schedule(b, "MLB", [0, 1], today=date(2026, 11, 2))
-        st = state(b, "MLB", today=date(2026, 11, 2))
-        check(st.state == su.ACTIVE, "postseason running past the envelope end stays ACTIVE while games are listed")
+        schedule(b, "MLB", [0, 1], today=date(2026, 11, 10))
+        st = state(b, "MLB", today=date(2026, 11, 10))
+        check(st.state == su.ACTIVE and "events scheduled" in st.reason,
+              f"P1: postseason running past the calendar window stays ACTIVE while games are listed ({st.reason})")
     case(c_tail)
 
     check(su.in_season_window("NBA", date(2027, 1, 15)) is True
@@ -210,6 +215,110 @@ def main() -> int:
         check(st.state == su.UNKNOWN, "sport with no declared calendar -> UNKNOWN (fail-open), never OFF_SEASON")
     case(c_nocal)
 
+    # ---- governed calendar: precedence (schedule evidence supersedes the calendar) ----------------
+    def c_inwindow_absence(b):
+        # Fresh, readable artifacts listing ZERO upcoming events while inside the window (e.g. a World
+        # Series that ended in 5): documented decision -- absence never skips inside the window.
+        _write(b / "data/schedules/MLB_Schedule.csv", ["Date", "Away", "Home"], [])
+        odds(b, "MLB", [-4], today=date(2026, 11, 1))
+        st = state(b, "MLB", today=date(2026, 11, 1))
+        check(st.state == su.ACTIVE and "calendar holds ACTIVE" in st.reason,
+              f"P2: inside window + readable zero-event evidence -> ACTIVE, absence never skips ({st.reason})")
+        st2 = state(b, "MLB", today=date(2026, 11, 4))
+        check(st2.state == su.OFF_SEASON,
+              f"... the day after the audited window end (Nov 3) the same evidence -> OFF_SEASON ({st2.reason})")
+    case(c_inwindow_absence)
+
+    def c_wnba_finals_g7(b):
+        # The pre-audit envelope ended Oct 20, eleven days before the official last possible Finals game.
+        schedule(b, "WNBA", [-20], today=date(2026, 10, 31)); odds(b, "WNBA", [-20], today=date(2026, 10, 31))
+        st = state(b, "WNBA", today=date(2026, 10, 31))
+        check(st.state == su.ACTIVE,
+              f"WNBA Finals G7 day (2026-10-31) with a frozen schedule -> ACTIVE via the audited calendar ({st.reason})")
+    case(c_wnba_finals_g7)
+
+    def c_evidence_outside(b):
+        schedule(b, "NBA", [3], today=date(2026, 8, 1))
+        st = state(b, "NBA", today=date(2026, 8, 1))
+        check(st.state == su.ACTIVE and "events scheduled" in st.reason,
+              "P1: schedule evidence of an in-window event OUTSIDE the calendar window -> ACTIVE (evidence wins)")
+    case(c_evidence_outside)
+
+    FAR = date(2029, 6, 1)  # beyond every calendar entry's coverage
+
+    def c_expired_evidence(b):
+        schedule(b, "MLB", [2], today=FAR)
+        st = state(b, "MLB", today=FAR)
+        check(st.state == su.ACTIVE, "P1: calendar EXPIRED but schedule lists an in-window event -> ACTIVE")
+    case(c_expired_evidence)
+
+    def c_expired_absence(b):
+        schedule(b, "MLB", [-200], today=FAR); odds(b, "MLB", [-200], today=FAR)
+        st = state(b, "MLB", today=FAR)
+        check(st.state == su.UNKNOWN and "no season calendar entry covers" in st.reason,
+              f"P3: calendar EXPIRED + readable zero-event schedule -> UNKNOWN, never OFF_SEASON ({st.reason})")
+        states = su.season_states(today=FAR, base_dir=b)
+        rec = Recorder()
+        _, _, outcomes, _, _ = run_ops(states, rec)
+        check(set(MLB_ONLY) <= {l for l, _ in rec.calls},
+              "P3: expired-calendar UNKNOWN MLB -> its steps RUN (fail-open)")
+    case(c_expired_absence)
+
+    def c_unverified_reason(b):
+        schedule(b, "WNBA", [-30], today=date(2027, 6, 1))
+        st = state(b, "WNBA", today=date(2027, 6, 1))
+        check(st.state == su.ACTIVE and "UNVERIFIED" in st.reason,
+              f"an unverified (conservative) entry still bootstraps, and says so in the reason ({st.reason})")
+    case(c_unverified_reason)
+
+    # ---- governed calendar: provenance + coverage contract ---------------------------------------
+    import season_calendar as sc
+    check(sc.validate_calendar() == [], f"real calendar is structurally sound: {sc.validate_calendar() or 'no problems'}")
+    check(all(sc.SEASON_CALENDAR.get(s) for s in su.GOVERNED_SPORTS),
+          "every governed sport has calendar entries")
+    ents = [e for es in sc.SEASON_CALENDAR.values() for e in es]
+    check(all(e.retrieved and e.official for e in ents)
+          and all(e.sources for e in ents if e.verified_through is not None),
+          "provenance: every entry has a retrieval date + official-date record; every verified claim cites a URL")
+    check(all(u.startswith("https://") for e in ents for u in e.sources),
+          "provenance: source URLs are https")
+
+    D = date
+    syn = {"XL": (
+        sc.SeasonEntry("XL", "S1", covers_from=D(2030, 1, 1), window_start=D(2030, 3, 1),
+                       window_end=D(2030, 10, 31), verified_through=D(2030, 10, 31),
+                       official={"x": "y"}, sources=("https://example.invalid/s1",), retrieved=D(2029, 12, 1)),
+        sc.SeasonEntry("XL", "S2", covers_from=D(2030, 11, 1), window_start=D(2031, 3, 1),
+                       window_end=D(2031, 10, 31), verified_through=None,
+                       official={"x": "unpublished"}, retrieved=D(2029, 12, 1)),
+    )}
+    fire_unv = D(2030, 11, 1) - timedelta(days=60)   # 2030-09-02
+    fire_lapse = D(2031, 11, 1) - timedelta(days=60)  # 2031-09-02
+    a = sc.coverage_status("XL", fire_unv - timedelta(days=1), calendar=syn)
+    z = sc.coverage_status("XL", fire_unv, calendar=syn)
+    check(a["ok"] and not z["ok"] and z["unverified_fire"] == fire_unv and not z["lapse"],
+          f"coverage: unverified next season fires EXACTLY at first_unverified - 60d ({fire_unv}), not a day earlier")
+    check(any("S2" in u for u in z["unverified_entries"]), "coverage: the unverified entry is reported by name")
+    l0 = sc.coverage_status("XL", fire_lapse - timedelta(days=1), calendar=syn)
+    l1 = sc.coverage_status("XL", fire_lapse, calendar=syn)
+    check(not l0["lapse"] and l1["lapse"] and l1["uncovered_fire"] == fire_lapse,
+          f"coverage: an uncovered date (calendar expiry) becomes a LAPSE exactly 60d ahead ({fire_lapse})")
+    check(sc.coverage_status("XL", D(2030, 6, 1), lookahead_days=200, calendar=syn)["ok"] is False
+          and sc.coverage_status("XL", D(2030, 6, 1), lookahead_days=10, calendar=syn)["ok"] is True,
+          "coverage: the look-ahead is honoured (injected horizon)")
+    bad = {"XL": (syn["XL"][0], sc.SeasonEntry("XL", "S2", covers_from=D(2030, 11, 5),
+                                               window_start=D(2031, 3, 1), window_end=D(2031, 10, 31),
+                                               verified_through=D(2031, 10, 31), official={"x": "y"},
+                                               retrieved=None))}
+    probs = sc.validate_calendar(bad)
+    check(any("gap" in p for p in probs) and any("no retrieval date" in p for p in probs)
+          and any("no source URL" in p for p in probs),
+          f"validate_calendar flags coverage gaps, missing retrieval date, verification without a source ({len(probs)} problems)")
+    real = {s: sc.coverage_status(s, D(2026, 11, 1)) for s in su.GOVERNED_SPORTS}
+    check(not real["WNBA"]["ok"] and all(real[s]["ok"] for s in ("NBA", "MLB", "NFL", "NCAAF"))
+          and not any(r["lapse"] for r in real.values()),
+          "real calendar on 2026-11-01: only WNBA (2027 unpublished) is unverified in the 60d horizon; no lapse")
+
     # ---- Eastern boundary ------------------------------------------------------------------------
     check(timeutils.event_eastern_date("2026-11-09T01:00:00Z") == date(2026, 11, 8),
           "event_eastern_date: 2026-11-09T01:00Z -> 2026-11-08 Eastern (previous Eastern date)")
@@ -219,16 +328,16 @@ def main() -> int:
 
     def c_boundary(b):
         _write(b / "data/schedules/MLB_Schedule.csv", ["commence_time", "Away", "Home"],
-               [["2026-11-09T01:00:00Z", "A", "H"]])  # 8pm ET Nov 8 = last day of [Nov 1, Nov 8]
+               [["2026-11-16T01:00:00Z", "A", "H"]])  # 8pm ET Nov 15 = last day of [Nov 8, Nov 15]
         st = state(b, "MLB")
-        check(st.state == su.ACTIVE, f"01:00 UTC Nov 9 game counts on Nov 8 Eastern -> inside the 7d window -> ACTIVE ({st.detail})")
+        check(st.state == su.ACTIVE, f"01:00 UTC Nov 16 game counts on Nov 15 Eastern -> inside the 7d window -> ACTIVE ({st.detail})")
     case(c_boundary)
 
     def c_boundary_out(b):
         _write(b / "data/schedules/MLB_Schedule.csv", ["commence_time", "Away", "Home"],
-               [["2026-11-09T06:00:00Z", "A", "H"]])  # 1am ET Nov 9 -> outside the window
+               [["2026-11-16T06:00:00Z", "A", "H"]])  # 1am ET Nov 16 -> outside the window
         st = state(b, "MLB")
-        check(st.state == su.OFF_SEASON, "06:00 UTC Nov 9 game is Nov 9 Eastern -> outside the window -> OFF_SEASON")
+        check(st.state == su.OFF_SEASON, "06:00 UTC Nov 16 game is Nov 16 Eastern -> outside the window -> OFF_SEASON")
     case(c_boundary_out)
 
     # ---- mtime-keyed memo (app.py request path) -------------------------------------------------
