@@ -46,7 +46,7 @@ def qc_source_parser_no_merge():
         return ['source parser produced wrong per-book rows: ' + str([(r['book'], r['line']) for r in rows])]
     a, b = by_book['DraftKings'], by_book['FanDuel']
     # each row keeps its OWN line + OWN two sides (no cross-book/cross-line merge)
-    if a['line'] != 24.5 or a['over_odds'] != -110 or a['under_odds'] != -108:
+    if a['line'] != 24.5 or a['over_odds'] != -110 or a['under_odds'] != -108:  # synthetic-fixture
         issues.append(f'DraftKings row merged/incorrect: {a}')
     if b['line'] != 25.5 or b['over_odds'] != -120 or b['under_odds'] is not None:
         issues.append(f'FanDuel row merged/incorrect (missing side must stay None): {b}')

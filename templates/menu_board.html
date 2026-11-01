@@ -127,20 +127,21 @@
         <span class="dt">{% if g.date %}{{ g.date }}{% endif %} &middot; {{ g.n_floor }} floor{{ '' if g.n_floor == 1 else 's' }} / {{ g.legs|length - g.n_floor }} swing{{ '' if (g.legs|length - g.n_floor) == 1 else 's' }}</span>
       </div>
       {% for l in g.legs %}
-      {% if l.price is none %}
-      {# Unpriced team line: the line is context only -- no price, no implied %, not addable to a slip. #}
+      {% if not l.executable_now %}
+      {# No verified, fresh single-book quote: context only -- no price, no implied %, not addable to a slip. #}
       <div class="mb-leg mb-ctx" data-unpriced="1">
-        <span class="mb-tag {{ l.tier }}">LINE</span>
+        <span class="mb-tag {{ l.tier }}">{{ 'LINE' if l.kind == 'line' else ('FLOOR' if l.tier == 'floor' else 'SWING') }}</span>
         <span class="mb-bd">
           <span class="mb-tp">{{ l.label }}<span class="mb-sp">{{ l.sport }}</span></span>
           <span class="mb-evidence">
-            <span class="mb-ev"><span class="k">Selection basis</span><span class="v">Model–market context</span></span>
-            <span class="mb-ev"><span class="k">Line source</span><span class="v">{{ l.line_source }}</span></span>
+            <span class="mb-ev"><span class="k">Selection basis</span><span class="v">{{ 'Model–market context' if l.kind == 'line' else 'Historical clearance' }}</span></span>
+            {% if l.hit %}<span class="mb-ev"><span class="k">Displayed history</span><span class="v">{{ l.hit }}%{% if l.sample %} across {{ l.sample }} games{% endif %}</span></span>{% endif %}
+            <span class="mb-ev"><span class="k">Source</span><span class="v">{{ l.line_source }}</span></span>
             <span class="mb-ev"><span class="k">Market price</span><span class="v">{{ l.price_note }}</span></span>
             <span class="mb-ev context"><span class="k">Why it is shown</span><span class="v">{{ l.reason }}</span></span>
           </span>
         </span>
-        <span class="mb-hit"></span>
+        <span class="mb-hit">{% if l.hit %}{{ l.hit }}%{% endif %}</span>
         <span class="mb-pr" title="{{ l.price_note }}">n/a</span>
       </div>
       {% else %}
@@ -151,7 +152,7 @@
           <span class="mb-evidence">
             <span class="mb-ev"><span class="k">Selection basis</span><span class="v">{{ 'Historical clearance' if l.tier == 'floor' else ('Model–market context' if l.tier == 'edge' else 'Plus-money candidate') }}</span></span>
             <span class="mb-ev"><span class="k">Displayed history</span><span class="v">{% if l.hit %}{{ l.hit }}%{% if l.sample %} across {{ l.sample }} games{% endif %}{% else %}Not a historical-hit-rate selection{% endif %}</span></span>
-            <span class="mb-ev"><span class="k">Market price</span><span class="v">{{ '%+d'|format(l.price) }}{% if l.market_pct is not none %} &middot; {{ l.market_pct }}% implied{% endif %}</span></span>
+            <span class="mb-ev"><span class="k">Market price</span><span class="v">{{ '%+d'|format(l.price) }} &middot; {{ l.book }} &middot; quoted {{ l.quote_at }}{% if l.market_pct is not none %} &middot; {{ l.market_pct }}% implied{% endif %}</span></span>
             <span class="mb-ev context"><span class="k">Why it is available</span><span class="v">{{ l.reason }}</span></span>
           </span>
         </span>
@@ -182,7 +183,7 @@
   </div>
 </div>
 
-<div class="bkn-note" style="margin-top:18px;"><b>How to read the Menu &mdash; honestly:</b> <b>Floors</b> are props a player has cleared a high % of the time at that number, from real game logs (the % shown is historical, not a projection). <b>Swings</b> and <b>model-context rows</b> are plus-money options or places where a displayed model estimate differs from the market; neither label establishes a betting edge. Your ticket&rsquo;s payout calculation <b>assumes independence</b>, while real legs may still share team, weather, role, or game-environment risk. One leg per game reduces shared-game concentration; it does not prove independence. Shop every price. MLB prices are estimates; confirm at your book. 21+</div>
+<div class="bkn-note" style="margin-top:18px;"><b>How to read the Menu &mdash; honestly:</b> <b>Floors</b> are props a player has cleared a high % of the time at that number, from real game logs (the % shown is historical, not a projection). <b>Swings</b> and <b>model-context rows</b> are plus-money options or places where a displayed model estimate differs from the market; neither label establishes a betting edge. Your ticket&rsquo;s payout calculation <b>assumes independence</b>, while real legs may still share team, weather, role, or game-environment risk. One leg per game reduces shared-game concentration; it does not prove independence. Shop every price. A leg is priced only from one sportsbook&rsquo;s fresh quote (book, odds, line and capture time from that book&rsquo;s record); anything less is shown as context, with no price and no slip button. 21+</div>
 </div>
 
 <script>

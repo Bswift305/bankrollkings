@@ -1,14 +1,16 @@
-"""Run an offline QC with the network physically blocked.
+"""Run an offline QC with Python networking blocked.
 
     py -3 qc_offline.py qc_something.py [args...]
 
-The QC (and any Python process it starts) runs with services.qc_no_network installed: a
-non-loopback connection or DNS lookup raises NetworkBlocked and the QC fails loudly. A QC that
+The QC runs in a Python child process with services.qc_no_network installed, and so does any
+PYTHON process it starts that inherits the environment: a non-loopback connection or DNS lookup
+made through Python's socket module raises NetworkBlocked and the QC fails loudly. Non-Python
+subprocesses (curl, aws, git, ...) are NOT blocked -- see services/qc_no_network.py. A QC that
 declares `REQUIRES_NETWORK = True` at module level is refused up front (exit 3, NOT RUN) rather
 than started -- it is not an offline QC. Exit code is otherwise the QC's own.
 
-Use this for every QC run during development/review; it is how the 2026-11-01 accidental live
-Odds API call (qc_odds_feed.py run as if offline) cannot recur.
+Use this for every QC run during development/review: the 2026-11-01 class of accident (a Python QC
+reaching the live Odds API while run as if offline) then fails closed instead of making the call.
 """
 from __future__ import annotations
 

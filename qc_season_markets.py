@@ -45,7 +45,7 @@ def main() -> int:
         failures.append(f"expected median consensus 11.0, got {row.get('consensus_line')}")
     if row.get("gap") != 1.0 or row.get("direction") != "Higher":
         failures.append("projection difference was not calculated correctly")
-    if row.get("best_over_odds") != "+105" or row.get("best_under_odds") != "-110":
+    if row.get("best_over_odds") != "+105" or row.get("best_under_odds") != "-110":  # synthetic-fixture
         failures.append("best Over/Under prices were not preserved")
 
     print("=" * 60)

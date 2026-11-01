@@ -5,12 +5,16 @@ must be unable to reach the network -- not merely intended not to. `install()` r
 socket layer's outbound entry points so any non-loopback connection or DNS lookup raises
 `NetworkBlocked` (loudly, so the QC fails instead of silently spending a paid call).
 
-Coverage:
-  * in-process: socket.connect / connect_ex / create_connection / getaddrinfo (urllib, requests,
-    http.client and every other client sit on these);
-  * child Python processes: `child_env()` returns an environment whose PYTHONPATH puts
-    `services/qc_offline_site` first, whose sitecustomize re-installs this guard when
-    BK_QC_OFFLINE=1 -- so a QC that shells out to another script is covered too.
+Guarantee -- exactly this, and no more:
+  * the QC's own Python process: socket.connect / connect_ex / create_connection / getaddrinfo are
+    replaced, so Python networking built on the socket module (urllib, http.client, requests, ...)
+    raises instead of connecting;
+  * Python child processes started with `child_env()` (qc_offline.py runs the QC itself this way):
+    PYTHONPATH puts `services/qc_offline_site` first and its sitecustomize re-installs this guard
+    when BK_QC_OFFLINE=1. Tested: a child Python DNS lookup raises NetworkBlocked.
+NOT covered: non-Python executables a QC might launch (curl, aws, git fetch, ...), Python started
+with -S / -I or a cleared environment, and C extensions that open sockets without the Python
+socket module. Those are not network-isolated by this guard; OS-level isolation would be needed.
 
 Loopback (127.0.0.0/8, ::1, localhost) stays allowed: local test servers are not the network.
 A QC that genuinely needs the network declares `REQUIRES_NETWORK = True` and checks

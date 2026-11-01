@@ -31,6 +31,7 @@ ARCHIVE = BASE_DIR / "data" / "tracking" / "BuyLow_Archive.csv"
 OUT_ROWS = BASE_DIR / "data" / "tracking" / "Signal_Grades.csv"
 OUT_SUMMARY = BASE_DIR / "data" / "tracking" / "Signal_Grades_Summary.json"
 MIN_SAMPLE = 20          # below this, a cohort's hit rate is "too few to read"
+PRICE_BASIS = "captured_price_only"   # ROI only from a price the archive captured; never assumed
 
 
 # --------------------------------------------------------------------------- resolvers
@@ -199,6 +200,9 @@ def main() -> int:
             "pending": int((graded["Resolved"] == 0).sum()),
         },
         "min_sample": MIN_SAMPLE,
+        # Readers treat a summary WITHOUT this marker as legacy (pre-2026-11-01 summaries priced CFB
+        # ATS at an assumed -110) and never present its ROI as verified.
+        "price_basis": PRICE_BASIS,
         "note": ("A graded record, not an edge claim. Pending rows have no post-snapshot game "
                  "yet; cohorts under the sample floor read 'too few'. ROI is shown beside hit "
                  "rate only where a real bet price was captured; the CFB ATS lens captured the "
