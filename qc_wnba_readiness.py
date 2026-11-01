@@ -1,15 +1,13 @@
 from __future__ import annotations
 
+import html
 from datetime import datetime
 from pathlib import Path
 
-from app import (
-    app,
-    load_wnba_live_props_feed,
-)
+from app import load_wnba_live_props_feed
 from qc_wnba_injuries import run_qc as run_wnba_injury_qc
 from qc_wnba_contradictions import run_qc as run_wnba_contradiction_qc
-from qc_platform_routes import _ensure_qc_user
+from services.qc_auth import isolated_user_client
 from services.qc_tracking import append_qc_run_log
 
 
@@ -24,23 +22,21 @@ ROUTES = (
 def run_qc() -> dict:
     checked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     props_df, refresh_meta = load_wnba_live_props_feed(require_fresh=False)
-    client = app.test_client()
-    qc_user = _ensure_qc_user("sharp")
-    with client.session_transaction() as sess:
-        sess["user_id"] = qc_user["user_id"]
-        sess["user_email"] = qc_user["email"]
-
     failures: list[str] = []
     warnings: list[str] = []
     route_count = 0
-    for path, markers in ROUTES:
-        route_count += 1
-        response = client.get(path)
-        text = response.get_data(as_text=True)
-        if response.status_code != 200 or not any(marker in text for marker in markers):
-            failures.append(f"{path}: expected WNBA page markers not found (status {response.status_code}).")
-        if refresh_meta.get("warning") and refresh_meta["warning"] not in text:
-            failures.append(f"{path}: stale-feed warning missing from WNBA surface.")
+    # Portable paid-member principal (services/qc_auth): no QC user written to the user store.
+    with isolated_user_client("all_access") as client:
+        for path, markers in ROUTES:
+            route_count += 1
+            response = client.get(path)
+            # Compare against the page's visible text: Jinja HTML-escapes the warning (aren&#39;t), so a raw
+            # substring check reported a warning that IS displayed as missing.
+            text = html.unescape(response.get_data(as_text=True))
+            if response.status_code != 200 or not any(marker in text for marker in markers):
+                failures.append(f"{path}: expected WNBA page markers not found (status {response.status_code}).")
+            if refresh_meta.get("warning") and refresh_meta["warning"] not in text:
+                failures.append(f"{path}: stale-feed warning missing from WNBA surface.")
 
     if refresh_meta.get("is_stale"):
         warnings.append(

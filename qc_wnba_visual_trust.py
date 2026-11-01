@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from app import app, find_user_by_email
+from services.qc_auth import isolated_owner_client
 from services.qc_tracking import append_qc_run_log
 
 
@@ -14,34 +14,24 @@ ROUTES = (
 )
 
 
-def _owner_session(client) -> None:
-    owner = find_user_by_email("decaturjones019@gmail.com")
-    if not owner:
-        return
-    with client.session_transaction() as sess:
-        sess["user_id"] = owner.get("UserId", "") or owner.get("user_id", "")
-        sess["user_email"] = owner.get("Email", "") or owner.get("email", "")
-
-
 def run_qc() -> dict:
     checked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    client = app.test_client()
-    _owner_session(client)
-
     failures: list[str] = []
     warnings: list[str] = []
     route_count = 0
 
-    for path, markers in ROUTES:
-        route_count += 1
-        response = client.get(path, follow_redirects=True)
-        text = response.get_data(as_text=True)
-        if response.status_code != 200:
-            failures.append(f"{path}: returned {response.status_code}.")
-            continue
-        missing = [marker for marker in markers if marker not in text]
-        if missing:
-            failures.append(f"{path}: missing visual trust markers: {', '.join(missing)}.")
+    # Portable owner principal (services/qc_auth): no dependency on a real account in the user store.
+    with isolated_owner_client() as client:
+        for path, markers in ROUTES:
+            route_count += 1
+            response = client.get(path, follow_redirects=True)
+            text = response.get_data(as_text=True)
+            if response.status_code != 200:
+                failures.append(f"{path}: returned {response.status_code}.")
+                continue
+            missing = [marker for marker in markers if marker not in text]
+            if missing:
+                failures.append(f"{path}: missing visual trust markers: {', '.join(missing)}.")
 
     report = {
         "checked_at": checked_at,
