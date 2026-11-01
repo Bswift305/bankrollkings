@@ -243,7 +243,7 @@ def check_leg_behavior():
                f"C: {c['n']}-leg payout computed from verified prices only")
         ok(len(mixed['context_lines']) == 4, 'C: unpriced lines still visible as context on mixed card')
 
-        stale = {'sport': 'CFB', 'label': 'UCLA -23', 'game': 'Nevada @ UCLA', 'price': -110,
+        stale = {'sport': 'CFB', 'label': 'UCLA -23', 'game': 'Nevada @ UCLA', 'price': -110,  # synthetic-fixture
                  'executable': False}
         ok(not app._leg_is_executable(stale), 'C: a stale -110 on a non-executable leg is still not executable')
         try:
