@@ -86,7 +86,7 @@
   <div class="bs-card">
     <div class="top">
       <a class="head bs-mu" href="/tools/cfb-matchup?away={{ c.away|urlencode }}&amp;home={{ c.home|urlencode }}" title="Open the matchup card: {{ c.matchup }}">{{ c.headline }} &rsaquo;</a>
-      <span class="mt">{{ c.matchup }} &middot; {{ c.spread }}{% if c.total %} &middot; O/U {{ c.total }}{% endif %}{% if c.date %} &middot; {{ c.date }}{% endif %}{% if c.time %} {{ c.time }}{% endif %}</span>
+      <span class="mt">{{ c.matchup }} &middot; {{ c.spread }}{% if c.total %} &middot; O/U {{ c.total }}{% endif %}{% if c.date %} &middot; {{ c.date }}{% endif %}{% if c.time %} {{ c.time }}{% endif %}{% if c.line_label %} &middot; <em class="bs-src">{{ c.line_label }}</em>{% endif %}</span>
     </div>
     {% for b in c.bullets %}<div class="bs-b"><span class="bs-dot">&rsaquo;</span><span>{{ b|safe }}</span></div>{% endfor %}
     <div class="bs-b"><span class="bs-dot">&rsaquo;</span><span><a class="bs-mu" href="/tools/cfb-matchup?away={{ c.away|urlencode }}&amp;home={{ c.home|urlencode }}">See the full matchup: {{ c.away }} vs {{ c.home }} &rsaquo;</a></span></div>
@@ -127,7 +127,7 @@
     <tr>
       <td class="l"><a class="bf-fav" href="/tools/cfb-matchup?away={{ r.away|urlencode }}&amp;home={{ r.home|urlencode }}">{{ r.fav }}</a>
         <small>{{ r.away }} @ {{ r.home }}{% if r.coach %} &middot; {{ r.coach }}{% endif %}</small></td>
-      <td><span class="bf-line">-{{ r.line }}</span></td>
+      <td><span class="bf-line">-{{ r.line }}</span>{% if r.line_label %}<small class="bf-src" style="display:block;">{{ r.line_label }}</small>{% endif %}</td>
       <td class="bf-1h">{{ r.fav_1h or '&mdash;'|safe }}</td>
       {{ pctcell(r.coach_pct, r.coach_rec, r.coach_avg) }}
       {{ pctcell(r.team_pct, r.team_rec, r.team_avg) }}
