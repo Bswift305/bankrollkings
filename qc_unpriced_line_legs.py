@@ -218,7 +218,8 @@ def _fake_cff():
 
 
 CFB_GAMES = [
-    {'away': 'Nevada', 'home': 'UCLA', 'spread': -23.0, 'book_source': 'CFBD consensus', 'date': '2026-11-07'},
+    {'away': 'Nevada', 'home': 'UCLA', 'spread': -23.0, 'book_source': 'CFBD consensus', 'date': '2026-11-07',
+     'updated_utc': '2026-11-01T10:30:00Z'},
     {'away': 'Utah', 'home': 'Iowa', 'spread': -3.5, 'book_source': None, 'date': '2026-11-07'},
 ]
 NFL_BOARD = [
@@ -508,14 +509,23 @@ def check_leg_behavior():
         ok(n_ctx >= 9 and len(ctx_rows) == n_ctx and not any('mb-add' in x for x in ctx_rows),
            f'D: {len(ctx_rows)} context Menu rows (= {n_ctx} non-executable legs), none with add-to-slip')
         ok('Quote not current' in html, 'D: a stale quote is labelled not current, not priced')
-        ok('SynBook' in html and 'quoted ' in html, 'D: priced Menu rows name the bookmaker and quote time')
+        ok('No fresh executable prices available' not in html, 'D: no empty-state banner while priced legs exist')
+        stale_at_et = app._updated_label(STALE_AT)
+        ok(stale_at_et in html, f'D: stale quote shows its own book update time ({stale_at_et})')
+        lh = c.get('/tools/menu?timeframe=week&legs=lines').get_data(as_text=True)
+        ok('No fresh executable prices available' in lh and 'class="mb-add"' not in lh,
+           'D: lines-only Menu (nothing executable) shows the honest empty state, no slip buttons')
+        ok('SynBook' in html and app._updated_label(FRESH_AT) in html,
+           'D: priced Menu rows name the bookmaker and its updated-at time')
         ok(any('mb-add' in x for x in rows if x not in ctx_rows), 'D: priced Menu rows keep add-to-slip')
         for path in ('/tools/daily-card?legs=lines&timeframe=week', '/tools/kings-tickets?legs=lines&timeframe=week'):
             r = c.get(path)
             dhtml = r.get_data(as_text=True)
-            ok(r.status_code == 200 and 'context only, not on any card' in dhtml
+            ok(r.status_code == 200 and 'not on any card' in dhtml
+               and 'No fresh executable prices available' in dhtml
+               and 'updated 2026-11-01 05:30 ET' in dhtml and 'update time not recorded' in dhtml
                and 'CFBD consensus — no book price' in dhtml,
-               f'D: {path.split("?")[0]} shows unpriced lines as labelled context (HTTP {r.status_code})')
+               f'D: {path.split("?")[0]}: honest empty state + context with real source and updated-at (HTTP {r.status_code})')
             ok('-110' not in dhtml, f'D: {path.split("?")[0]} renders no -110')
         r = c.get('/tools/daily-card?legs=all&timeframe=week')
         dh = r.get_data(as_text=True)

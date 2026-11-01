@@ -120,6 +120,7 @@
   {% if not available %}
     <div class="bkn-empty">No options on the board for these filters right now &mdash; try <b>All</b> sports and <b>Everything</b> for the source, or widen the window to <b>Week</b>. The board fills in as this slate&rsquo;s props and lines load.</div>
   {% else %}
+    {% if not n_executable %}<div class="bkn-empty"><b>No fresh executable prices available.</b> Everything below is context only &mdash; worth examining, not a bet to place: no price, payout or slip button until a fresh single-book quote exists.</div>{% endif %}
     {% for g in games %}
     <div class="mb-game">
       <div class="mb-gh">
@@ -136,7 +137,7 @@
           <span class="mb-evidence">
             <span class="mb-ev"><span class="k">Selection basis</span><span class="v">{{ 'Model–market context' if l.kind == 'line' else 'Historical clearance' }}</span></span>
             {% if l.hit %}<span class="mb-ev"><span class="k">Displayed history</span><span class="v">{{ l.hit }}%{% if l.sample %} across {{ l.sample }} games{% endif %}</span></span>{% endif %}
-            <span class="mb-ev"><span class="k">Source</span><span class="v">{{ l.line_source }}</span></span>
+            <span class="mb-ev"><span class="k">Source</span><span class="v">{{ l.line_source }} &middot; {{ l.updated_label }}</span></span>
             <span class="mb-ev"><span class="k">Market price</span><span class="v">{{ l.price_note }}</span></span>
             <span class="mb-ev context"><span class="k">Why it is shown</span><span class="v">{{ l.reason }}</span></span>
           </span>
@@ -152,7 +153,7 @@
           <span class="mb-evidence">
             <span class="mb-ev"><span class="k">Selection basis</span><span class="v">{{ 'Historical clearance' if l.tier == 'floor' else ('Model–market context' if l.tier == 'edge' else 'Plus-money candidate') }}</span></span>
             <span class="mb-ev"><span class="k">Displayed history</span><span class="v">{% if l.hit %}{{ l.hit }}%{% if l.sample %} across {{ l.sample }} games{% endif %}{% else %}Not a historical-hit-rate selection{% endif %}</span></span>
-            <span class="mb-ev"><span class="k">Market price</span><span class="v">{{ '%+d'|format(l.price) }} &middot; {{ l.book }} &middot; quoted {{ l.quote_at }}{% if l.market_pct is not none %} &middot; {{ l.market_pct }}% implied{% endif %}</span></span>
+            <span class="mb-ev"><span class="k">Market price</span><span class="v">{{ '%+d'|format(l.price) }} &middot; {{ l.book }} &middot; {{ l.quote_label }}{% if l.market_pct is not none %} &middot; {{ l.market_pct }}% implied{% endif %}</span></span>
             <span class="mb-ev context"><span class="k">Why it is available</span><span class="v">{{ l.reason }}</span></span>
           </span>
         </span>

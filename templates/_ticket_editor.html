@@ -17,7 +17,7 @@
       <span class="tp">{{ l.label }} <span class="dc-sp">{{ l.sport }}</span></span>
       <span class="rs">{{ l.game }} &middot; {{ l.reason }}</span>
     </span>
-    <span class="pr" title="{{ l.book }} · quoted {{ l.quote_at }}">{{ '%+d'|format(l.price) }}</span>
+    <span class="pr" title="{{ l.book }} · {{ l.quote_label }}">{{ '%+d'|format(l.price) }}</span>
     <span class="dc-legctrls">
       <button type="button" class="dc-mv dc-up" title="Move up" aria-label="Move {{ l.label }} up">&#9650;</button>
       <button type="button" class="dc-mv dc-down" title="Move down" aria-label="Move {{ l.label }} down">&#9660;</button>
@@ -71,7 +71,7 @@
     var tp=leg.querySelector('.tp'); tp.textContent=b.label+' ';
     var sport=document.createElement('span'); sport.className='dc-sp'; sport.textContent=b.sport; tp.appendChild(sport);
     leg.querySelector('.rs').textContent=b.game+' · '+(b.reason||'');
-    var pr=leg.querySelector('.pr'); pr.textContent=sgn(+b.price); pr.title=(b.book||'')+' · quoted '+(b.quote_at||'');
+    var pr=leg.querySelector('.pr'); pr.textContent=sgn(+b.price); pr.title=(b.book||'')+' · '+(b.quote_label||'');
     leg.querySelector('.dc-swap').setAttribute('aria-label','Choose a replacement for '+b.label);
   }
   var CSRF="{{ csrf_token() }}";
