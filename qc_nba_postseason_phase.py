@@ -2,8 +2,9 @@
 
 Regression guard for the NBA P0 season-state correction. The window is a CONFIGURED official
 [start, end] per season ending year (not derived from completed results), so day-1 and off-days
-between games stay postseason; an incomplete entry (end unpublished) defaults safely to regular
-season; explicit ?postseason= always overrides; props/feed availability and stale prior-season
+between games stay postseason; the pure window check treats an incomplete entry (end unpublished)
+as outside the window (the governed PHASE for such dates is UNKNOWN and the page default fails
+closed -- see qc_nba_season_phase_contract.py); explicit ?postseason= always overrides; props/feed availability and stale prior-season
 results cannot flip it; other sports are unchanged.
 
 Boundary/end tests use a SYNTHETIC complete window (the real 2027 end is intentionally None).
@@ -61,8 +62,24 @@ def run():
     expect(R(D(2099, 5, 1), 1900, COMPLETE) is False, "missing entry should be regular")
 
     # --- Route-level integration (6 + the /dashboard correction) -------------------------
-    # The real 2027 window is incomplete (end=None), so every NBA-owned surface must default to
-    # REGULAR season. /dashboard is NBA-owned (the NBA Command Center) and must NOT stay postseason.
+    # Pinned to 2026-11-01 (before the configured official 2027 play-in start), so every NBA-owned
+    # surface defaults to NOT postseason. /dashboard is NBA-owned and must NOT stay postseason.
+    # Pinned because the default is date-driven: from the configured start with the end unpublished
+    # the phase is UNKNOWN and the default fails CLOSED to postseason (see
+    # services/nba_season_phase.py and qc_nba_season_phase_contract.py).
+    _real_today = app.sports_today_date
+    app.sports_today_date = lambda: D(2026, 11, 1)
+    try:
+        _route_checks(expect)
+    finally:
+        app.sports_today_date = _real_today
+
+    notes.append("13 phase tests + overrides + route-level NBA-owned (incl /dashboard) + "
+                 "non-NBA-unchanged + explicit-sport checks executed")
+    return issues, notes
+
+
+def _route_checks(expect):
     NBA_OWNED = [
         "/dashboard", "/sports/nba", "/sports/nba/props", "/sports/nba/market-edge",
         "/sports/nba/matchup-lens", "/sports/nba/trends", "/sports/nba/injuries",
@@ -91,10 +108,6 @@ def run():
     # explicit sport='nba' forces the NBA default regardless of path
     with app.app.test_request_context("/"):
         expect(app.postseason_only_enabled(sport="nba") is False, "explicit sport=nba forces the NBA default")
-
-    notes.append("13 phase tests + overrides + route-level NBA-owned (incl /dashboard) + "
-                 "non-NBA-unchanged + explicit-sport checks executed")
-    return issues, notes
 
 
 def main() -> int:

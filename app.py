@@ -20938,71 +20938,59 @@ def get_current_nba_season():
     now = datetime.now()
     return f"{now.year}-{str(now.year + 1)[2:]}" if now.month >= 10 else f"{now.year - 1}-{str(now.year)[2:]}"
 
-# Official NBA postseason windows, one entry per season ENDING YEAR, from the published NBA
-# schedule (nba.com/news/key-dates). An entry is COMPLETE only when BOTH official dates are set;
-# an incomplete entry (end unpublished) defaults safely to regular season. Start = the Play-In
-# start, because the product surfaces the 20-team play-in field. Update once per season; the
-# future official Finals end date is an operational config update, not an implementation decision.
-NBA_POSTSEASON_DATES = {
-    2027: {
-        'start': datetime(2027, 4, 13).date(),  # SoFi NBA Play-In Tournament start, Apr 13 2027 (official)
-        'end': None,                             # official latest-possible NBA Finals date -- NOT YET PUBLISHED; enter when the NBA posts it
-    },
-}
+# NBA season phase lives in the governed, import-light contract services/nba_season_phase.py
+# (PRESEASON/REGULAR/POSTSEASON/OFFSEASON/UNKNOWN + reason; unconfigured dates are UNKNOWN, never
+# guessed as regular season). The names below are thin delegates so existing callers are
+# unaffected. Annual chore: enter each season's official dates in NBA_SEASON_CONFIG there;
+# qc_nba_season_phase_contract.py fails loudly (dated) when today or its look-ahead is unconfigured.
+from services import nba_season_phase as _nba_phase
+
+NBA_POSTSEASON_DATES = _nba_phase.NBA_POSTSEASON_DATES  # legacy {year: {'start','end'}} view
 
 
 def _resolve_nba_postseason(today, ending_year, config=NBA_POSTSEASON_DATES):
-    """Pure: True iff `today` (a date) is within the configured INCLUSIVE [start, end] window for
-    `ending_year`. A missing entry, or an incomplete one (start or end is None), returns False
-    (regular season). Reads no props and no playoff results -- feed availability and stale
-    prior-season results cannot flip it; only the configured official window does (and an explicit
-    override, handled by the caller)."""
-    entry = config.get(ending_year)
-    if not entry:
-        return False
-    start, end = entry.get('start'), entry.get('end')
-    if start is None or end is None:
-        return False
-    return start <= today <= end
+    """Pure window membership (unchanged semantics): True iff `today` is within the COMPLETE
+    configured INCLUSIVE [start, end] window for `ending_year`; a missing/incomplete entry returns
+    False. This is NOT the phase -- use _nba_phase.resolve_nba_season_phase() (UNKNOWN-aware)."""
+    return _nba_phase.in_configured_postseason_window(today, ending_year, config)
 
 
 def _nba_postseason_config_complete(ending_year=None, config=NBA_POSTSEASON_DATES):
-    """Owner-facing: is the current (or given) ending year's postseason window fully configured?"""
+    """Owner-facing: is the current (Eastern) or given ending year's postseason window configured?"""
     if ending_year is None:
         try:
-            ending_year = int('20' + get_current_nba_season().split('-')[1])
+            ending_year = _nba_phase.season_ending_year(sports_today_date())
         except Exception:
             return False
-    entry = config.get(ending_year)
-    return bool(entry and entry.get('start') is not None and entry.get('end') is not None)
+    return _nba_phase.postseason_window_complete(ending_year, config)
+
+
+def current_nba_season_phase():
+    """The governed phase for today's Eastern date (a SeasonPhase; .phase may be UNKNOWN)."""
+    return _nba_phase.resolve_nba_season_phase(sports_today_date())
 
 
 def nba_postseason_config_warning():
-    """Owner-only note: non-empty when the current ending year's postseason window is incomplete
-    (e.g. the official Finals end date is not yet published/entered). Customer surfaces never show
-    this -- it belongs on owner-gated diagnostics only."""
+    """Owner-only note: non-empty when the current season's official dates are incomplete or any
+    date in the look-ahead resolves to UNKNOWN. Customer surfaces never show this -- owner-gated
+    diagnostics only. A clock failure is itself reported (never swallowed into '')."""
     try:
-        ending_year = int('20' + get_current_nba_season().split('-')[1])
-    except Exception:
-        return ''
-    if _nba_postseason_config_complete(ending_year):
-        return ''
-    return (f"NBA postseason window for {ending_year} is incomplete (official Finals end date not "
-            f"entered) — defaulting to regular season. Enter the official end date in "
-            f"NBA_POSTSEASON_DATES before that postseason.")
+        today = sports_today_date()
+    except Exception as exc:
+        return f"NBA season phase could not read the Eastern clock ({type(exc).__name__}); phase is UNKNOWN."
+    return _nba_phase.config_warning(today)
 
 
 def _nba_default_postseason():
-    """NBA-specific, current-season-matched default from the configured official window."""
-    try:
-        ending_year = int('20' + get_current_nba_season().split('-')[1])
-    except Exception:
-        return False
+    """NBA postseason default, FAIL-CLOSED: POSTSEASON -> True; PRESEASON/REGULAR/OFFSEASON -> False;
+    UNKNOWN -> False only when the date precedes the configured official postseason start
+    (definitively not postseason), otherwise True (season, postseason start or postseason end not
+    configured) so playoff-data QC fires instead of silently skipping. Clock failure -> True."""
     try:
         today = sports_today_date()
     except Exception:
-        return False
-    return _resolve_nba_postseason(today, ending_year)
+        return True
+    return _nba_phase.default_postseason_flag(_nba_phase.resolve_nba_season_phase(today))
 
 
 def _request_is_nba_owned():

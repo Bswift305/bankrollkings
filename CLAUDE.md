@@ -465,6 +465,13 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
   (`fetch_nfl_player_week.py`); keep them in sync and **add each new NFL season's Week-1
   Thursday to both**, or the completed-week calendar returns None and the pending gate goes quiet
   (through-week + per-player recency still work without it).
+- **NBA season phase — yearly chore, fails loud.** Phase (PRESEASON/REGULAR/POSTSEASON/OFFSEASON/
+  **UNKNOWN**) comes only from `NBA_SEASON_CONFIG` in `services/nba_season_phase.py`
+  (`app.NBA_POSTSEASON_DATES` & co. are delegates). Each season enter the official opening night,
+  Play-In start and latest-possible Finals date; unconfigured dates are UNKNOWN, never guessed as
+  regular season. `_nba_default_postseason()` fails CLOSED: UNKNOWN ⇒ postseason unless the date is
+  before the configured Play-In start. `qc_nba_season_phase_contract.py` FAILS (dated) when today or
+  the next 60 days are UNKNOWN.
 - Premium nav icons are raster PNG from generated art — not vectorizable without a redraw.
 
 ---
