@@ -37,8 +37,8 @@ _D = lambda n: (_TODAY + timedelta(days=n)).strftime("%Y-%m-%d")  # noqa: E731
 GAME = "Boston Celtics@Dallas Mavericks"   # both names resolve in TEAM_NAME_TO_ABBR (BOS / DAL)
 
 PROPS = pd.DataFrame([
-    {"Player": "Alpha Guard", "Stat": "PTS", "Line": 20.5, "CurrentLine": 20.5, "OverOdds": -110,
-     "UnderOdds": -110, "Book": "DraftKings", "Game": GAME, "Team": ""},
+    {"Player": "Alpha Guard", "Stat": "PTS", "Line": 20.5, "CurrentLine": 20.5, "OverOdds": -110,  # synthetic-fixture
+     "UnderOdds": -110, "Book": "DraftKings", "Game": GAME, "Team": ""},  # synthetic-fixture
     {"Player": "Bravo Wing", "Stat": "REB", "Line": 6.5, "CurrentLine": 6.5, "OverOdds": -115,
      "UnderOdds": -105, "Book": "DraftKings", "Game": GAME, "Team": None},
     {"Player": "Charlie Big", "Stat": "AST", "Line": 3.5, "CurrentLine": 3.5, "OverOdds": 100,
