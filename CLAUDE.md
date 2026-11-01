@@ -241,13 +241,19 @@ templates/       → render what the route passes
   cannot run yields an **incomplete** report — never zero-filled, because zeros read
   as a pass.
 - **Season gate = `season_utils.season_state()`** — ACTIVE / OFF_SEASON / UNKNOWN from
-  schedule artifacts (events in the next 7 Eastern days) + the static `SEASON_WINDOWS`
-  calendar envelope. **Props presence is not an input.** `run_daily.py` skips an
-  OFF_SEASON NBA/WNBA/MLB step *before* running it (no provider call); UNKNOWN fails
-  open. The calendar is what prevents a deadlock: the schedule files are written by
-  the very steps being skipped, so without it a frozen off-season schedule would keep
-  a sport off forever. If a league moves its calendar (lockout, later finals), edit
-  `SEASON_WINDOWS`. QC: `qc_season_activation.py`.
+  schedule artifacts (events in the next 7 Eastern days) + the governed per-season
+  calendar in `season_calendar.py` (official dates, source URLs, retrieval date,
+  `verified_through`). **Props presence is not an input.** Precedence: listed events ⇒
+  ACTIVE (evidence beats the calendar); inside a calendar window ⇒ ACTIVE (absence of
+  listed events never skips in-window); date covered by no entry ⇒ UNKNOWN; outside
+  window with readable zero-event schedules ⇒ OFF_SEASON. `run_daily.py` skips an
+  OFF_SEASON NBA/WNBA/MLB step *before* running it; UNKNOWN fails open. The calendar
+  prevents a deadlock (the schedule files are written by the very steps being skipped).
+  **Standing chore:** the calendar expires per season — when a league publishes a
+  season, replace its trailing UNVERIFIED entry with a verified one.
+  `qc_season_calendar_coverage.py` (in `run_all_scorecards`) WATCHes 60 days ahead of
+  any unverified date and FAILs 60 days ahead of an uncovered one.
+  QCs: `qc_season_activation.py`, `qc_season_calendar_coverage.py`.
 
 ---
 

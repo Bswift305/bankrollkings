@@ -62,17 +62,28 @@ def is_preseason_step(label: str) -> bool:
 #
 # Two evidence sources, combined so the gate can never deadlock:
 #
-#   1. SEASON CALENDAR (SEASON_WINDOWS) -- a recurring month/day envelope per sport covering the regular
-#      season AND postseason, opened ~a week before the earliest plausible first game. It is static, so
-#      it stays current off-season with no refresh step and no network. Inside the envelope the sport is
-#      ACTIVE regardless of what the on-disk schedule says.
+#   1. SEASON CALENDAR (season_calendar.SEASON_CALENDAR) -- governed, per-season, provenance-carrying
+#      entries (official dates, source URLs, retrieval date, verified_through). Static and network-free,
+#      so it stays current off-season with no refresh step. It only BOOTSTRAPS the gate.
 #   2. ON-DISK SCHEDULE / LINES ARTIFACTS (SCHEDULE_SOURCES) -- dated events in [Eastern today,
-#      today + window_days]. Any in-window event => ACTIVE (also outside the envelope, e.g. an early
-#      international opener or a postseason that runs past the envelope end).
+#      today + window_days]. This evidence SUPERSEDES the calendar wherever it is positive.
 #
-#   OFF_SEASON requires BOTH: today is outside the envelope AND every present schedule artifact is
-#   readable and determinate with zero in-window events. Missing / unreadable / undatable artifacts =>
-#   UNKNOWN => FAIL-OPEN (the caller runs the step as before).
+# PRECEDENCE (first match wins):
+#   P1 readable schedule evidence of an in-window event        -> ACTIVE (inside, outside, or beyond the
+#                                                                 calendar's coverage -- evidence wins)
+#   P2 inside the covering calendar entry's window             -> ACTIVE (bootstrap)
+#   P3 date covered by NO calendar entry (expired/undeclared)   -> UNKNOWN -> FAIL-OPEN (steps run; an
+#                                                                 expired calendar can never skip work)
+#   P4 covered, outside window, schedule missing / undatable    -> UNKNOWN -> FAIL-OPEN
+#   P5 covered, outside window, readable + determinate, 0 events -> OFF_SEASON (the ONLY skipping state)
+#
+# DECISION (Nov 2026 audit): evidence of NO events can NOT make a sport OFF_SEASON while it is inside its
+# calendar window (e.g. a World Series that ends in 5 games). Reasons: (a) the artifacts only prove
+# absence over whatever horizon the provider/fetch covered -- the Odds API lists a game only once it is
+# priced, so a normal gap between postseason rounds (NFL conference title -> Super Bowl is 14 days, CFP
+# semis -> title 10) reads as "no events"; (b) skipping stops the very steps that rewrite the artifacts,
+# re-creating the deadlock the calendar exists to break. The cost is bounded and visible: from the real
+# last game to the window end (official last-possible game + 3 days) the steps keep running.
 #
 # Why the calendar is required (the deadlock): the schedule artifacts for NBA/WNBA/MLB are WRITTEN BY
 # the very provider steps this gate skips (fetch_game_lines writes <S>_Odds.csv + the <S>_Schedule.csv
@@ -80,14 +91,13 @@ def is_preseason_step(label: str) -> bool:
 # validator and preserves the last-season file, so off-season the artifacts are frozen with past dates.
 # If file evidence alone could declare OFF_SEASON, the skipped steps would never rewrite the files and
 # the sport would stay "off-season" forever -- including the day the season opens, or after any >7-day
-# mid-season outage. The calendar envelope re-opens the gate on its own, the steps run, the files
+# mid-season outage. The calendar window re-opens the gate on its own, the steps run, the files
 # refresh, and from then on the file evidence takes over again at the season's tail.
 #
-# Envelope maintenance: dates are recurring (no yearly chore), deliberately generous at the START (the
-# cost of opening early is a few empty provider calls; opening late would miss opening day). If a league
-# moves its calendar (lockout, expansion pushing finals later), edit SEASON_WINDOWS. After the envelope
-# end the sport stays ACTIVE while its (still refreshed) artifacts list upcoming games, so a late finish
-# is safe unless a gap between postseason rounds exceeds the fetch horizon (documented risk).
+# Calendar maintenance: see season_calendar.py. Windows open ~2 weeks before the official first game
+# (generous: only the calendar can re-open a frozen schedule) and close 3 days after the official LAST
+# POSSIBLE game (evidence extends a later finish). qc_season_calendar_coverage.py reports any date in
+# the next 60 days not covered by a VERIFIED entry, so a missing season surfaces before it matters.
 
 ACTIVE = "ACTIVE"
 OFF_SEASON = "OFF_SEASON"
@@ -95,16 +105,8 @@ UNKNOWN = "UNKNOWN"
 
 GOVERNED_SPORTS = ("NBA", "WNBA", "MLB", "NFL", "NCAAF")
 
-# Sport -> ((start_month, start_day), (end_month, end_day)), inclusive, Eastern calendar; may wrap the
-# new year. Start = ~1 week before the earliest plausible first regular-season game; end = typical
-# latest finish of the postseason (file evidence extends it while games are still listed).
-SEASON_WINDOWS = {
-    "MLB": ((3, 10), (10, 31)),    # Tokyo/Seoul openers ~Mar 18-20; World Series ends late Oct
-    "WNBA": ((5, 1), (10, 20)),    # tip-off mid-May; Finals into mid-Oct
-    "NBA": ((10, 15), (6, 30)),    # tip-off ~Oct 20-24; Finals mid/late June
-    "NFL": ((8, 25), (2, 20)),     # regular season early Sep (preseason has its own gate); SB mid-Feb
-    "NCAAF": ((8, 15), (1, 25)),   # Week 0 late Aug; CFP title mid/late Jan
-}
+# The calendar lives in season_calendar.py (governed entries with provenance + coverage contract).
+from season_calendar import SEASON_CALENDAR, entry_for as calendar_entry  # noqa: E402
 
 # Zero-cost "are there events?" artifacts (the same files report_feed_availability reads).
 SCHEDULE_SOURCES = {
@@ -141,15 +143,12 @@ class SeasonState(tuple):
 
 
 def in_season_window(sport: str, today: date) -> Optional[bool]:
-    """True/False against the sport's calendar envelope; None when no envelope is declared."""
-    win = SEASON_WINDOWS.get((sport or "").upper())
-    if not win:
+    """True/False against the covering calendar entry's window; None when no entry covers `today`
+    (calendar expired or sport undeclared) -- the caller must treat None as UNKNOWN (fail-open)."""
+    e = calendar_entry(sport, today)
+    if e is None:
         return None
-    start, end = win
-    md = (today.month, today.day)
-    if start <= end:
-        return start <= md <= end
-    return md >= start or md <= end  # wraps the new year
+    return e.in_window(today)
 
 
 def read_event_dates(path: Path, date_cols=EVENT_DATE_COLUMNS):
@@ -251,11 +250,11 @@ def season_state(sport: str, today: Optional[date] = None,
 
     "today" is the Eastern league date (services.timeutils.eastern_today), never the server's ambient
     zone. Props presence is deliberately NOT an input. Rules (see the block comment above):
-      events in window                                   -> ACTIVE
-      inside the season calendar envelope                -> ACTIVE
-      no calendar declared for the sport                 -> UNKNOWN (fail-open)
-      outside envelope, schedule missing/undatable       -> UNKNOWN (fail-open)
-      outside envelope, readable schedule, zero events   -> OFF_SEASON (the only state that skips)
+      P1 events in window (schedule evidence)            -> ACTIVE  (supersedes the calendar)
+      P2 inside the covering calendar entry's window     -> ACTIVE  (bootstrap; absence can't override)
+      P3 no calendar entry covers today                  -> UNKNOWN (fail-open)
+      P4 outside window, schedule missing/undatable      -> UNKNOWN (fail-open)
+      P5 outside window, readable schedule, zero events  -> OFF_SEASON (the only state that skips)
     """
     from services.timeutils import eastern_today
 
@@ -264,17 +263,19 @@ def season_state(sport: str, today: Optional[date] = None,
     has_events, detail = events_in_window(sport, today, window_days, base_dir)
     if has_events is True:
         return SeasonState(sport, ACTIVE, f"events scheduled in {window_days}d window from {today}", detail)
-    in_window = in_season_window(sport, today)
-    if in_window is True:
-        (sm, sd), (em, ed) = SEASON_WINDOWS[sport]
-        return SeasonState(sport, ACTIVE, f"inside season calendar {sm:02d}-{sd:02d}..{em:02d}-{ed:02d} "
-                                          f"on {today}", detail)
-    if in_window is None:
-        return SeasonState(sport, UNKNOWN, "no season calendar declared -- fail-open", detail)
+    entry = calendar_entry(sport, today)
+    if entry is None:
+        return SeasonState(sport, UNKNOWN, f"no season calendar entry covers {today} (expired or "
+                                           f"undeclared) -- fail-open", detail)
+    cal = f"{entry.season} calendar {entry.window_start}..{entry.window_end}" + (
+        "" if entry.verified else " (UNVERIFIED entry)")
+    if entry.in_window(today):
+        absent = " (no listed events; calendar holds ACTIVE in-window)" if has_events is False else ""
+        return SeasonState(sport, ACTIVE, f"inside {cal} on {today}{absent}", detail)
     if has_events is None:
-        return SeasonState(sport, UNKNOWN, f"outside season calendar on {today} but schedule evidence "
+        return SeasonState(sport, UNKNOWN, f"outside {cal} on {today} but schedule evidence "
                                            f"unavailable -- fail-open", detail)
-    return SeasonState(sport, OFF_SEASON, f"outside season calendar on {today}; no events in "
+    return SeasonState(sport, OFF_SEASON, f"outside {cal} on {today}; no events in "
                                           f"{window_days}d window", detail)
 
 
