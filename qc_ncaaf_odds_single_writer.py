@@ -345,7 +345,7 @@ WEEK1 = [
 ]
 LINES1 = [
     {"id": 401, "lines": [{"provider": "Bovada", "spread": -3.5, "overUnder": 51.5,
-                           "homeMoneyline": -170, "awayMoneyline": 145, "spreadOdds": -110},
+                           "homeMoneyline": -170, "awayMoneyline": 145, "spreadOdds": -110},  # synthetic-fixture
                           {"provider": "DraftKings", "spread": -2.5, "overUnder": 50.5,
                            "homeMoneyline": -150, "awayMoneyline": 130}]},
     {"id": 402, "lines": [{"provider": "Bovada", "spread": -4.5, "overUnder": 44.0},
@@ -490,7 +490,7 @@ for seed in (False, True):
            f"zero in-window games ({'existing' if seed else 'no'} CFBD artifacts): exit 0, NO header-only file, nothing changed")
     finally:
         t.close()
-ok(cfbd.validate(pd.DataFrame([{"Source": "CFBD", "SpreadOdds": -110}]), pd.DataFrame()) != [],
+ok(cfbd.validate(pd.DataFrame([{"Source": "CFBD", "SpreadOdds": -110}]), pd.DataFrame()) != [],  # synthetic-fixture
    "CFBD validator rejects any price column")
 ok(any("zero rows" in e for e in cfbd.validate(pd.DataFrame(columns=cfbd.SCHEDULE_COLS),
                                                 pd.DataFrame(columns=cfbd.LINES_COLS))),
