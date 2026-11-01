@@ -25,7 +25,9 @@ from pathlib import Path
 import qc_odds_feed as qof
 import season_utils as su
 
-TODAY = date(2026, 11, 1)
+# Nov 8: past the audited MLB (World Series G7 Oct 31) and WNBA (Finals G7 Oct 31) calendar windows,
+# which end 2026-11-03 (season_calendar.py). On Nov 1-3 both are still in-window => ACTIVE (pinned below).
+TODAY = date(2026, 11, 8)
 RESULTS: list[tuple[bool, str]] = []
 
 
@@ -133,6 +135,13 @@ def main() -> int:
             rep2 = qof.run_qc(check_key=False)
             check(not rep2["clean"] and any(f.startswith("NBA ") for f in rep2["failures"]),
                   f"ACTIVE NBA stale (50h) on the same tree -> FAIL: {rep2['failures']}")
+
+            # The audited calendar holds MLB/WNBA ACTIVE through 2026-11-03 (official last possible game
+            # Oct 31 + 3d): on Nov 1 their stale feeds ARE judged. Pinned so the consequence stays visible.
+            nov1 = saved[3](su.GOVERNED_SPORTS, date(2026, 11, 1), su.DEFAULT_ACTIVE_WINDOW_DAYS, b)
+            check(nov1["WNBA"].state == su.ACTIVE and "inside 2026 calendar" in nov1["WNBA"].reason
+                  and nov1["MLB"].state == su.ACTIVE,
+                  f"2026-11-01 (inside the audited windows): MLB/WNBA ACTIVE -> judged strictly ({nov1['WNBA'].reason})")
 
             # MLB schedule evidence removed -> UNKNOWN -> its 89-96h staleness is judged -> FAIL
             (b / "data/odds/MLB_Odds.csv").unlink()
