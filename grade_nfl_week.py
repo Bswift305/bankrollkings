@@ -21,7 +21,6 @@ Output: data/tracking/NFL_Weekly_Grade_Log.csv  (append-only, de-duped)
 from __future__ import annotations
 import argparse
 import sys
-import urllib.request
 from pathlib import Path
 
 import pandas as pd
@@ -45,12 +44,17 @@ SNAP_DIR = BASE_DIR / "data" / "tracking" / "nfl_grade_snapshots"
 
 
 def _season_df(season: int) -> pd.DataFrame:
-    """Download the season's weekly player stats once and return the full frame."""
-    url = STATS_URL.format(season=season)
-    tmp = BASE_DIR / "data" / "tracking" / f"_nflverse_stats_{season}.parquet"
-    tmp.parent.mkdir(parents=True, exist_ok=True)
-    urllib.request.urlretrieve(url, tmp)
-    return pd.read_parquet(tmp)
+    """Download the season's weekly player stats once and return the full frame, for GRADING only.
+
+    READ-ONLY with respect to the governed roster artifact data/tracking/_nflverse_stats_<season>.parquet:
+    fetch_nfl_player_week.py is its single publisher (identity sanitation + atomic publication). This used
+    to urlretrieve straight onto that path, non-atomically and unsanitized, so every run_daily ended with
+    the raw file. The producer's own loader downloads into a private temp file it always removes."""
+    from fetch_nfl_player_week import _fetch_frame
+    df = _fetch_frame(season, None)
+    if df is None:
+        raise RuntimeError(f"nflverse weekly stats unavailable for {season}")
+    return df
 
 
 def fetch_actuals(season: int, week: int) -> pd.DataFrame:
