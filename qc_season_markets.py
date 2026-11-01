@@ -14,7 +14,7 @@ def main() -> int:
     raw = pd.DataFrame([
         {"league": "NFL", "season": "2026", "type": "team", "name": "Kansas City Chiefs",
          "team": "Kansas City Chiefs", "market": "Regular Season Wins", "point": 11.5,
-         "over_odds": -110, "under_odds": -110, "sportsbook": "Book A"},
+         "over_odds": -110, "under_odds": -110, "sportsbook": "Book A"},  # synthetic-fixture
         {"league": "NFL", "season": "2026", "type": "team", "name": "Kansas City Chiefs",
          "team": "Kansas City Chiefs", "market": "Regular Season Wins", "point": 10.5,
          "over_odds": 105, "under_odds": -125, "sportsbook": "Book B"},

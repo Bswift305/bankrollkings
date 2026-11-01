@@ -32,7 +32,7 @@ def qc_source_parser_no_merge():
              'commence_time': '2099-01-01T23:00:00Z'}
     book_a = {'key': 'draftkings', 'title': 'DraftKings', 'last_update': '2099-01-01T12:00:00Z',
               'markets': [{'key': mk, 'outcomes': [
-                  {'name': 'Over', 'description': 'A. Player', 'point': 24.5, 'price': -110},
+                  {'name': 'Over', 'description': 'A. Player', 'point': 24.5, 'price': -110},  # synthetic-fixture
                   {'name': 'Under', 'description': 'A. Player', 'point': 24.5, 'price': -108}]}]}
     book_b = {'key': 'fanduel', 'title': 'FanDuel', 'last_update': '2099-01-01T12:07:00Z',
               'markets': [{'key': mk, 'outcomes': [
@@ -60,7 +60,7 @@ def _fixture(sport):
     base = {c: '' for c in ['Player', 'Team', 'Stat', 'MarketKey', 'Line', 'Game', 'Book', 'LastUpdated',
                             'OverOdds', 'UnderOdds']}
     r1 = dict(base, Player=f'{sport} PLAYER ONE', Team='LAL', Stat='Points', Line=24.5, Game='LAL @ BOS',
-              Book='DraftKings', OverOdds=-110, UnderOdds=-110, LastUpdated='2099-01-01 12:00')
+              Book='DraftKings', OverOdds=-110, UnderOdds=-110, LastUpdated='2099-01-01 12:00')  # synthetic-fixture
     r2 = dict(base, Player=f'{sport} GUARD TWO', Team='MIA', Stat='Assists', Line=6.5, Game='MIA @ NYK',
               Book='FanDuel', OverOdds=-115, UnderOdds='', LastUpdated='2099-01-01 12:05')  # missing under
     return pd.DataFrame([r1, r2])

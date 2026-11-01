@@ -26,8 +26,8 @@ def ok(cond, label):
 
 def mkt(key, last_update, player):
     return {"key": key, "last_update": last_update, "outcomes": [
-        {"description": player, "name": "Over", "point": 50.5, "price": -110},
-        {"description": player, "name": "Under", "point": 50.5, "price": -110},
+        {"description": player, "name": "Over", "point": 50.5, "price": -110},  # synthetic-fixture
+        {"description": player, "name": "Under", "point": 50.5, "price": -110},  # synthetic-fixture
     ]}
 
 
@@ -95,7 +95,7 @@ ok(rows2 and rows2[0]["Book"] == "FanDuel" and rows2[0]["SourceUpdatedAtUTC"] ==
 # --- 7. a market whose outcomes carry no player -> no rows (no spurious binding) ---------------------
 BM3 = {"key": "draftkings", "title": "DraftKings", "last_update": None,
        "markets": [{"key": "player_pass_yds", "last_update": "2026-10-31T13:00:00Z",
-                    "outcomes": [{"description": "", "name": "Over", "point": 50.5, "price": -110}]}]}
+                    "outcomes": [{"description": "", "name": "Over", "point": 50.5, "price": -110}]}]}  # synthetic-fixture
 ok(parse_market_rows(EVENT, BM3, ALLOWED) == [], "market with no named player emits no rows")
 
 print("=" * 80)

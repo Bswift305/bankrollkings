@@ -53,7 +53,7 @@ def raises(exc, fn, msg):
 def _leg(i=0, **k):
     """A fully-provenanced 'current' canonical leg (what a server-side resolver would produce)."""
     base = {'sport': 'NFL', 'league': 'NFL', 'event_id': 'G%d' % i, 'market_key': 'rec_yds',
-            'direction': 'OVER', 'player_name': 'Player %d' % i, 'line': 45.5, 'price': -110,
+            'direction': 'OVER', 'player_name': 'Player %d' % i, 'line': 45.5, 'price': -110,  # synthetic-fixture
             'price_format': 'american', 'sportsbook': 'DK', 'quote_scope': 'single-leg',
             'source_provider': 'oddsapi', 'source_timestamp': '2026-10-21T00:00:00Z',
             'display_label': 'Label %d' % i, 'quote_state': 'current'}
@@ -218,7 +218,7 @@ def _run_qc_inner():
                    lambda: S.save_draft('ucp', [_leg(0, source_provider=None), _leg(1)], expected_revision=0),
                    "'current' leg without a source_provider accepted")
             raises(kd.DraftInvalid,
-                   lambda: S.save_draft('ucp', [_leg(0, price=-110, price_format=None, quote_state='unknown'), _leg(1)],
+                   lambda: S.save_draft('ucp', [_leg(0, price=-110, price_format=None, quote_state='unknown'), _leg(1)],  # synthetic-fixture
                                         expected_revision=0),
                    'a supplied price without a price_format accepted')
             NOTES.append("quote-state: a 'current' leg must carry full provenance; a price requires a format")
@@ -420,7 +420,7 @@ def _run_qc_inner():
         os.environ['KINGS_TICKETS_DRAFTS_ENABLED'] = '1'
         source = {
             'cand_A': {'sport': 'NFL', 'league': 'NFL', 'event_id': 'GX', 'market_key': 'rec_yds',
-                       'direction': 'OVER', 'player_name': 'Authoritative Name', 'line': 45.5, 'price': -110,
+                       'direction': 'OVER', 'player_name': 'Authoritative Name', 'line': 45.5, 'price': -110,  # synthetic-fixture
                        'price_format': 'american', 'sportsbook': 'DK', 'quote_scope': 'single-leg',
                        'source_provider': 'oddsapi', 'source_timestamp': '2026-10-21T00:00:00Z',
                        'quote_state': 'current', 'display_label': 'A'},

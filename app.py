@@ -6706,6 +6706,9 @@ def build_football_live_games(odds_df, schedule_df, date_filter='all', day_filte
             'away_ml': market.get('away_ml'),
             'home_ml': market.get('home_ml'),
             'book': str(market.get('book') or '').strip() or 'DraftKings',
+            # The RAW source label (None when the feed recorded none) -- 'book' above defaults to
+            # DraftKings for display, which must never be read as provenance (e.g. 'CFBD consensus').
+            'book_source': str(market.get('book') or '').strip() or None,
             'slug': market.get('slug'),
             'summary': format_game_market_summary(market, home),
         })
@@ -32893,10 +32896,40 @@ def build_nfl_featured_parlay(legs=3):
             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
 
 
+# A real line without a real price is incomplete information -- not a -110 bet. Team-line legs
+# carry the LINE as context, but no book quote (sportsbook, offered American odds, event/market/
+# selection identity, line, source update time, freshness) is joined to them, so the price
+# abstains: no payout, implied %, EV, parlay return, ticket slot, or ranking as if bettable. A
+# price may be attached only from a source record carrying ALL of those -- never a default.
+UNPRICED_LEG_NOTE = 'Unavailable — no verified book quote'
+
+
+def _unpriced_line_fields(source):
+    """Price-abstention fields for a team-line leg. `source` is the line's RAW feed label; a
+    CFBD consensus line keeps that identity so it can never be read as a sportsbook offer."""
+    src = str(source or '').strip()
+    if 'cfbd' in src.lower():
+        src = 'CFBD consensus — no book price'
+    return {'price': None, 'price_status': 'UNAVAILABLE', 'price_note': UNPRICED_LEG_NOTE,
+            'executable': False, 'line_source': src or 'unrecorded source'}
+
+
+def _leg_is_executable(leg):
+    """True only for a leg carrying a valid American price that nothing marked non-executable.
+    The single gate for payout math, ticket membership and bettable ranking."""
+    if not isinstance(leg, dict) or leg.get('executable') is False:
+        return False
+    try:
+        p = int(leg.get('price'))
+    except (TypeError, ValueError):
+        return False
+    return abs(p) >= 100
+
+
 def _cfb_form_legs(limit=8):
     """Clean CFB game-line legs for the card engine: this week's games where THIS-YEAR
-    opponent-adjusted form diverges from the market, emitted as a priced side (-110) with a
-    one-line reason. The honest team-side 'swing' material. Strongest leans first."""
+    opponent-adjusted form diverges from the market, emitted as an UNPRICED side (line is
+    context; see UNPRICED_LEG_NOTE) with a one-line reason. Strongest leans first."""
     import cfb_current_form as _cff
     try:
         games = build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week')
@@ -32926,17 +32959,17 @@ def _cfb_form_legs(limit=8):
         legs.append({
             'sport': 'CFB', 'kind': 'line', 'tier': 'edge',
             'label': f"{side} {line:+g}", 'pick': side, 'line': round(line, 1),
-            'game': f"{a} @ {h}", 'price': -110,
+            'game': f"{a} @ {h}",
             'reason': f"this-year form projects {h} {pm:+.0f} vs the market's {mkt:+.0f} — ~{abs(edge):.0f} pts the other way",
-            'score': 50 + abs(edge)})
+            'score': 50 + abs(edge), **_unpriced_line_fields(g.get('book_source'))})
     legs.sort(key=lambda x: -x['score'])
     return legs[:limit]
 
 
 def _nfl_line_legs(limit=8):
     """Clean NFL game-line + total legs for the card engine, from the model-edge game board
-    (spread/total where our number diverges from the market). Priced -110, VOLATILE flags
-    dropped. Strongest edges first."""
+    (spread/total where our number diverges from the market). UNPRICED (line is context; see
+    UNPRICED_LEG_NOTE), VOLATILE flags dropped. Strongest edges first."""
     out = []
     try:
         board = build_nfl_game_board_context().get('board', [])
@@ -32948,8 +32981,9 @@ def _nfl_line_legs(limit=8):
             continue
         label = str(play).replace(str(game), '').strip() or str(play)
         out.append({'sport': 'NFL', 'kind': 'line', 'tier': 'edge', 'label': label,
-                    'game': game, 'price': -110, 'reason': r.get('why', ''),
-                    'score': 60 + (6 if r.get('tier') == 'Validated' else 0) - (r.get('rank', 10) * 0.2)})
+                    'game': game, 'reason': r.get('why', ''),
+                    'score': 60 + (6 if r.get('tier') == 'Validated' else 0) - (r.get('rank', 10) * 0.2),
+                    **_unpriced_line_fields(r.get('line_source'))})
     out.sort(key=lambda x: -x['score'])
     return out[:limit]
 
@@ -33036,6 +33070,9 @@ def _mlb_floor_legs(limit=12):
 
 
 def _card_price(legs):
+    # Payout math only over verified prices -- an unpriced leg must never be priced by default.
+    if not all(_leg_is_executable(l) for l in legs):
+        raise ValueError('card contains a leg without a verified price')
     dec = 1.0
     for l in legs:
         p = l['price']
@@ -33156,6 +33193,9 @@ def _card_pools(legs='all', mlb_limit=12, cfb_limit=10, nfl_line_limit=8):
         swings = sorted(nfl_swings + linepool, key=lambda x: -x['score'])
     floors.sort(key=lambda x: -x['score'])
     for leg in floors + swings:
+        if not _leg_is_executable(leg):
+            leg['market_pct'] = None               # no verified price -> no implied probability
+            continue
         implied = _american_implied_probability(leg.get('price'))
         leg['market_pct'] = round(implied * 100, 1) if implied is not None else None
     return floors, swings
@@ -33270,12 +33310,13 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all', pos
         gd['legs'].append(l)
     out = []
     for g, gd in games.items():
-        gd['legs'].sort(key=lambda x: (_rank.get(x.get('tier'), 3), -x.get('score', 0)))
+        # Verified-price legs first; unpriced team lines trail as context and never set the order.
+        gd['legs'].sort(key=lambda x: (not _leg_is_executable(x), _rank.get(x.get('tier'), 3), -x.get('score', 0)))
         gd['sports'] = sorted({(l.get('sport') or '') for l in gd['legs']})
         gd['n_floor'] = sum(1 for l in gd['legs'] if l.get('tier') == 'floor')
         out.append(gd)
     out.sort(key=lambda gd: (gd['date'] or '9999-99-99',
-                             -max((l.get('score', 0) for l in gd['legs']), default=0)))
+                             -max((l.get('score', 0) for l in gd['legs'] if _leg_is_executable(l)), default=0)))
     return {'available': bool(out), 'games': out, 'window': tf,
             'filters': {'legs': legs if legs in ('all', 'props', 'lines') else 'all',
                         'timeframe': tf_req, 'sport': sport_f, 'tier': tier_f, 'pos': pos_f},
@@ -33296,6 +33337,17 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
     risk = risk if risk in _SWINGS_BY_RISK else 'balanced'
     legs = legs if legs in ('all', 'props', 'lines') else 'all'
     floors, swings = _card_pools(legs)
+    # A card is a ticket: only legs with a verified price may sit on one, be priced, or be offered
+    # as a swap. Unpriced team lines are returned separately as context (line + source, no price).
+    context_lines, _cseen = [], set()
+    for l in floors + swings:
+        k = (l.get('sport'), l.get('label'), l.get('game'))
+        if not _leg_is_executable(l) and k not in _cseen:
+            _cseen.add(k)
+            context_lines.append({f: l.get(f) for f in ('sport', 'label', 'game', 'line', 'reason',
+                                                         'price_note', 'line_source')})
+    floors = [l for l in floors if _leg_is_executable(l)]
+    swings = [l for l in swings if _leg_is_executable(l)]
 
     # --- timeframe filter: keep legs whose game is in the window (undated legs kept). 'smart'
     # = the weekend card on Fri-Sun, the full week otherwise. Falls back to 'week' if the
@@ -33357,6 +33409,7 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
         if len(bench) >= 60:
             break
     return {'available': bool(cards), 'cards': cards, 'bench': bench,
+            'context_lines': context_lines[:20],
             'prefs': {'sizes': sorted(set(sizes)), 'risk': risk, 'legs': legs, 'timeframe': tf_req},
             'window': tf,
             'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
@@ -47803,7 +47856,7 @@ def build_nfl_game_board_context():
                             'why': f"model margin {pm:+g} vs {'%+g' % float(sp)} (home), edge {edge:+g}"
                                    + (f", {qb} out" if qb else '')
                                    + (f" · {kn} (shop the ½ pt)" if kn and kn.startswith('KEY') else ''),
-                            'flag': 'VOLATILE' if big else ''})
+                            'flag': 'VOLATILE' if big else '', 'line_source': g.get('book_source')})
             except Exception:
                 pass
             # --- total ---
@@ -47827,7 +47880,8 @@ def build_nfl_game_board_context():
                     cands.append({'base': base, 'market': 'Total', 'tier': tier,
                                   'play': f"{aa} @ {ha} {side} {'%g' % float(tot)}",
                                   'game': game, 'why': why,
-                                  'flag': 'WIND' if (wind >= 15 and side == 'UNDER') else ''})
+                                  'flag': 'WIND' if (wind >= 15 and side == 'UNDER') else '',
+                                  'line_source': g.get('book_source')})
             except Exception:
                 pass
     except Exception:

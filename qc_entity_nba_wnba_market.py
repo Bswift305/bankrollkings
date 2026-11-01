@@ -22,7 +22,7 @@ import services.entity_links as el
 
 NBA_PROPS = pd.DataFrame([
     {'Player': 'Jayson Tatum', 'Stat': 'Points', 'Line': 27.5, 'CurrentLine': 27.5,
-     'OverOdds': -110, 'UnderOdds': -110, 'Book': 'DraftKings', 'Team': 'Boston Celtics'},
+     'OverOdds': -110, 'UnderOdds': -110, 'Book': 'DraftKings', 'Team': 'Boston Celtics'},  # synthetic-fixture
     {'Player': 'Jayson Tatum', 'Stat': 'Rebounds', 'Line': 8.5, 'CurrentLine': 8.5,
      'OverOdds': -115, 'UnderOdds': -105, 'Book': 'DraftKings', 'Team': 'Boston Celtics'},
     {'Player': 'Luka Doncic', 'Stat': 'Points', 'Line': 31.5, 'CurrentLine': 31.5,

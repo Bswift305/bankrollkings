@@ -45,7 +45,7 @@ def _props(tmp: Path):
     rows = []
     for p in ("Alpha Back", "Bravo Back", "Charlie Back"):
         rows.append({"Player": p, "Stat": "Rush Yds", "Line": 50.5,
-                     "Game": "Green Bay Packers@Chicago Bears", "OverOdds": -110})
+                     "Game": "Green Bay Packers@Chicago Bears", "OverOdds": -110})  # synthetic-fixture
     (tmp / "props").mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(tmp / "props" / "NFL_Props.csv", index=False)
 

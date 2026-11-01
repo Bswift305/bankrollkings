@@ -1,0 +1,9 @@
+{# Team lines with no verified book quote (build_daily_cards -> context_lines): context only, never on a
+   card, never priced. Shared by Today's Cards and King's Tickets so the two cannot drift. #}
+{% if context_lines %}
+  <div class="bkn-note" style="margin-top:18px;"><b>Team lines &mdash; context only, not on any card.</b> No verified book quote is attached to these, so they carry no price, payout or implied probability.
+    <ul style="margin:8px 0 0 18px;padding:0;">
+    {% for c in context_lines %}<li><b>{{ c.label }}</b> <span style="color:var(--text-muted);">{{ c.sport }} &middot; {{ c.game }} &middot; line source: {{ c.line_source }} &middot; price: {{ c.price_note }}</span><br><span style="color:var(--text-muted);">{{ c.reason }}</span></li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}

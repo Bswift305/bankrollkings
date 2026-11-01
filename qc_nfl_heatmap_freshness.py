@@ -51,7 +51,7 @@ def _install_fixture(tmp: Path, logs: dict[str, pd.DataFrame], injuries: list[di
 
     props = pd.DataFrame([
         {'Player': name, 'Stat': 'Rec Yds', 'Line': LINE,
-         'Game': 'Arizona Cardinals @ Seattle Seahawks', 'OverOdds': -110}
+         'Game': 'Arizona Cardinals @ Seattle Seahawks', 'OverOdds': -110}  # synthetic-fixture
         for name in logs
     ])
     props.to_csv(tmp / 'props' / 'NFL_Props.csv', index=False)

@@ -127,6 +127,23 @@
         <span class="dt">{% if g.date %}{{ g.date }}{% endif %} &middot; {{ g.n_floor }} floor{{ '' if g.n_floor == 1 else 's' }} / {{ g.legs|length - g.n_floor }} swing{{ '' if (g.legs|length - g.n_floor) == 1 else 's' }}</span>
       </div>
       {% for l in g.legs %}
+      {% if l.price is none %}
+      {# Unpriced team line: the line is context only -- no price, no implied %, not addable to a slip. #}
+      <div class="mb-leg mb-ctx" data-unpriced="1">
+        <span class="mb-tag {{ l.tier }}">LINE</span>
+        <span class="mb-bd">
+          <span class="mb-tp">{{ l.label }}<span class="mb-sp">{{ l.sport }}</span></span>
+          <span class="mb-evidence">
+            <span class="mb-ev"><span class="k">Selection basis</span><span class="v">Model–market context</span></span>
+            <span class="mb-ev"><span class="k">Line source</span><span class="v">{{ l.line_source }}</span></span>
+            <span class="mb-ev"><span class="k">Market price</span><span class="v">{{ l.price_note }}</span></span>
+            <span class="mb-ev context"><span class="k">Why it is shown</span><span class="v">{{ l.reason }}</span></span>
+          </span>
+        </span>
+        <span class="mb-hit"></span>
+        <span class="mb-pr" title="{{ l.price_note }}">n/a</span>
+      </div>
+      {% else %}
       <div class="mb-leg" data-game="{{ g.game }}" data-price="{{ l.price }}" data-tier="{{ l.tier }}" data-sport="{{ l.sport }}" data-reason="{{ l.reason }}" data-label="{{ l.label }}">
         <span class="mb-tag {{ l.tier }}">{{ 'FLOOR' if l.tier == 'floor' else ('EDGE' if l.tier == 'edge' else 'SWING') }}</span>
         <span class="mb-bd">
@@ -142,6 +159,7 @@
         <span class="mb-pr">{{ '%+d'|format(l.price) }}</span>
         <button type="button" class="mb-add" aria-label="Add to slip">+</button>
       </div>
+      {% endif %}
       {% endfor %}
     </div>
     {% endfor %}
@@ -175,7 +193,7 @@
   function amer(d){ return d>=2 ? Math.round((d-1)*100) : Math.round(-100/(d-1)); }
   function sgn(n){ return (n>0?'+':'')+n; }
   function key(l){ return l.sport+'|'+l.label+'|'+l.game; }
-  function legEls(){ return document.querySelectorAll('.mb-leg'); }
+  function legEls(){ return document.querySelectorAll('.mb-leg:not([data-unpriced])'); }
   function syncMarks(){
     var keys={}; slip.forEach(function(l){ keys[key(l)]=1; });
     [].forEach.call(legEls(), function(el){

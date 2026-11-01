@@ -47,7 +47,7 @@ def _book_rows(player, stat, line, game, commence, src, eid, books=("DraftKings"
     out = []
     for b in books:
         out.append({"Player": player, "Team": "ATL", "Stat": stat, "MarketKey": "x", "Line": line,
-                    "Game": game, "Book": b, "OverOdds": -110, "UnderOdds": -110,
+                    "Game": game, "Book": b, "OverOdds": -110, "UnderOdds": -110,  # synthetic-fixture
                     "EventId": eid, "EventCommenceAtUTC": commence, "SourceUpdatedAtUTC": src})
     return out
 
