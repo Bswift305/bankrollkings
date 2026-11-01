@@ -47,6 +47,26 @@ _Last updated: 2026-11-01 (Daily-Card -110 removal, 1.5r)._
 | 1.7 Production-health acceptance | OPEN | — | One full scheduled run: `Result=success`, exit 0, zero `[FAIL]`, freshness within contract — receipt |
 | 1.8 Known out-of-scope finding | RECORDED | Six nflverse builders re-download the same feed daily (efficiency) | Deferred |
 
+## Signed-in NFL workflow defects — 2026-11-01
+
+Observed by the owner on the live signed-in NFL workflow (bankrollkings.com), 2026-11-01. **Independently owned
+production defects** — not part of the Daily-Card price fix (1.5r) or any other open branch. Next action for
+each: a **read-only RCA after the 11-02 RC receipt**, then its own reviewed branch + QC. `master` untouched.
+Highest priority (decision-affecting; must be fixed before Green Light becomes the owner's workflow): **D4, D5, D1**.
+
+| # | Defect | Severity | Evidence (owner observation, 11-01) | Acceptance criteria | State |
+|---|---|---|---|---|---|
+| D1 | Weather misclassification | **P0 integrity** | NE–MIA shown `indoor/calm` / `dome`; the venue is outdoors with thunderstorms, a Flood Watch, 13–14 mph wind, gusts near 25 | Audit **every** NFL venue/weather join (may affect more than Miami). Venue type + forecast agree with the authoritative stadium/game record; unavailable weather says **unavailable**, never "dome" | OPEN — RCA after receipt |
+| D2 | Matchup page disconnected from live data | P1 | KC–DEN matchup: "No line loaded", zero playable props, 0–0 records, last five 0–5, no meetings — while Game Lines + Props held live KC–DEN rows; NFL players rendered with basketball columns `PTS / REB / AST` | Identical game identity resolves consistently across matchup, lines and props; NFL-specific columns only; fail visibly when unavailable | OPEN |
+| D3 | Green Light lenses stuck on LOADING | P1 | Every factual lens stayed `LOADING` while proposed tickets rendered | A lens resolves to data, explicit empty, or reason-coded unavailable — never perpetual loading | OPEN |
+| D4 | Green Light proposes already-started/live legs | **P0 integrity** | Proposed cards included Lamar Jackson and Javonte Williams after their games kicked off | Proposed tickets contain only pre-kickoff selections; crossing kickoff removes/freezes the leg immediately and **never silently substitutes** another | OPEN — RCA after receipt |
+| D5 | Green Light payouts from incomplete price provenance | **P0 integrity** | Page states leg prices have no book or capture time, yet computes combined illustrative payouts | Align with the executable-leg contract (1.5r): incomplete prices are context-only, produce no payout math and cannot enter proposed tickets | OPEN — RCA after receipt (contract from 1.5r; separate branch) |
+| D6 | "Today's Slate" contains future games | P1 | NFL hub reported 27 games incl. Nov 5 / Nov 8 rows beside the Nov 1 slate; another section correctly reported 12 live games | "Today" = the governed sports date (Eastern, `sports_today_*`); future games under a separately labelled upcoming slate | OPEN |
+| D7 | Stale/mixed streak framing | P1 | Game Lines money trends showed last-game dates Jan/Feb 2026; Wave Watch copy said NFL only 2–3 games in at Week 8; some current team-form 0–0 / last five 0–5 | Every streak/form block carries season, through-week, source, freshness; stale data is unavailable, not blended into current form | OPEN |
+| D8 | Team-code inconsistency | P2 | Injury filter `WAS` returned no Washington injuries; data existed under `WSH` | Canonical team identity maps aliases across every route and filter | OPEN |
+| D9 | Period-model authority boundary | P1 presentation | Page says 1H/1Q splits are rough + unvalidated, but rows present `MODEL 1H TOTAL` / margins like actionable outputs | Every unvalidated split carries an adjacent, persistent `REFERENCE ONLY — NOT VALIDATED` label and cannot gain Green Light/ticket authority | OPEN |
+| D10 | 2025 totals context on a 2026 board | P1 clarity | Totals board uses 2025 team over rates on the 2026 slate; season named only in footer copy | Historical data may remain, but **each row** labels its season directly | OPEN |
+
 ## Phase 2 — Research Candidate operational  _(BLOCKED on Phase 1)_
 2.1 validate corrected roster + authoritative source timestamps (from 1.3) · 2.2 provision governed store
 securely · 2.3 owner-only capture behind the flag · 2.4 one genuine pre-event observation · 2.5 idempotent
