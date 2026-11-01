@@ -73,6 +73,10 @@ SCORECARDS = [
     # CLOCK B refresh cadence (30h props/lines, file mtime). Proves qc_odds_feed, generate_run_status
     # and report_feed_availability can never again call one 39-40h file both FRESH and STALE. Offline.
     ("Freshness Contract QC", "qc_freshness_contract.py", 60),
+    # Odds feed health x governed season state (Nov 2026, F6): OFF_SEASON feeds are reported
+    # "OFF_SEASON (not judged)", never a false FAIL; ACTIVE and UNKNOWN stay strict (stale => FAIL).
+    # Pure: synthetic tree, key check booby-trapped, no network.
+    ("Odds Feed Season QC", "qc_odds_feed_season.py", 60),
     # Per-sport outcome classifier (Oct 24 #2/#3): maps a props child to UPDATED / NO_ACTIVE_EVENTS /
     # NO_MARKETS_POSTED / VALIDATION_FAILED / PROVIDER_ERROR / STALE from the response-shape receipt +
     # exit code + artifact advance. Enforces "zero rows is VALIDATION_FAILED until a receipt PROVES no

@@ -8,11 +8,11 @@ good file. This check makes that failure LOUD instead of silent:
 
 1. Key validity — a free `/v4/sports` call (no quota). A dead/expired/rotated key
    returns 401; this is the single unambiguous "the feed is broken" signal.
-2. Freshness of the ALWAYS-ON odds files (NFL + NCAAF game lines, Futures) — these
-   refresh every day year-round, so >30h old (one daily cycle + margin) means the
-   fetch pipeline missed a cycle and is likely broken.
-   Season-gated files (MLB/WNBA/NBA) are deliberately excluded to avoid off-season
-   false positives (their fetch legitimately doesn't run out of season).
+2. Per-sport game-lines + props freshness (CLOCK B, >30h = a missed cycle), judged
+   against the GOVERNED season state (season_utils.season_state, the same state the
+   daily operator gates its refresh steps on): OFF_SEASON feeds are reported
+   "OFF_SEASON (not judged)" -- never a false FAIL; ACTIVE and UNKNOWN are strict
+   (STALE/MISSING fails; UNKNOWN never silently passes). Futures are always-on.
 
 Exits non-zero on any failure so the daily run logs it as [FAIL] and the prelaunch
 scorecard's Data Freshness section flips to NO-GO.
@@ -77,7 +77,50 @@ def _key_valid() -> tuple[bool, str]:
         return False, f"Odds API key REJECTED by The Odds API: {type(exc).__name__}: {exc}"
 
 
-def run_qc(check_key: bool = True) -> dict:
+OFF_SEASON_LABEL = "OFF_SEASON (not judged)"
+
+
+def _fmt(state: str, age) -> str:
+    return f"{state} ({age:.0f}h)" if age is not None else "MISSING"
+
+
+def judge_sport_feeds(sport: str, gl_age, pr_age, season) -> tuple[dict, list[str]]:
+    """Season-aware CLOCK-B judgement of one sport's game-lines + props families (pure, no I/O).
+
+    `season` is the governed season_utils.SeasonState (ACTIVE / OFF_SEASON / UNKNOWN) -- the SAME state
+    the daily operator uses to decide whether this sport's refresh steps run at all:
+      OFF_SEASON -> both families reported "OFF_SEASON (not judged)" with their age, never a failure:
+                    the operator deliberately did not refresh them, so their staleness is expected.
+      ACTIVE     -> strict: a STALE or MISSING family is a failure.
+      UNKNOWN    -> strict as well (fail-open means "judge it", never a silent pass).
+      None       -> treated as UNKNOWN.
+    Returns ({family_label: display}, [failures])."""
+    gl_state = _state(gl_age, "game_lines", sport)
+    pr_state = _state(pr_age, "props", sport)
+    families: dict[str, str] = {}
+    failures: list[str] = []
+    st_name = getattr(season, "state", None) or "UNKNOWN"
+    if st_name == "OFF_SEASON":
+        reason = getattr(season, "reason", "")
+        for fam, age in (("game lines", gl_age), ("props", pr_age)):
+            age_txt = f"{age:.0f}h" if age is not None else "missing"
+            families[f"{sport} {fam}"] = f"{OFF_SEASON_LABEL} ({age_txt}; {reason})"
+        return families, failures
+    families[f"{sport} game lines"] = _fmt(gl_state, gl_age)
+    families[f"{sport} props"] = _fmt(pr_state, pr_age)
+    stale = [(fam, s) for fam, s in (("game lines", gl_state), ("props", pr_state)) if s in ("STALE", "MISSING")]
+    if stale:
+        what = " and ".join(f"{fam} {s}" for fam, s in stale)
+        hint = ""
+        if gl_state == "FRESH" and pr_state in ("STALE", "MISSING"):
+            # Lines are being refreshed but props are not: props pipeline broken or no markets posted
+            # (the availability report classifies which). Either way, not a healthy feed.
+            hint = " -- props pipeline broken or no markets posted (verify with the availability report)"
+        failures.append(f"{sport} {what} while season state is {st_name}{hint}.")
+    return families, failures
+
+
+def run_qc(check_key: bool = True, states: dict | None = None) -> dict:
     checked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     failures: list[str] = []
 
@@ -88,24 +131,27 @@ def run_qc(check_key: bool = True) -> dict:
     else:
         key_note = "Key validity check skipped."
 
+    # Governed season state (season_utils.season_state: schedule/calendar evidence, Eastern date) -- the
+    # SAME snapshot logic the daily operator used to decide which refresh steps ran. Off-season feeds are
+    # not refreshed by design, so judging them stale would be a false FAIL (the Nov 2026 "Odds feed
+    # health (post-refresh)" failure on 89-96h MLB/WNBA files). ACTIVE/UNKNOWN stay strict.
+    if states is None:
+        from season_utils import season_states
+        states = season_states(tuple(GAME_LINE_FEEDS), base_dir=BASE_DIR)
+
     # ---- per-family feed health ----
     warnings: list[str] = []
     families: dict[str, str] = {}
+    not_judged: list[str] = []
     for sport in GAME_LINE_FEEDS:
         gl_age = _age_hours(BASE_DIR / GAME_LINE_FEEDS[sport])
         pr_age = _age_hours(BASE_DIR / PROPS_FEEDS[sport])
-        gl_state = _state(gl_age, "game_lines", sport)
-        pr_state = _state(pr_age, "props", sport)
-        families[f"{sport} game lines"] = f"{gl_state} ({gl_age:.0f}h)" if gl_age is not None else "MISSING"
-        families[f"{sport} props"] = f"{pr_state} ({pr_age:.0f}h)" if pr_age is not None else "MISSING"
-        # TRUTH RULE: if a sport's GAME LINES are FRESH (the sport is active -- games are being lined) but
-        # its PROPS are STALE, the props pipeline is broken (or markets are not posted). Either way the
-        # odds feed is NOT "healthy" for that sport -- flag it. A manifest/availability check classifies
-        # it as a genuine break vs a legitimate NO_MARKETS_POSTED window; this guard just refuses a false
-        # all-clear. When game lines are ALSO stale/missing, the sport is off-season -> not flagged here.
-        if gl_state == "FRESH" and pr_state in ("STALE", "MISSING"):
-            failures.append(f"{sport} props are {pr_state} while {sport} game lines are FRESH -- props "
-                            f"pipeline broken or no markets posted (verify with the availability report).")
+        season = states.get(sport)
+        fams, fails = judge_sport_feeds(sport, gl_age, pr_age, season)
+        families.update(fams)
+        failures.extend(fails)
+        if getattr(season, "state", None) == "OFF_SEASON":
+            not_judged.append(sport)
     # futures (always-on)
     fut_age = _age_hours(BASE_DIR / FUTURES_FEED)
     fut_state = _state(fut_age, "futures")
@@ -132,6 +178,8 @@ def run_qc(check_key: bool = True) -> dict:
         "families": families,
         "failures": failures,
         "warnings": warnings,
+        "season_states": {s: getattr(st, "state", "UNKNOWN") for s, st in states.items()},
+        "not_judged_off_season": not_judged,
     }
     append_qc_run_log("odds_feed", report)
     return report
@@ -145,10 +193,15 @@ def main() -> int:
     print(f"Checked at: {report['checked_at']}")
     print(f"Failures: {report['failure_count']}")
     print(report["notes"])
+    for sport, st in report["season_states"].items():
+        tag = OFF_SEASON_LABEL if st == "OFF_SEASON" else f"{st} (judged strictly)"
+        print(f"[SEASON] {sport}: {tag}")
     for item in report["failures"]:
         print(f"[FAIL] {item}")
     if report["clean"]:
-        print("[OK] Odds feed is healthy — key valid and always-on feeds are fresh.")
+        print("[OK] Odds feed is healthy — key valid, in-season and always-on feeds are fresh"
+              + (f"; not judged (off-season): {', '.join(report['not_judged_off_season'])}."
+                 if report["not_judged_off_season"] else "."))
     return 0 if report["clean"] else 1
 
 
