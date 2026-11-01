@@ -36,6 +36,10 @@ SCORECARDS = [
     # window. The operator aborts on the first FAIL, so an out-of-window preseason fetch that errored
     # would stall every downstream refresh (the Oct 23 incident class). Pure; cheap.
     ("Daily Operator Season-Gate QC", "qc_daily_operator_season_gate.py", 60),
+    # Season activation (Nov 2026): a sport is active only with props rows AND events in the forward
+    # 7d Eastern window; stale off-season props (MLB/WNBA) no longer make their expected empty-slice
+    # failures FAIL bk-daily. Missing schedule falls back to props-only. Pure; temp fixtures.
+    ("Season Activation QC", "qc_season_activation.py", 60),
     # Cross-sport Quick Tools smoke (renders every /tools/* surface + exercises their
     # logic paths). Cheap, cross-sport (no season gate), so a broken tool is a hard FAIL.
     ("Quick Tools QC", "qc_quick_tools.py", 300),

@@ -134,23 +134,13 @@ def _active_sports() -> set:
     Off-season sports (no props loaded) are treated as N/A by the launch gate
     instead of hard FAILs, so an in-season launch (NBA/MLB/WNBA) can certify GO.
     Each off-season check reactivates automatically when that sport's props return.
+
+    Delegates to season_utils.active_sports() -- the same gate the daily operator, Edge Engine
+    pipeline and scorecard runner use -- so stale off-season props rows (no events in the forward
+    window) no longer keep a sport "active" here while the operator calls it off-season.
     """
-    mapping = {
-        "NBA": "NBA_Props.csv",
-        "WNBA": "WNBA_Props.csv",
-        "MLB": "MLB_Props.csv",
-        "NFL": "NFL_Props.csv",
-        "NCAAF": "NCAAF_Props.csv",
-    }
-    active = set()
-    for sport, fname in mapping.items():
-        path = BASE_DIR / "data" / "props" / fname
-        try:
-            if path.exists() and not pd.read_csv(path).empty:
-                active.add(sport)
-        except Exception:
-            pass
-    return active
+    from season_utils import active_sports
+    return active_sports(base_dir=BASE_DIR)
 
 
 def _route_sport(path: str):

@@ -57,42 +57,28 @@ except Exception:  # pragma: no cover - zoneinfo always present on 3.9+ prod
 
 import pandas as pd
 
+from season_utils import EVENT_DATE_COLUMNS, LINES_SOURCES, SCHEDULE_SOURCES
 from services.freshness_contract import refresh_cadence_hours
+from services.timeutils import event_eastern_date
 
 BASE_DIR = Path(__file__).resolve().parent
 
 # Per sport: the on-disk artifacts. Game lines + props are the current-market feeds
 # the incident was about; schedule is the zero-cost "should there be events" source.
+# The schedule/lines file lists are SHARED with season_utils.active_sports() (one source of truth for
+# "which files say what is scheduled"), so this report and the daily operator's season gate agree.
 SPORTS = {
-    "NFL": {
-        "schedule": ["data/schedules/NFL_Schedule.csv", "data/schedules/NFL_Odds.csv"],
-        "lines": ["data/odds/NFL_Odds.csv", "data/schedules/NFL_Odds.csv"],
-        "props": ["data/props/NFL_Props.csv"],
-    },
-    "NCAAF": {
-        "schedule": ["data/schedules/NCAAF_Schedule.csv", "data/schedules/NCAAF_Odds.csv"],
-        "lines": ["data/odds/NCAAF_Odds.csv", "data/schedules/NCAAF_Odds.csv"],
-        "props": ["data/props/NCAAF_Props.csv"],
-    },
-    "NBA": {
-        "schedule": ["data/schedules/NBA_Schedule.csv", "data/schedules/NBA_Odds.csv"],
-        "lines": ["data/odds/NBA_Odds.csv", "data/schedules/NBA_Odds.csv"],
-        "props": ["data/props/NBA_Props.csv"],
-    },
-    "WNBA": {
-        "schedule": ["data/schedules/WNBA_Schedule.csv", "data/schedules/WNBA_Odds.csv"],
-        "lines": ["data/odds/WNBA_Odds.csv", "data/schedules/WNBA_Odds.csv"],
-        "props": ["data/props/WNBA_Props.csv"],
-    },
-    "MLB": {
-        "schedule": ["data/schedules/MLB_Schedule.csv", "data/schedules/MLB_Odds.csv"],
-        "lines": ["data/odds/MLB_Odds.csv", "data/schedules/MLB_Odds.csv"],
-        "props": ["data/props/MLB_Props.csv"],
-    },
+    sport: {
+        "schedule": list(SCHEDULE_SOURCES[sport]),
+        "lines": list(LINES_SOURCES[sport]),
+        "props": [f"data/props/{sport}_Props.csv"],
+    }
+    for sport in ("NFL", "NCAAF", "NBA", "WNBA", "MLB")
 }
 
-# Candidate date columns in a schedule/odds CSV, most-specific first.
-_DATE_COLS = ("Date", "CommenceDate", "GameDate", "commence_time", "CommenceTime", "LastUpdated")
+# Candidate date columns in a schedule/odds CSV, most-specific first (shared event columns, plus the
+# fetch timestamp as a report-only last resort).
+_DATE_COLS = (*EVENT_DATE_COLUMNS, "LastUpdated")
 
 
 def _eastern_today() -> date:
@@ -132,11 +118,11 @@ def _upcoming_counts(path: Path | None, today: date, windows: list[int]) -> tupl
     col = next((c for c in _DATE_COLS if c in df.columns), None)
     if col is None:
         return empty, f"no date column (have: {', '.join(map(str, df.columns[:6]))})"
-    parsed = pd.to_datetime(df[col], errors="coerce", utc=False)
-    dates = parsed.dropna()
-    if dates.empty:
+    # Shared Eastern parser (same as season_utils.active_sports): UTC-aware values are converted to the
+    # Eastern calendar date, so a 01:00 UTC game counts on the previous Eastern day.
+    event_dates = df[col].map(event_eastern_date).dropna()
+    if event_dates.empty:
         return empty, f"date column {col!r} did not parse"
-    event_dates = dates.dt.date
     counts = {}
     for w in windows:
         hi = today + timedelta(days=w)
