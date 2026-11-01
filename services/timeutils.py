@@ -12,7 +12,7 @@ badge on the board. Always convert game times to a fixed Eastern zone.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     from zoneinfo import ZoneInfo
@@ -41,6 +41,34 @@ def to_eastern_datetime_str(value, fmt: str = "%Y-%m-%d %H:%M") -> str:
     except (ValueError, TypeError):
         return str(value) if value else ""
     return dt.strftime(fmt) if dt else ""
+
+
+def parse_feed_timestamp_utc(value):
+    """Feed ``LastUpdated``-style stamp -> aware UTC datetime, or None if blank/unparseable.
+
+    The convention is explicit, never the process's ambient zone:
+      * an offset-bearing stamp (``...Z`` / ``+00:00`` -- e.g. fetch_ncaaf_slate_cfbd.py) keeps its
+        own offset;
+      * a NAIVE stamp (``YYYY-MM-DD HH:MM`` -- fetch_game_lines.py writes the provider's UTC
+        ``last_update`` through ``to_eastern_datetime_str``) is US Eastern wall-clock time.
+    Reading a naive Eastern stamp against a naive ``now()`` mis-ages it by the process's offset from
+    Eastern (+4/5h on the UTC prod box, -3h on a Pacific dev box). Ambiguous fall-back hours resolve
+    to the first occurrence (fold=0) rather than raising.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in ("nan", "nat", "none"):
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        if DISPLAY_TZ is None:  # pragma: no cover - missing tzdata
+            return None
+        parsed = parsed.replace(tzinfo=DISPLAY_TZ)
+    return parsed.astimezone(timezone.utc)
 
 
 def to_eastern_date_str(value, fmt: str = "%Y-%m-%d") -> str:

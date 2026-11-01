@@ -3669,22 +3669,28 @@ def get_lines_refresh_meta(odds_df, max_age_hours=LIVE_LINES_MAX_AGE_HOURS):
     """Freshness of a game-LINES (odds) feed -- the game-lines analogue of get_props_refresh_meta. Reads
     the `LastUpdated` column the Odds fetch writes; flags is_stale past max_age_hours (the documented
     live-market window). Callers FAIL CLOSED on is_stale (suppress current-line rows), not merely warn.
-    Self-contained: never mutates or depends on the props path."""
+    Self-contained: never mutates or depends on the props path.
+
+    Timestamp convention (services.timeutils.parse_feed_timestamp_utc): an offset-bearing stamp keeps
+    its offset; a NAIVE stamp is US Eastern (fetch_game_lines.py writes it via to_eastern_datetime_str).
+    Age is measured against aware UTC now -- never the process's ambient zone, which on the UTC prod box
+    over-aged naive Eastern stamps by 4-5h. The raw LastUpdated values are not rewritten. A missing
+    column, or no parseable value, leaves age unknown -> NOT stale (existing contract)."""
     if odds_df is None or getattr(odds_df, 'empty', True):
         return {'last_updated': 'Unknown', 'age_hours': None, 'is_stale': False,
                 'status': 'unavailable', 'warning': '', 'has_lines': False}
     last_updated, age_hours = 'Unknown', None
     if 'LastUpdated' in odds_df.columns:
-        parsed = pd.to_datetime(odds_df['LastUpdated'], errors='coerce').dropna()
-        if not parsed.empty:
-            freshest = parsed.max()
+        from services.timeutils import DISPLAY_TZ as _lu_et, parse_feed_timestamp_utc as _lu_parse
+        parsed = [ts for ts in (_lu_parse(v) for v in odds_df['LastUpdated'].tolist()) if ts is not None]
+        if parsed:
+            freshest = max(parsed)
             try:
-                last_updated = freshest.strftime('%b %d, %Y %I:%M %p')
+                last_updated = (freshest.astimezone(_lu_et) if _lu_et else freshest).strftime('%b %d, %Y %I:%M %p')
             except Exception:
                 last_updated = str(freshest)
             try:
-                now_ts = pd.Timestamp.now(tz=freshest.tz) if getattr(freshest, 'tzinfo', None) else pd.Timestamp.now()
-                age_hours = round(float((now_ts - freshest).total_seconds()) / 3600.0, 2)
+                age_hours = round(float((datetime.now(timezone.utc) - freshest).total_seconds()) / 3600.0, 2)
             except Exception:
                 age_hours = None
     is_stale = bool(age_hours is not None and max_age_hours is not None and age_hours > max_age_hours)
@@ -17983,7 +17989,12 @@ def _format_game_market_odds(df):
     if 'Book' not in working.columns:
         working['Book'] = 'DraftKings'
 
-    keep_cols = [col for col in ['Date', 'Time', 'Away', 'Home', 'AwayML', 'HomeML', 'Spread', 'SpreadOdds', 'Total', 'OverOdds', 'UnderOdds', 'Book', 'GameID'] if col in working.columns]
+    # LastUpdated is the provider freshness stamp that get_lines_refresh_meta / build_game_market_lookup /
+    # build_football_live_games fail closed on (the 6h live-market window). It MUST survive this projection:
+    # dropping it here left every loaded game-line frame without it, so the stale-lines cutoff could never
+    # fire on real data. Passed through RAW (no reparse/reformat) -- the freshness reader owns its tz
+    # convention (services.timeutils.parse_feed_timestamp_utc).
+    keep_cols = [col for col in ['Date', 'Time', 'Away', 'Home', 'AwayML', 'HomeML', 'Spread', 'SpreadOdds', 'Total', 'OverOdds', 'UnderOdds', 'Book', 'GameID', 'LastUpdated'] if col in working.columns]
     return working[keep_cols].dropna(subset=[col for col in ['Date', 'Away', 'Home'] if col in working.columns])
 
 

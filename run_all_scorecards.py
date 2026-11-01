@@ -64,6 +64,10 @@ SCORECARDS = [
     # lookup when the whole odds feed is stale -- so no board annotates a stale current line as live. A
     # feed with any recent update (or no LastUpdated) is not suppressed. Pure.
     ("Market Lookup Freshness QC", "qc_market_lookup_freshness.py", 60),
+    # The REAL load path keeps LastUpdated (_format_game_market_odds used to drop it, so the 6h cutoff
+    # above could never fire on real data). CSV on disk -> real loaders; 10h stale / 1h fresh / no-column
+    # contract / Eastern-anchored naive stamps / mutation self-test. Temp files, no network.
+    ("Game-Lines LastUpdated Pipeline QC", "qc_game_lines_lastupdated_pipeline.py", 180),
     # ONE freshness contract (Oct 24 directive #1): the single declared source (services/
     # freshness_contract.py) for both clocks -- CLOCK A render/live-market (6h, data timestamp) and
     # CLOCK B refresh cadence (30h props/lines, file mtime). Proves qc_odds_feed, generate_run_status
