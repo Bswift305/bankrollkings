@@ -17,6 +17,8 @@ from app import (
     load_props,
     load_schedule,
     postseason_only_enabled,
+    _nba_default_postseason,
+    nba_postseason_config_warning,
 )
 from services.qc_tracking import append_qc_run_log
 
@@ -55,40 +57,46 @@ def _load_live_props():
     return list(board or [])
 
 
-def run_qc() -> dict:
-    today = pd.Timestamp(datetime.now().date())
+def _nba_is_postseason() -> bool:
+    """NBA phase for this QC run. Reuses the app's configured-official-window resolver
+    (`_nba_default_postseason` -> `_resolve_nba_postseason` over NBA_POSTSEASON_DATES, Eastern
+    "today"); no second calendar. Any failure resolves to postseason so the playoff checks fail
+    closed (fire) rather than silently disappear."""
+    try:
+        return bool(_nba_default_postseason())
+    except Exception:
+        return True
+
+
+def playoff_freshness_issues(
+    is_postseason: bool,
+    playoff_log_max,
+    expected_playoff_log_max,
+    playoff_results_max,
+    completed_schedule_max,
+) -> tuple[list[dict], list[str]]:
+    """The two playoff-data freshness checks, gated to the NBA postseason phase.
+
+    Outside the postseason, playoff logs/results are not expected to exist or advance (prod has
+    never built them during a regular season), so demanding them can never pass. The checks are
+    SKIPPED with an explicit reason rather than downgraded to an INFO issue: any issue row makes
+    this QC exit 1, and an INFO row would also inflate "Issues found" with something that is not
+    a defect. Inside the postseason they fire exactly as before (HIGH missing / HIGH stale logs /
+    MEDIUM stale results). Returns (issues, skipped_reasons)."""
     issues: list[dict] = []
-
-    playoff_logs = load_playoff_gamelogs()
-    playoff_results = load_playoff_results()
-    gamelogs = load_gamelogs()
-    schedule = load_schedule()
-    props_df = load_props()
-    live_props = _load_live_props()
-
-    playoff_log_max = _safe_ts(playoff_logs["Date"]) if not playoff_logs.empty and "Date" in playoff_logs.columns else None
-    playoff_results_max = _safe_ts(playoff_results["Date"]) if not playoff_results.empty and "Date" in playoff_results.columns else None
-    schedule_max = _safe_ts(schedule["Date"]) if not schedule.empty and "Date" in schedule.columns else None
-    completed_schedule_max = None
-    if not schedule.empty and "Date" in schedule.columns:
-        scheduled_dates = pd.to_datetime(schedule["Date"], errors="coerce")
-        completed_dates = scheduled_dates[scheduled_dates < today]
-        if not completed_dates.empty:
-            completed_schedule_max = completed_dates.max()
-    active_teams = {
-        str(p.get("team", "")).strip()
-        for p in (live_props or [])
-        if str(p.get("team", "")).strip()
-    }
-    expected_playoff_log_max = playoff_results_max
-    if active_teams and not playoff_results.empty and {"Away", "Home", "Date"}.issubset(playoff_results.columns):
-        active_results = playoff_results[
-            playoff_results["Away"].astype(str).isin(active_teams)
-            | playoff_results["Home"].astype(str).isin(active_teams)
-        ].copy()
-        active_results_max = _safe_ts(active_results["Date"]) if not active_results.empty else None
-        if active_results_max is not None:
-            expected_playoff_log_max = active_results_max
+    if not is_postseason:
+        reason = "NBA is not in the configured postseason window"
+        warning = ""
+        try:
+            warning = nba_postseason_config_warning()
+        except Exception:
+            warning = ""
+        if warning:
+            reason = f"{reason} ({warning})"
+        return issues, [
+            f"playoff player logs freshness: {reason}.",
+            f"playoff results freshness: {reason}.",
+        ]
 
     if playoff_log_max is None:
         issues.append({
@@ -121,6 +129,53 @@ def run_qc() -> dict:
                 f"while the schedule includes completed games through {completed_schedule_max.strftime('%Y-%m-%d')}."
             ),
         })
+    return issues, []
+
+
+def run_qc() -> dict:
+    today = pd.Timestamp(datetime.now().date())
+    issues: list[dict] = []
+    is_postseason = _nba_is_postseason()
+
+    playoff_logs = load_playoff_gamelogs()
+    playoff_results = load_playoff_results()
+    gamelogs = load_gamelogs()
+    schedule = load_schedule()
+    props_df = load_props()
+    live_props = _load_live_props()
+
+    playoff_log_max = _safe_ts(playoff_logs["Date"]) if not playoff_logs.empty and "Date" in playoff_logs.columns else None
+    playoff_results_max = _safe_ts(playoff_results["Date"]) if not playoff_results.empty and "Date" in playoff_results.columns else None
+    schedule_max = _safe_ts(schedule["Date"]) if not schedule.empty and "Date" in schedule.columns else None
+    completed_schedule_max = None
+    if not schedule.empty and "Date" in schedule.columns:
+        scheduled_dates = pd.to_datetime(schedule["Date"], errors="coerce")
+        completed_dates = scheduled_dates[scheduled_dates < today]
+        if not completed_dates.empty:
+            completed_schedule_max = completed_dates.max()
+    active_teams = {
+        str(p.get("team", "")).strip()
+        for p in (live_props or [])
+        if str(p.get("team", "")).strip()
+    }
+    expected_playoff_log_max = playoff_results_max
+    if active_teams and not playoff_results.empty and {"Away", "Home", "Date"}.issubset(playoff_results.columns):
+        active_results = playoff_results[
+            playoff_results["Away"].astype(str).isin(active_teams)
+            | playoff_results["Home"].astype(str).isin(active_teams)
+        ].copy()
+        active_results_max = _safe_ts(active_results["Date"]) if not active_results.empty else None
+        if active_results_max is not None:
+            expected_playoff_log_max = active_results_max
+
+    playoff_issues, skipped_checks = playoff_freshness_issues(
+        is_postseason,
+        playoff_log_max,
+        expected_playoff_log_max,
+        playoff_results_max,
+        completed_schedule_max,
+    )
+    issues.extend(playoff_issues)
 
     if schedule_max is None or schedule_max < today:
         issues.append({
@@ -266,6 +321,8 @@ def run_qc() -> dict:
         "playoff_results_max": playoff_results_max.strftime("%Y-%m-%d") if playoff_results_max is not None else "",
         "schedule_max": schedule_max.strftime("%Y-%m-%d") if schedule_max is not None else "",
         "live_prop_rows": len(live_props),
+        "nba_phase": "postseason" if is_postseason else "regular",
+        "skipped_checks": skipped_checks,
         "issue_count": len(issues),
         "issues": issues,
     }
@@ -283,6 +340,9 @@ def main() -> int:
     print(f"Playoff results through: {report['playoff_results_max'] or 'missing'}")
     print(f"Schedule through: {report['schedule_max'] or 'missing'}")
     print(f"Live prop rows checked: {report['live_prop_rows']}")
+    print(f"NBA phase: {report.get('nba_phase', '')}")
+    for reason in report.get("skipped_checks") or []:
+        print(f"[SKIP] {reason}")
     print(f"Issues found: {report['issue_count']}")
     print()
     if not report["issues"]:
