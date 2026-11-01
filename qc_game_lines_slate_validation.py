@@ -55,8 +55,8 @@ def _lines(event_ids, books_per_event, date="2026-11-07", time_="15:30", ts=TS, 
         for b in range(nb):
             rows.append({"Date": date, "Time": time_, "Away": f"Away{gid}", "Home": f"Home{gid}",
                          "AwayFull": f"Away{gid}", "HomeFull": f"Home{gid}", "AwayML": 150, "HomeML": -170,
-                         "Spread": ("nan" if bad else -3.5), "SpreadOdds": -110, "Total": 51.5,
-                         "OverOdds": -110, "UnderOdds": -110, "Book": BOOKS[b % len(BOOKS)], "GameID": gid,
+                         "Spread": ("nan" if bad else -3.5), "SpreadOdds": -110, "Total": 51.5,  # synthetic-fixture
+                         "OverOdds": -110, "UnderOdds": -110, "Book": BOOKS[b % len(BOOKS)], "GameID": gid,  # synthetic-fixture
                          "LastUpdated": ts})
     cols = ["Date", "Time", "Away", "Home", "AwayFull", "HomeFull", "AwayML", "HomeML", "Spread", "SpreadOdds",
             "Total", "OverOdds", "UnderOdds", "Book", "GameID", "LastUpdated"]
