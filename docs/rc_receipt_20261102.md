@@ -25,6 +25,27 @@ never carried `SourceUpdatedAtUTC`. The new source-time path was therefore **not
 Why the props child failed validation is not in the journal summary (only the outcome line); it lives in the
 sub-runner log — that is the next read-only diagnosis, not yet done.
 
+### Why the props child failed (read-only, `logs/daily_operator_20261102_130000.log` lines 241–297, 446–451)
+
+The fetch itself worked: 13 events in the 7-day window, 0 provider errors, **380 rows** fetched. The
+publish guard then refused it:
+
+```
+Strong validation FAILED, preserving existing props CSV:
+  - implausible row-count collapse: 380 rows < 50% of prior 2831 (pass an explicit override if intended)
+[VALIDATION_FAILED] nfl_player_props seconds=2.5 exit=1 (ALERT): 380 rows fetched but the artifact did not advance
+```
+
+Per-event rows show why: on Monday morning only Monday night (CHI@SEA 221) and Thursday (JAX@BAL 123) are
+fully posted; the seven Sunday games that had posted any props had 1–7 rows each and four had 0. The
+"prior 2831" is Sunday's full slate. NCAAF hit the same guard (87 < 50% of 2,552).
+
+**Reading:** the collapse guard behaved as designed (preserve last-known-good on a >50% drop), but the drop is
+the normal post-Sunday slate turnover, not a bad fetch. A Monday 13:00 UTC run is therefore structurally
+unable to publish NFL props, so this RC could not have exercised the source-time path on this day whatever the
+code did. Side effect: the preserved `NFL_Props.csv` is Sunday's (now-played) slate. The RC code is neither
+validated nor disproven. Choosing a re-run day or a governed rule for slate turnover is an owner decision.
+
 ## 2. Overall `bk-daily`: **FAILED (exit 1)** — reported separately
 
 `Result=exit-code ExecMainStatus=1`, 13:00:00 → 13:24:16 UTC, `Overall: DEGRADED`. **8** failed steps (the
