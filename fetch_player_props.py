@@ -102,6 +102,10 @@ SPORT_EVENT_MANIFESTS = {
 }
 
 
+# Sports whose props validate per EVENT (slate turnover), not by whole-file row count (RC 2026-11-02).
+EVENT_AWARE_PROPS_SPORTS = frozenset({"americanfootball_nfl", "americanfootball_ncaaf"})
+
+
 def _eligible_event_keys(sport: str):
     """Return (set_of_game_keys, source_rel) from the sport's independent manifest -- normalized
     'away@home' keys, comparable to the props fetch's own game labels. Empty when no manifest exists."""
@@ -791,7 +795,8 @@ def main() -> int:
     # implausible collapse) must NOT replace last-known-good (incident 2026-10-23).
     from services.atomic_csv import atomic_write_csv, CsvValidationError
     from services.feed_validation import (
-        NBA_PLAYER_PROPS_SLATE_SPEC, PLAYER_PROPS_SPEC, candidate_sha256, validate_feed, validate_feed_slate,
+        FOOTBALL_PLAYER_PROPS_EVENT_SPEC, NBA_PLAYER_PROPS_SLATE_SPEC, PLAYER_PROPS_SPEC, candidate_sha256,
+        validate_feed, validate_feed_event_slate, validate_feed_slate,
     )
     try:
         prior = pd.read_csv(output_path) if output_path.exists() else None
@@ -833,6 +838,24 @@ def main() -> int:
                   "markets_present", "bookmakers", "fetch_start", "fetch_end", "provider_errors",
                   "normalized_rows_per_event", "decision", "reason_code"):
             print(f"  {k}: {vreceipt.get(k)}")
+    elif FOOTBALL_PLAYER_PROPS_EVENT_SPEC.event_aware and sport in EVENT_AWARE_PROPS_SPORTS:
+        # Event-aware slate validation (RC 2026-11-02): Sunday's played games must not make Monday's
+        # current slate read as a collapse. Completed events are removed from both sides and never
+        # published; a still-eligible event that collapses still fails closed. No override flag applies.
+        if getattr(args, "allow_collapse", False):
+            print("[INFO] --allow-collapse is ignored for event-aware football props validation.")
+        ok, errs, vreceipt, publish_df = validate_feed_event_slate(
+            df, FOOTBALL_PLAYER_PROPS_EVENT_SPEC, prior_df=prior, path=output_path,
+            sport_tokens=_sport_tokens(sport), provider_errors=error_count)
+        print("---- VALIDATION RECEIPT (event-aware) ----")
+        for k in ("now_utc", "provider_errors", "prior_rows", "candidate_rows", "completed_events_removed",
+                  "completed_rows_removed", "started_candidate_rows_removed", "prior_unidentified_rows",
+                  "overlapping_events_retained", "new_events_added", "sparse_future_events",
+                  "prior_active_events_absent", "rejected_malformed_rows", "identity_invalid_rows",
+                  "collapsed_events", "final_published_rows", "decision", "reason_code"):
+            print(f"  {k}: {vreceipt.get(k)}")
+        if ok:
+            df = publish_df
     else:
         ok, errs = validate_feed(df, PLAYER_PROPS_SPEC, prior_df=prior, path=output_path,
                                  sport_tokens=_sport_tokens(sport),

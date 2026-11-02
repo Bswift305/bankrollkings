@@ -50,6 +50,13 @@ class FeedSpec:
     comparable_event_ratio: float = 0.5         # event counts within this ratio of each other are "similar"
     event_coverage_min: float = 1.0             # fraction of eligible (markets-posted) events that must have rows
     rows_per_event_min: float = 0.0             # normalized density floor in CURRENT_SLATE mode
+    # --- event-aware slate model (opt-in; RC 2026-11-02 football slate-turnover correction) ---
+    event_aware: bool = False                   # when True, validate_feed_event_slate() compares per EVENT
+    event_id_col: str = "EventId"               # stable provider event identity
+    event_time_col: str = "EventCommenceAtUTC"  # authoritative kickoff, zero-offset UTC
+    event_collapse_ratio: float = 0.5           # still-eligible event: new < ratio*prior rows is a collapse
+    event_collapse_min_prior_rows: int = 20     # below this an event is too sparsely posted to judge a drop
+    sparse_event_rows: int = 20                 # a newly posted event under this many rows is "sparse" (allowed)
 
 
 def _finite_series(s):
@@ -295,6 +302,150 @@ def validate_feed_slate(df, spec: FeedSpec, prior_df=None, path=None, sport_toke
     return ok, errors, receipt
 
 
+_UTC_Z = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z"
+
+
+def _utc_z_series(s):
+    """Parse only canonical zero-offset UTC ('YYYY-MM-DDTHH:MM:SSZ'); anything else -> NaT (never guessed)."""
+    raw = s.astype(str).str.strip()
+    ok = raw.str.fullmatch(_UTC_Z)
+    return pd.to_datetime(raw.where(ok), errors="coerce", utc=True, format="%Y-%m-%dT%H:%M:%SZ")
+
+
+def _event_ids(s):
+    eid = s.astype(str).str.strip()
+    return eid, (s.isna() | eid.isin(["", "nan", "None", "<NA>", "NaN"]))
+
+
+def validate_feed_event_slate(df, spec: FeedSpec, prior_df=None, path=None, sport_tokens=None,
+                              provider_errors: int = 0, now=None):
+    """Event-aware slate validation (opt-in via spec.event_aware). Returns (ok, errors, receipt, publish_df).
+
+    A props file is a SLATE of events, and the slate turns over: Sunday's games kick off and drop out of
+    the provider window while next week's games post sparsely at first. A whole-file "new rows >= 50% of
+    prior rows" test reads that normal rollover as a collapse (RC 2026-11-02: 380 Monday rows rejected
+    against 2,831 Sunday rows, 2,636 of them for games already played). Instead:
+      1. every candidate row needs a stable EventId and a zero-offset-UTC kickoff, consistent per event
+         (else REJECT -- identity is not guessed);
+      2. events that have kicked off (kickoff <= now) are removed from BOTH sides -- completed/started
+         games never count toward, or inflate, the comparison, and are never published;
+      3. for events still eligible in both the prior and the candidate, a per-event collapse below
+         event_collapse_ratio (prior >= event_collapse_min_prior_rows) REJECTS -- including an eligible
+         event that vanished entirely;
+      4. newly posted future events are accepted however sparse;
+      5. publish requires zero provider errors, structural validity, and >= 1 usable current event.
+    Malformed market rows (no finite line, or no price on either side) are dropped and counted, never
+    published. publish_df is the current-slate frame to publish when ok (None otherwise)."""
+    now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
+    if now.tzinfo is None:
+        now = now.tz_localize("UTC")
+    idc, tc = spec.event_id_col, spec.event_time_col
+    errors: list = []
+    receipt = {
+        "mode": "EVENT_AWARE", "now_utc": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "provider_errors": int(provider_errors or 0),
+        "candidate_rows": int(len(df)) if df is not None else 0,
+        "prior_rows": int(len(prior_df)) if prior_df is not None else 0,
+        "completed_events_removed": 0, "completed_rows_removed": 0,
+        "started_candidate_rows_removed": 0, "prior_unidentified_rows": 0,
+        "overlapping_events_retained": 0, "new_events_added": 0, "sparse_future_events": 0,
+        "prior_active_events_absent": 0, "rejected_malformed_rows": 0, "identity_invalid_rows": 0,
+        "collapsed_events": [], "final_published_rows": 0, "decision": "REJECT", "reason_code": None,
+    }
+
+    def _reject(code, msg):
+        errors.append(msg)
+        if receipt["reason_code"] is None:
+            receipt["reason_code"] = code
+
+    if df is None:
+        _reject("STRUCTURAL_INVALID", "frame is None")
+        return False, errors, receipt, None
+    missing = [c for c in tuple(spec.required_cols) + (idc, tc) if c not in df.columns]
+    if missing:
+        for c in missing:
+            _reject("STRUCTURAL_INVALID", f"missing required column {c!r}")
+        return False, errors, receipt, None
+
+    # (1) identity: every row carries a stable event id + an authoritative UTC kickoff.
+    eid, eid_blank = _event_ids(df[idc])
+    kick = _utc_z_series(df[tc])
+    bad_identity = eid_blank | kick.isna()
+    receipt["identity_invalid_rows"] = int(bad_identity.sum())
+    if receipt["identity_invalid_rows"]:
+        _reject("EVENT_IDENTITY_INVALID", f"{receipt['identity_invalid_rows']} rows have a missing/unparseable "
+                f"event identity or kickoff ({idc}/{tc}); identity is never guessed")
+    good = ~bad_identity
+    per_event_kicks = pd.DataFrame({"e": eid[good], "k": kick[good]}).groupby("e")["k"].nunique()
+    inconsistent = sorted(per_event_kicks[per_event_kicks > 1].index.tolist())
+    if inconsistent:
+        _reject("EVENT_IDENTITY_INVALID", f"{len(inconsistent)} event(s) carry conflicting kickoff times, "
+                f"e.g. {inconsistent[:3]}")
+
+    # malformed market rows: no finite line, or no price on either side -> dropped + counted.
+    line = pd.to_numeric(df["Line"], errors="coerce") if "Line" in df.columns else pd.Series(np.nan, index=df.index)
+    over = pd.to_numeric(df["OverOdds"], errors="coerce") if "OverOdds" in df.columns else pd.Series(np.nan, index=df.index)
+    under = pd.to_numeric(df["UnderOdds"], errors="coerce") if "UnderOdds" in df.columns else pd.Series(np.nan, index=df.index)
+    malformed = good & (~np.isfinite(line.astype(float)) | (over.isna() & under.isna()))
+    receipt["rejected_malformed_rows"] = int(malformed.sum())
+
+    # (2) started/completed candidate events are not part of the current slate.
+    started = good & (kick <= now)
+    receipt["started_candidate_rows_removed"] = int((started & ~malformed).sum())
+    keep = good & ~malformed & ~started
+    cur = df[keep]
+    cur_ids = eid[keep]
+
+    prior_active, prior_active_ids = None, None
+    if prior_df is not None and len(prior_df):
+        if idc in prior_df.columns and tc in prior_df.columns:
+            p_eid, p_blank = _event_ids(prior_df[idc])
+            p_kick = _utc_z_series(prior_df[tc])
+            p_ok = ~p_blank & p_kick.notna()
+            receipt["prior_unidentified_rows"] = int((~p_ok).sum())
+            p_started = p_ok & (p_kick <= now)
+            receipt["completed_events_removed"] = int(p_eid[p_started].nunique())
+            receipt["completed_rows_removed"] = int(p_started.sum())
+            p_keep = p_ok & ~p_started
+            prior_active, prior_active_ids = prior_df[p_keep], p_eid[p_keep]
+        else:
+            receipt["prior_unidentified_rows"] = int(len(prior_df))
+
+    # (5) provider success + at least one usable current event, then structural validity of what remains.
+    if receipt["provider_errors"] > 0:
+        _reject("PROVIDER_ERROR", f"{receipt['provider_errors']} provider error(s) during the fetch")
+    cand_counts = cur_ids.value_counts()
+    if len(cand_counts) == 0:
+        _reject("NO_USABLE_CURRENT_EVENT", "no usable current (not yet started) event with valid market rows")
+    for e in _structural_errors(cur, spec, prior_active, path, sport_tokens):
+        _reject("STRUCTURAL_INVALID", e)
+
+    # (3) per-event collapse on still-eligible events; (4) new events accepted however sparse.
+    prior_counts = prior_active_ids.value_counts() if prior_active_ids is not None else pd.Series(dtype=int)
+    overlap = set(prior_counts.index) & set(cand_counts.index)
+    new_events = set(cand_counts.index) - set(prior_counts.index)
+    receipt["overlapping_events_retained"] = len(overlap)
+    receipt["new_events_added"] = len(new_events)
+    receipt["sparse_future_events"] = int(sum(1 for e in new_events if cand_counts[e] < spec.sparse_event_rows))
+    receipt["prior_active_events_absent"] = int(len(set(prior_counts.index) - set(cand_counts.index)))
+    for e, pn in sorted(prior_counts.items()):
+        cn = int(cand_counts.get(e, 0))
+        if pn >= spec.event_collapse_min_prior_rows and cn < spec.event_collapse_ratio * pn:
+            receipt["collapsed_events"].append({"event_id": e, "prior_rows": int(pn), "new_rows": cn})
+    if receipt["collapsed_events"]:
+        ex = receipt["collapsed_events"][0]
+        _reject("EVENT_COLLAPSE", f"{len(receipt['collapsed_events'])} still-eligible event(s) lost more than "
+                f"{1 - spec.event_collapse_ratio:.0%} of their rows, e.g. {ex['event_id']}: "
+                f"{ex['prior_rows']} -> {ex['new_rows']}")
+
+    ok = not errors
+    receipt["decision"] = "PUBLISH" if ok else "REJECT"
+    if ok:
+        receipt["reason_code"] = "CURRENT_SLATE_VALID"
+        receipt["final_published_rows"] = int(len(cur))
+    return ok, errors, receipt, (cur.reset_index(drop=True) if ok else None)
+
+
 # Per-feed specs (the authoritative current-market artifacts the narrow recovery fetches publish).
 GAME_LINES_SPEC = FeedSpec(
     kind="game_lines",
@@ -341,6 +492,26 @@ NBA_PLAYER_PROPS_SLATE_SPEC = FeedSpec(
     comparable_event_ratio=0.5,            # slates within 2x game count are "similar"
     event_coverage_min=1.0,                # every markets-posted event must yield rows (partial => INCOMPLETE)
     rows_per_event_min=20.0,               # NBA props run ~65-145 rows/game; <20/game indicates a parse failure
+)
+
+# NFL + college football props OPT IN to the event-aware model (RC 2026-11-02): the weekly slate turns
+# over every Monday, so a whole-file collapse test against Sunday's (now-played) slate rejected every
+# Monday fetch. Thresholds are the prior whole-file ratio (50%) applied per still-eligible event.
+FOOTBALL_PLAYER_PROPS_EVENT_SPEC = FeedSpec(
+    kind="player_props",
+    required_cols=("Player", "Stat", "LastUpdated"),
+    numeric_cols=("Line", "OverOdds", "UnderOdds"),
+    timestamp_col="LastUpdated",
+    id_cols=(),
+    value_cols=(),
+    identity_cols=("Player",),
+    min_rows=1,
+    event_aware=True,
+    event_id_col="EventId",
+    event_time_col="EventCommenceAtUTC",
+    event_collapse_ratio=0.5,
+    event_collapse_min_prior_rows=20,
+    sparse_event_rows=20,
 )
 
 FUTURES_SPEC = FeedSpec(
