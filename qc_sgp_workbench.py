@@ -7,6 +7,8 @@ separately during deployment, not here. Exits 0 on success, 1 otherwise.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import app
 import services.nfl_sgp as sgp
 
@@ -42,7 +44,12 @@ def _fixture_menu(away, home):
         _leg(kind='team_total', category='Team Total', player=None, team='AAA', stat='Team Total', direction='OVER', line=27.5, price=None),
         _leg(kind='team_total', category='Team Total', player=None, team='BBB', stat='Team Total', direction='OVER', line=20.5, price=None),
     ]
+    # D4 kickoff gate: player-prop legs carry a canonical future kickoff (as _nfl_sgp_leg_menu derives from
+    # NFL_Props EventCommenceAtUTC); game/team-total legs carry none (their feeds have no governed instant).
+    # qc_sgp_kickoff_gate.py owns the kickoff contract; this QC keeps testing the workbench acceptance rules.
+    kick = (datetime.now(timezone.utc) + timedelta(hours=30)).strftime('%Y-%m-%dT%H:%M:%SZ')
     for lg in raw:
+        lg['kickoff_utc'] = kick if lg['kind'] == 'player' else None
         who = lg.get('player') or lg.get('team') or 'Game'
         lg['id'] = '|'.join([lg['book'], lg['kind'], str(who), lg['stat'], lg['direction'],
                              str(lg['line']), hb])
