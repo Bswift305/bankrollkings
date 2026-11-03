@@ -64,6 +64,7 @@
 <div class="sr-sec">By lens &amp; direction</div>
 <table class="sr-tbl">
   <tr><th>Sport</th><th>Lens</th><th>Signals</th><th>Resolved</th><th>Hit rate</th><th>ROI</th><th>Avg move</th><th>Read</th></tr>
+  {% if sr_legacy_price %}<tr><td colspan="8" style="color:var(--text-muted);font-size:12px;"><b>Legacy record &mdash; ROI withheld.</b> This scoreboard was graded before 2026-11-01 with an <b>assumed &minus;110</b> price (unverified). Hit rates stand; ROI returns once the record is re-graded on captured prices only.</td></tr>{% endif %}
   {% for c in sr_cohorts %}
   <tr>
     <td>{{ c.Sport }}</td>
@@ -111,7 +112,7 @@
 </div>
 {% endif %}
 
-<div class="bkn-note" style="margin-top:20px;">{{ sr_note or 'A graded record, not an edge claim.' }} A cohort reads <b>&ldquo;too few&rdquo;</b> until it clears {{ sr_min_sample }} resolved results &mdash; a hit rate on five bets means nothing. <b>&ldquo;Hit&rdquo;</b> means the outcome moved the way the lens implied (NFL: the stat reverted toward the role; CFB: the team covered, or for a sell, failed to). <b>ROI</b> sits beside hit rate because a hit rate hides what each result pays &mdash; a 55% record at &minus;110 wins, a 50% one loses the vig. It&rsquo;s shown where the lens implies a real bet (CFB covers, graded at &minus;110); lenses with no captured price (the NFL stat-reversion read) show &ldquo;&mdash;&rdquo; rather than a fake number. This is the same standard every future signal we capture will be judged by. 21+</div>
+<div class="bkn-note" style="margin-top:20px;">{{ sr_note or 'A graded record, not an edge claim.' }} A cohort reads <b>&ldquo;too few&rdquo;</b> until it clears {{ sr_min_sample }} resolved results &mdash; a hit rate on five bets means nothing. <b>&ldquo;Hit&rdquo;</b> means the outcome moved the way the lens implied (NFL: the stat reverted toward the role; CFB: the team covered, or for a sell, failed to). <b>ROI</b> sits beside hit rate because a hit rate hides what each result pays &mdash; a 55% record at &minus;110 wins, a 50% one loses the vig. It&rsquo;s shown only where a real bet price was captured; lenses with no captured price (the NFL stat-reversion read, and CFB covers, whose line was captured but not a book price) show &ldquo;&mdash;&rdquo; rather than an assumed number. This is the same standard every future signal we capture will be judged by. 21+</div>
 {% endif %}
 </div>
 {% endblock %}

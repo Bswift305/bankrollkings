@@ -6519,6 +6519,15 @@ def _first_team_name(*values):
     return ''
 
 
+def _clean_book(value):
+    """A feed's bookmaker label, or '' when it recorded none (None / NaN / 'nan' / blank) -- never a
+    substituted bookmaker name."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ''
+    text = str(value).strip()
+    return '' if text.lower() in ('nan', 'none', 'null') else text
+
+
 def build_live_game_lookup(odds_df, schedule_df):
     lookup = {}
     frames = [df for df in [odds_df, schedule_df] if df is not None and not df.empty]
@@ -6542,7 +6551,8 @@ def build_live_game_lookup(odds_df, schedule_df):
             'home': home,
             'date': str(row.get('Date') or '').strip(),
             'time': str(row.get('Time') or '').strip(),
-            'book': str(row.get('Book') or '').strip(),
+            'book': _clean_book(row.get('Book')),
+            'updated': row.get('LastUpdated'),
             'away_ml': row.get('AwayML'),
             'home_ml': row.get('HomeML'),
             'spread': row.get('Spread'),
@@ -6705,7 +6715,11 @@ def build_football_live_games(odds_df, schedule_df, date_filter='all', day_filte
             'total': market.get('total'),
             'away_ml': market.get('away_ml'),
             'home_ml': market.get('home_ml'),
-            'book': str(market.get('book') or '').strip() or 'DraftKings',
+            # Display label: the feed's own book, else 'Unrecorded source' -- never an invented
+            # bookmaker. book_source is the RAW label (None when unrecorded) for provenance logic.
+            'book': _clean_book(market.get('book')) or UNRECORDED_SOURCE,
+            'book_source': _clean_book(market.get('book')) or None,
+            'updated_utc': _utc_iso(_feed_stamp_to_utc(market.get('updated'))),
             'slug': market.get('slug'),
             'summary': format_game_market_summary(market, home),
         })
@@ -17981,7 +17995,7 @@ def _format_game_market_odds(df):
         working['Date'] = pd.to_datetime(working['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
 
     if 'Book' not in working.columns:
-        working['Book'] = 'DraftKings'
+        working['Book'] = ''          # unrecorded -- never attribute a line to a bookmaker the feed did not name
 
     keep_cols = [col for col in ['Date', 'Time', 'Away', 'Home', 'AwayML', 'HomeML', 'Spread', 'SpreadOdds', 'Total', 'OverOdds', 'UnderOdds', 'Book', 'GameID'] if col in working.columns]
     return working[keep_cols].dropna(subset=[col for col in ['Date', 'Away', 'Home'] if col in working.columns])
@@ -18066,7 +18080,7 @@ def build_game_market_lookup(odds_df):
             'total': row.get('Total'),
             'over_odds': row.get('OverOdds'),
             'under_odds': row.get('UnderOdds'),
-            'book': row.get('Book', 'DraftKings'),
+            'book': _clean_book(row.get('Book')),
             'time': row.get('Time', ''),
             'last_updated': row.get('LastUpdated', '')
         }
@@ -31204,7 +31218,9 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     props_mtime = os.path.getmtime(props_path) if props_path.exists() else 0
     sig = (props_mtime, _nfl_player_log_signature())   # process-stable + picklable
     pkey = (int(limit), int(min_hit), int(min_games))
-    _dkey = f'nfl_floor_board::{pkey[0]}::{pkey[1]}::{pkey[2]}'
+    # 'q1' = rows carry a single-book `quote` (code-only change: the data sig alone would keep
+    # serving pre-quote disk entries for the TTL -- CLAUDE.md §4).
+    _dkey = f'nfl_floor_board::q1::{pkey[0]}::{pkey[1]}::{pkey[2]}'
     if _NFL_FLOOR_BOARD_CACHE.get('sig') != sig:
         _NFL_FLOOR_BOARD_CACHE.clear()
         _NFL_FLOOR_BOARD_CACHE['sig'] = sig
@@ -31252,6 +31268,16 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
             continue
         hit, clears = ev['hit'], ev['clears']
         be = _american_to_prob(price)
+        # The displayed price/line are medians across books. They are a REAL offer only when one
+        # source row carries exactly that line and price -- then that row is the quote (book, time,
+        # event, market). Otherwise there is no single-book quote and the leg cannot be executable.
+        quote = None
+        if price is not None:
+            _m = g[(g['Line'] == line) & (g['OverOdds'] == price)]
+            if not _m.empty:
+                if 'LastUpdated' in _m.columns:
+                    _m = _m.assign(_u=_m['LastUpdated'].map(_feed_stamp_to_utc)).sort_values('_u', na_position='first')
+                quote = _quote_from_row(_m.iloc[-1], player, line, price)
         game = str(g['Game'].iloc[0]) if 'Game' in g.columns else ''
         if '@' in game:
             a, h = game.split('@', 1)
@@ -31261,7 +31287,7 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
             'price': price, 'hit': hit, 'n': ev['n'], 'window': ev['window'], 'clears': clears,
             'breakeven': (round(100 * be) if be is not None else None),
             'edge': (round(100 * (ev['hit_frac'] - be), 1) if be is not None else None),
-            'game': game,
+            'game': game, 'quote': quote,
         })
     rows.sort(key=lambda x: (-x['hit'], -x['clears']))
     data = {'floors': rows[:limit], 'floor_count': len(rows), 'available': bool(rows),
@@ -32869,8 +32895,10 @@ def build_nfl_featured_parlay(legs=3):
     board = build_nfl_floor_board(limit=60)
     picked, games = [], set()
     for f in board.get('floors', []):
-        if f.get('price') is None:
-            continue
+        q = f.get('quote')
+        if not q or not _leg_is_executable({'price': q['price'], 'line': f.get('line'), 'quote': q}):
+            continue                                   # no verified, fresh single-book quote
+        f = dict(f, price=q['price'], book=q['book'], quote_at=q['updated_utc'])
         g = f.get('game') or f.get('player')
         if g in games:
             continue
@@ -32893,10 +32921,140 @@ def build_nfl_featured_parlay(legs=3):
             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
 
 
+# A real line without a real price is incomplete information -- not a -110 bet. Team-line legs
+# carry the LINE as context, but no book quote (sportsbook, offered American odds, event/market/
+# selection identity, line, source update time, freshness) is joined to them, so the price
+# abstains: no payout, implied %, EV, parlay return, ticket slot, or ranking as if bettable. A
+# price may be attached only from a source record carrying ALL of those -- never a default.
+UNPRICED_LEG_NOTE = 'Unavailable — no verified book quote'
+# Display label when a feed recorded no bookmaker. Never substitute a real bookmaker's name: an
+# invented attribution is false market provenance even when the number is real.
+UNRECORDED_SOURCE = 'Unrecorded source'
+# Labels that name a source but not a sportsbook offering the bet -- never executable.
+_NON_BOOK_SOURCES = frozenset({'', 'unrecorded source', 'unknown', 'none', 'nan', 'consensus',
+                               'cfbd consensus', 'cfbd consensus — no book price', 'range',
+                               'example', 'estimate', 'median', 'composite'})
+
+
+def _unpriced_line_fields(source, updated_utc=None):
+    """Price-abstention fields for a team-line leg. `source` is the line's RAW feed label; a
+    CFBD consensus line keeps that identity so it can never be read as a sportsbook offer.
+    `updated_utc` is the source row's own update time (None => shown as not recorded)."""
+    src = _clean_book(source)
+    if 'cfbd' in src.lower():
+        src = 'CFBD consensus — no book price'
+    return {'price': None, 'price_status': 'UNAVAILABLE', 'price_note': UNPRICED_LEG_NOTE,
+            'executable': False, 'line_source': src or UNRECORDED_SOURCE,
+            'source_updated_utc': updated_utc, 'updated_label': _updated_label(updated_utc)}
+
+
+def _feed_stamp_to_utc(value):
+    """A feed timestamp -> aware UTC datetime, or None. Zone-aware strings keep their zone;
+    zone-less stamps are Eastern (what the fetchers write via services/timeutils)."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    ts = pd.to_datetime(str(value).strip(), errors='coerce')
+    if ts is None or pd.isna(ts):
+        return None
+    if ts.tzinfo is None:
+        try:
+            ts = ts.tz_localize('America/New_York', ambiguous='NaT', nonexistent='NaT')
+        except Exception:
+            return None
+        if pd.isna(ts):
+            return None
+    return ts.tz_convert('UTC').to_pydatetime()
+
+
+def _utc_iso(dt):
+    return dt.strftime('%Y-%m-%dT%H:%M:%SZ') if dt is not None else None
+
+
+def _updated_label(utc_iso):
+    """'updated 2026-11-01 05:30 ET' from a UTC ISO stamp, or an explicit not-recorded label."""
+    if not utc_iso:
+        return 'update time not recorded'
+    from services.timeutils import to_eastern_datetime_str
+    return f"updated {to_eastern_datetime_str(utc_iso)} ET"
+
+
+def _quote_from_row(row, player, line, price, selection_side='Over'):
+    """A verified single-book quote from ONE source row, or None. Every field comes from that row
+    (no defaults, no medians): sportsbook, offered American odds, event, market, selection, line,
+    source update time."""
+    book = str(row.get('Book') or '').strip()
+    upd = _feed_stamp_to_utc(row.get('LastUpdated'))
+    event = str(row.get('Game') or '').strip()
+    market = str(row.get('MarketKey') or '').strip() or str(row.get('Stat') or '').strip()
+    if not book or book.lower() in _NON_BOOK_SOURCES or upd is None or not event or not market:
+        return None
+    return {'book': book, 'price': int(price), 'line': float(line), 'event': event, 'market': market,
+            'selection': f"{player} {selection_side} {float(line):g}",
+            'updated_utc': upd.strftime('%Y-%m-%dT%H:%M:%SZ')}
+
+
+def _leg_quote_failures(leg, now=None):
+    """Reason codes why `leg` is NOT executable ([] = executable). A leg is executable only with a
+    complete single-book quote: real bookmaker identity, offered American odds, event / market /
+    selection identity, line value, source update time, and a passing CLOCK-A freshness check
+    (services/freshness_contract.LIVE_MARKET_MAX_AGE_HOURS). Missing any field => context only."""
+    if not isinstance(leg, dict):
+        return ['NOT_A_LEG']
+    out = []
+    if leg.get('executable') is False:
+        out.append('MARKED_NON_EXECUTABLE')
+    q = leg.get('quote')
+    if not isinstance(q, dict):
+        return out + ['NO_QUOTE']
+    book = str(q.get('book') or '').strip()
+    if not book:
+        out.append('MISSING_BOOK')
+    elif book.lower() in _NON_BOOK_SOURCES:
+        out.append('NOT_A_SPORTSBOOK')
+    try:
+        qp = int(q.get('price'))
+        if abs(qp) < 100:
+            out.append('INVALID_PRICE')
+        elif leg.get('price') is None or int(leg.get('price')) != qp:
+            out.append('PRICE_NOT_FROM_QUOTE')
+    except (TypeError, ValueError):
+        out.append('MISSING_PRICE')
+    try:
+        ql = float(q.get('line'))
+        if pd.isna(ql):
+            raise ValueError
+        if leg.get('line') is not None and float(leg.get('line')) != ql:
+            out.append('LINE_NOT_FROM_QUOTE')
+    except (TypeError, ValueError):
+        out.append('MISSING_LINE')
+    for fld, code in (('event', 'MISSING_EVENT'), ('market', 'MISSING_MARKET'),
+                      ('selection', 'MISSING_SELECTION')):
+        if not str(q.get(fld) or '').strip():
+            out.append(code)
+    upd = _feed_stamp_to_utc(q.get('updated_utc'))
+    if upd is None:
+        out.append('MISSING_UPDATE_TIME')
+    else:
+        from services.freshness_contract import LIVE_MARKET_MAX_AGE_HOURS
+        now = now or datetime.now(timezone.utc)
+        age_h = (now - upd).total_seconds() / 3600.0
+        if age_h > LIVE_MARKET_MAX_AGE_HOURS:
+            out.append('STALE_QUOTE')
+        elif age_h < -0.25:
+            out.append('QUOTE_FROM_FUTURE')
+    return out
+
+
+def _leg_is_executable(leg, now=None):
+    """The single gate for payout math, implied %, ticket membership, swap bench and bettable
+    ranking: True only when _leg_quote_failures is empty."""
+    return not _leg_quote_failures(leg, now)
+
+
 def _cfb_form_legs(limit=8):
     """Clean CFB game-line legs for the card engine: this week's games where THIS-YEAR
-    opponent-adjusted form diverges from the market, emitted as a priced side (-110) with a
-    one-line reason. The honest team-side 'swing' material. Strongest leans first."""
+    opponent-adjusted form diverges from the market, emitted as an UNPRICED side (line is
+    context; see UNPRICED_LEG_NOTE) with a one-line reason. Strongest leans first."""
     import cfb_current_form as _cff
     try:
         games = build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week')
@@ -32926,17 +33084,17 @@ def _cfb_form_legs(limit=8):
         legs.append({
             'sport': 'CFB', 'kind': 'line', 'tier': 'edge',
             'label': f"{side} {line:+g}", 'pick': side, 'line': round(line, 1),
-            'game': f"{a} @ {h}", 'price': -110,
+            'game': f"{a} @ {h}",
             'reason': f"this-year form projects {h} {pm:+.0f} vs the market's {mkt:+.0f} — ~{abs(edge):.0f} pts the other way",
-            'score': 50 + abs(edge)})
+            'score': 50 + abs(edge), **_unpriced_line_fields(g.get('book_source'), g.get('updated_utc'))})
     legs.sort(key=lambda x: -x['score'])
     return legs[:limit]
 
 
 def _nfl_line_legs(limit=8):
     """Clean NFL game-line + total legs for the card engine, from the model-edge game board
-    (spread/total where our number diverges from the market). Priced -110, VOLATILE flags
-    dropped. Strongest edges first."""
+    (spread/total where our number diverges from the market). UNPRICED (line is context; see
+    UNPRICED_LEG_NOTE), VOLATILE flags dropped. Strongest edges first."""
     out = []
     try:
         board = build_nfl_game_board_context().get('board', [])
@@ -32948,8 +33106,9 @@ def _nfl_line_legs(limit=8):
             continue
         label = str(play).replace(str(game), '').strip() or str(play)
         out.append({'sport': 'NFL', 'kind': 'line', 'tier': 'edge', 'label': label,
-                    'game': game, 'price': -110, 'reason': r.get('why', ''),
-                    'score': 60 + (6 if r.get('tier') == 'Validated' else 0) - (r.get('rank', 10) * 0.2)})
+                    'game': game, 'reason': r.get('why', ''),
+                    'score': 60 + (6 if r.get('tier') == 'Validated' else 0) - (r.get('rank', 10) * 0.2),
+                    **_unpriced_line_fields(r.get('line_source'), r.get('updated_utc'))})
     out.sort(key=lambda x: -x['score'])
     return out[:limit]
 
@@ -32992,12 +33151,6 @@ def _mlb_hitter_rates():
     return out
 
 
-def _mlb_hit_price(rate):
-    """Estimated 'to record a hit' price for a base rate (real feed is often stale; the RATE
-    is real, the price is a confirm-at-your-book estimate)."""
-    return -210 if rate >= 0.72 else -185 if rate >= 0.68 else -160 if rate >= 0.64 else -140 if rate >= 0.60 else -125
-
-
 def _mlb_floor_legs(limit=12):
     """MLB high-floor legs for this period's games -- the top hitters by 'records a hit' rate,
     one price-estimated leg per batter, keyed by the game so cross-game dedup keeps one per
@@ -33026,16 +33179,22 @@ def _mlb_floor_legs(limit=12):
             cand = sorted([(pl, v) for (t, pl), v in rates.items() if t == tm],
                           key=lambda x: -x[1]['hit'])[:2]
             for pl, v in cand:
+                # The hit RATE is real (game logs); there is no book quote for this market, so
+                # the leg is context only -- an estimated price table was a fabricated price.
                 legs.append({'sport': 'MLB', 'kind': 'prop', 'tier': 'floor',
                              'label': f"{pl} to record a hit", 'game': gk, 'date': dt,
-                             'price': _mlb_hit_price(v['hit']), 'hit': round(v['hit'] * 100), 'sample': v['g'],
-                             'reason': f"records a hit {round(v['hit'] * 100)}% of games (2026, {v['g']}g) · est. price",
-                             'score': round(v['hit'] * 100)})
+                             'hit': round(v['hit'] * 100), 'sample': v['g'],
+                             'reason': f"records a hit {round(v['hit'] * 100)}% of games (2026, {v['g']}g)",
+                             'score': round(v['hit'] * 100),
+                             **_unpriced_line_fields(None)})
     legs.sort(key=lambda x: -x['score'])
     return legs[:limit]
 
 
 def _card_price(legs):
+    # Payout math only over verified prices -- an unpriced leg must never be priced by default.
+    if not all(_leg_is_executable(l) for l in legs):
+        raise ValueError('card contains a leg without a verified price')
     dec = 1.0
     for l in legs:
         p = l['price']
@@ -33133,8 +33292,19 @@ def _card_pools(legs='all', mlb_limit=12, cfb_limit=10, nfl_line_limit=8):
             leg = {'sport': 'NFL', 'kind': 'prop',
                    'label': f"{f['player']} {f['stat']} {f['line']:g}+",
                    'player': f['player'], 'stat_key': f.get('stat_key'), 'line': f['line'],
-                   'game': f.get('game') or f['player'], 'price': int(p), 'hit': hit,
+                   'game': f.get('game') or f['player'], 'hit': hit,
                    'sample': f.get('n')}
+            # Membership above uses the board's median price (parity with Player Check); the
+            # leg's PRICE comes only from a single-book quote. No quote -> context only.
+            _q = f.get('quote')
+            if _q:
+                leg.update(price=int(_q['price']), quote=_q, book=_q['book'],
+                           quote_at=_q['updated_utc'], quote_label=_updated_label(_q['updated_utc']),
+                           source_updated_utc=_q['updated_utc'], updated_label=_updated_label(_q['updated_utc']))
+            else:
+                leg.update(price=None, price_status='UNAVAILABLE', price_note=UNPRICED_LEG_NOTE,
+                           executable=False, line_source='No single-book quote at this line',
+                           source_updated_utc=None, updated_label=_updated_label(None))
             if tier == 'floor':
                 leg.update(tier='floor', reason=f"clears {hit}% of the time ({f['n']} g)",
                            score=hit + (f.get('edge') or 0) * 0.3)
@@ -33156,6 +33326,9 @@ def _card_pools(legs='all', mlb_limit=12, cfb_limit=10, nfl_line_limit=8):
         swings = sorted(nfl_swings + linepool, key=lambda x: -x['score'])
     floors.sort(key=lambda x: -x['score'])
     for leg in floors + swings:
+        if not _leg_is_executable(leg):
+            leg['market_pct'] = None               # no verified price -> no implied probability
+            continue
         implied = _american_implied_probability(leg.get('price'))
         leg['market_pct'] = round(implied * 100, 1) if implied is not None else None
     return floors, swings
@@ -33261,6 +33434,21 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all', pos
     if pos_f != 'all':
         pool = [l for l in pool if l.get('sport') == 'NFL' and l.get('kind') == 'prop'
                 and (l.get('pos') or '').lower() == pos_f]
+    # Executability is decided ONCE here (one clock) and carried to the template: a non-executable
+    # leg renders as context -- no price, implied %, or slip control -- with the reason it abstains.
+    _now = datetime.now(timezone.utc)
+    for l in pool:
+        _why = _leg_quote_failures(l, _now)
+        l['executable_now'] = not _why
+        if _why and l.get('quote'):
+            l['price_note'] = 'Quote not current — ' + ', '.join(c.lower().replace('_', ' ') for c in _why)
+            l['line_source'] = l['quote'].get('book') or UNRECORDED_SOURCE
+            l['updated_label'] = _updated_label(l['quote'].get('updated_utc'))
+        elif _why:
+            l.setdefault('price_note', UNPRICED_LEG_NOTE)
+            l.setdefault('line_source', UNRECORDED_SOURCE)
+        if _why:
+            l['updated_label'] = l.get('updated_label') or _updated_label(None)
     # group by game, floors first within each
     _rank = {'floor': 0, 'edge': 1, 'swing': 2}
     games = {}
@@ -33270,13 +33458,15 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all', pos
         gd['legs'].append(l)
     out = []
     for g, gd in games.items():
-        gd['legs'].sort(key=lambda x: (_rank.get(x.get('tier'), 3), -x.get('score', 0)))
+        # Verified-price legs first; unpriced team lines trail as context and never set the order.
+        gd['legs'].sort(key=lambda x: (not x['executable_now'], _rank.get(x.get('tier'), 3), -x.get('score', 0)))
         gd['sports'] = sorted({(l.get('sport') or '') for l in gd['legs']})
         gd['n_floor'] = sum(1 for l in gd['legs'] if l.get('tier') == 'floor')
         out.append(gd)
     out.sort(key=lambda gd: (gd['date'] or '9999-99-99',
-                             -max((l.get('score', 0) for l in gd['legs']), default=0)))
+                             -max((l.get('score', 0) for l in gd['legs'] if l['executable_now']), default=0)))
     return {'available': bool(out), 'games': out, 'window': tf,
+            'n_executable': sum(1 for gd in out for l in gd['legs'] if l['executable_now']),
             'filters': {'legs': legs if legs in ('all', 'props', 'lines') else 'all',
                         'timeframe': tf_req, 'sport': sport_f, 'tier': tier_f, 'pos': pos_f},
             'positions': menu_positions,
@@ -33296,6 +33486,24 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
     risk = risk if risk in _SWINGS_BY_RISK else 'balanced'
     legs = legs if legs in ('all', 'props', 'lines') else 'all'
     floors, swings = _card_pools(legs)
+    # A card is a ticket: only legs with a verified price may sit on one, be priced, or be offered
+    # as a swap. Unpriced team lines are returned separately as context (line + source, no price).
+    context_lines, _cseen = [], set()
+    for l in floors + swings:
+        k = (l.get('sport'), l.get('label'), l.get('game'))
+        if not _leg_is_executable(l) and k not in _cseen:
+            _cseen.add(k)
+            ctx = {f: l.get(f) for f in ('sport', 'kind', 'label', 'game', 'line', 'reason',
+                                          'hit', 'sample', 'price_note', 'line_source', 'updated_label')}
+            if l.get('quote'):                      # stale/incomplete quote: name its book + time
+                ctx['line_source'] = l['quote'].get('book') or UNRECORDED_SOURCE
+                ctx['updated_label'] = _updated_label(l['quote'].get('updated_utc'))
+                ctx['price_note'] = 'Quote not current — ' + ', '.join(
+                    c.lower().replace('_', ' ') for c in _leg_quote_failures(l))
+            ctx['updated_label'] = ctx.get('updated_label') or _updated_label(None)
+            context_lines.append(ctx)
+    floors = [l for l in floors if _leg_is_executable(l)]
+    swings = [l for l in swings if _leg_is_executable(l)]
 
     # --- timeframe filter: keep legs whose game is in the window (undated legs kept). 'smart'
     # = the weekend card on Fri-Sun, the full week otherwise. Falls back to 'week' if the
@@ -33353,10 +33561,12 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
             continue
         seen.add(key)
         bench.append({k: l.get(k) for k in ('sport', 'kind', 'tier', 'label', 'game', 'price',
-                                             'reason', 'hit', 'sample', 'market_pct')})
+                                             'reason', 'hit', 'sample', 'market_pct', 'book', 'quote_at',
+                                             'quote_label')})
         if len(bench) >= 60:
             break
     return {'available': bool(cards), 'cards': cards, 'bench': bench,
+            'context_lines': context_lines[:20],
             'prefs': {'sizes': sorted(set(sizes)), 'risk': risk, 'legs': legs, 'timeframe': tf_req},
             'window': tf,
             'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
@@ -34034,21 +34244,24 @@ def daily_card_image():
     if request.method == 'POST':
         payload = request.get_json(silent=True) or {}
         raw = payload.get('legs') or []
+        # Never price what the browser sends: each leg is re-resolved against the server's current
+        # pool and kept only if it is executable there (verified, fresh single-book quote); the
+        # price is the server's quote price, not the client's number.
+        _f, _s = _card_pools('all')
+        live = {(l.get('sport'), l.get('label'), l.get('game')): l for l in _f + _s if _leg_is_executable(l)}
         legs = []
         for l in raw[:8]:
             if not isinstance(l, dict) or not l.get('label'):
                 continue
-            try:
-                p = int(l.get('price'))
-            except (TypeError, ValueError):
+            srv = live.get((l.get('sport'), l.get('label'), l.get('game')))
+            if srv is None:
                 continue
-            if abs(p) < 100:
-                continue
-            legs.append({'label': str(l.get('label'))[:60], 'price': p,
-                         'tier': 'floor' if l.get('tier') == 'floor' else 'swing',
-                         'sport': str(l.get('sport') or '')[:4],
-                         'game': str(l.get('game') or '')[:40],
-                         'reason': str(l.get('reason') or '')[:110]})
+            legs.append({'label': str(srv['label'])[:60], 'price': int(srv['price']),
+                         'quote': srv['quote'], 'line': srv.get('line'),
+                         'tier': 'floor' if srv.get('tier') == 'floor' else 'swing',
+                         'sport': str(srv.get('sport') or '')[:4],
+                         'game': str(srv.get('game') or '')[:40],
+                         'reason': str(srv.get('reason') or '')[:110]})
         if len(legs) < 3:
             abort(400)
         am, dec, pay = _card_price(legs)
@@ -45898,6 +46111,13 @@ def build_signal_report_context():
     except (OSError, ValueError):
         pass
     totals = data.get('totals', {})
+    # Legacy guard: a summary written before the 2026-11-01 fix priced CFB ATS ROI at an assumed
+    # -110. Without the grader's price_basis marker its ROI is unverified -> withheld, and labelled.
+    legacy_price = bool(data.get('by_sport_kind')) and data.get('price_basis') != 'captured_price_only'
+    if legacy_price:
+        data = dict(data)
+        for key in ('by_sport_kind', 'by_sport_kind_stat'):
+            data[key] = [dict(c, roi=None, priced=0, roi_legacy=True) for c in data.get(key, [])]
     examples = []
     if totals.get('resolved'):
         try:
@@ -45914,7 +46134,8 @@ def build_signal_report_context():
     return {'sr_totals': totals, 'sr_cohorts': data.get('by_sport_kind', []),
             'sr_bystat': data.get('by_sport_kind_stat', []), 'sr_examples': examples,
             'sr_min_sample': data.get('min_sample', 20), 'sr_note': data.get('note', ''),
-            'sr_available': bool(totals), 'sr_has_resolved': bool(totals.get('resolved'))}
+            'sr_available': bool(totals), 'sr_has_resolved': bool(totals.get('resolved')),
+            'sr_legacy_price': legacy_price}
 
 
 @app.route('/tools/signal-report')
@@ -47803,7 +48024,8 @@ def build_nfl_game_board_context():
                             'why': f"model margin {pm:+g} vs {'%+g' % float(sp)} (home), edge {edge:+g}"
                                    + (f", {qb} out" if qb else '')
                                    + (f" · {kn} (shop the ½ pt)" if kn and kn.startswith('KEY') else ''),
-                            'flag': 'VOLATILE' if big else ''})
+                            'flag': 'VOLATILE' if big else '', 'line_source': g.get('book_source'),
+                            'updated_utc': g.get('updated_utc')})
             except Exception:
                 pass
             # --- total ---
@@ -47827,7 +48049,8 @@ def build_nfl_game_board_context():
                     cands.append({'base': base, 'market': 'Total', 'tier': tier,
                                   'play': f"{aa} @ {ha} {side} {'%g' % float(tot)}",
                                   'game': game, 'why': why,
-                                  'flag': 'WIND' if (wind >= 15 and side == 'UNDER') else ''})
+                                  'flag': 'WIND' if (wind >= 15 and side == 'UNDER') else '',
+                                  'line_source': g.get('book_source'), 'updated_utc': g.get('updated_utc')})
             except Exception:
                 pass
     except Exception:

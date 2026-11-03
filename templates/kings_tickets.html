@@ -40,13 +40,15 @@
 
 {% if not available %}
   <div class="bkn-empty">
+    {% if context_lines %}<b>No fresh executable prices available.</b> No card is built from a stale or incomplete price; the analysis below is context only &mdash; worth examining, not a bet to place.{% else %}
     <b>No active ticket yet.</b> Nothing is fabricated — there's simply no slate to build from with these
     settings right now. Try <b>Everything</b> for the source or widen the <b>Legs</b>, or start one from
     <a href="/tools/green-light">Green Light</a>, <a href="/tools/menu">The Menu</a>, or
-    <a href="/tools/daily-card">Today's Cards</a>. Tickets fill in as this slate's props and lines load.
+    <a href="/tools/daily-card">Today's Cards</a>. Tickets fill in as this slate's props and lines load.{% endif %}
   </div>
 {% else %}
   {% include "_ticket_editor.html" %}
 {% endif %}
+{% include "_unpriced_context_lines.html" %}
 </div>
 {% endblock %}

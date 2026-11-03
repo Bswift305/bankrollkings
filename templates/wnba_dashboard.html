@@ -295,7 +295,7 @@ py fetch_wnba_player_props.py --days 5</pre>
                             </span>
                         </div>
                         {% endif %}
-                        <div style="font-size: 11px; color: var(--text-muted);">{{ prop.book or 'DraftKings' }}</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">{{ prop.book or 'Unrecorded source' }}</div>
                     </td>
                     <td>
                         <a href="/sports/wnba/matchup/{{ prop.matchup_slug }}?postseason={{ 1 if postseason_only else 0 }}">{{ prop.matchup }}</a>

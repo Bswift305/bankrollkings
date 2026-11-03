@@ -31,7 +31,7 @@ def _prosp_leg(**kw):
         'user_reviewed_before_bet': 'yes', 'surfaces_known': True, 'surfaces': [],
         'sport': 'NFL', 'game': 'KC@BUF 2099-12-31', 'event_start': '2099-12-31T18:00:00Z',
         'player': 'P. Mahomes', 'market': 'passing yards', 'selection': 'over', 'line': 274.5,
-        'quote_scope': 'individual-leg', 'price': -110, 'book': 'DK',
+        'quote_scope': 'individual-leg', 'price': -110, 'book': 'DK',  # synthetic-fixture
         'decision_time': '2099-12-30T12:00:00Z', 'reason_tags': ['matchup'],
     }
     leg.update(kw)
@@ -44,7 +44,7 @@ def _past_leg(**kw):
         'user_reviewed_before_bet': 'unknown', 'surfaces_known': True, 'surfaces': [],
         'sport': 'NFL', 'game': 'OLD GAME', 'event_start': '2000-01-01T00:00:00Z',
         'market': 'spread', 'selection': 'KC -3.5', 'line': -3.5,
-        'quote_scope': 'individual-leg', 'price': -110, 'reason_tags': ['other'],
+        'quote_scope': 'individual-leg', 'price': -110, 'reason_tags': ['other'],  # synthetic-fixture
     }
     leg.update(kw)
     return leg
@@ -407,7 +407,7 @@ def qc_dj_migration():
     repo = _repo()
     bets = [
         # ambiguous old record (no bet_type, no legs) -> MUST become legacy_flat (zero legs), not a straight
-        {'id': 'b1', 'sport': 'NFL', 'description': 'KC -3', 'selection': 'KC -3', 'odds': -110,
+        {'id': 'b1', 'sport': 'NFL', 'description': 'KC -3', 'selection': 'KC -3', 'odds': -110,  # synthetic-fixture
          'stake': 100, 'result': 'win', 'placed': '2026-10-01', 'book': 'DK'},
         # explicitly a parlay
         {'id': 'b2', 'sport': 'NFL', 'description': '3-leg parlay', 'result': 'loss', 'stake': 50,

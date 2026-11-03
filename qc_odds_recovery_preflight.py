@@ -13,7 +13,7 @@ from services.odds_quota import QuotaRecorder, odds_credit_cost
 def _good_lines(n=4, ts="2026-10-26T12:00:00Z"):
     return pd.DataFrame([{
         "Away": f"Away{i}", "Home": f"Home{i}", "Spread": -2.5 - i, "Total": 44.5 + i,
-        "SpreadOdds": -110, "OverOdds": -110, "UnderOdds": -110, "AwayML": 120, "HomeML": -140,
+        "SpreadOdds": -110, "OverOdds": -110, "UnderOdds": -110, "AwayML": 120, "HomeML": -140,  # synthetic-fixture
         "GameID": f"G{i}", "Book": "DraftKings", "LastUpdated": ts,
     } for i in range(n)])
 
@@ -87,7 +87,7 @@ def run_qc():
     # ---------- props spec: alternate lines allowed, bad values rejected ----------
     alt = pd.DataFrame([
         {"Player": "A. Smith", "Stat": "Receiving Yards", "Book": "DK", "Line": 49.5,
-         "OverOdds": -110, "UnderOdds": -110, "LastUpdated": "2026-10-26T12:00:00Z"},
+         "OverOdds": -110, "UnderOdds": -110, "LastUpdated": "2026-10-26T12:00:00Z"},  # synthetic-fixture
         {"Player": "A. Smith", "Stat": "Receiving Yards", "Book": "DK", "Line": 59.5,   # alt line, same key
          "OverOdds": 120, "UnderOdds": -140, "LastUpdated": "2026-10-26T12:00:00Z"},
     ])

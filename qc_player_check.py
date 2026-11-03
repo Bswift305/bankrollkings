@@ -32,7 +32,7 @@ def _fixtures():
            "menu_candidate_tier(85, -120) should be an INCLUDED floor")
     expect(ni.menu_candidate_tier(60, 130) == ("swing", R.INCLUDED),
            "menu_candidate_tier(60, +130) should be an INCLUDED swing")
-    expect(ni.menu_candidate_tier(60, -110) == (None, R.NOT_FLOOR_OR_SWING),
+    expect(ni.menu_candidate_tier(60, -110) == (None, R.NOT_FLOOR_OR_SWING),  # synthetic-fixture
            "menu_candidate_tier(60, -110) should be NOT_FLOOR_OR_SWING")
     expect(ni.floor_market_verdict(90, 3, min_hit=78, min_games=8) == (False, R.INSUFFICIENT_SAMPLE),
            "floor_market_verdict with n<min_games should be INSUFFICIENT_SAMPLE")

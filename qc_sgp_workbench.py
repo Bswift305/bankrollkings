@@ -17,7 +17,7 @@ def _leg(**k):
     k.setdefault('direction', 'OVER')
     k.setdefault('stat', 'Pass Yards')
     k.setdefault('line', 250.5)
-    k.setdefault('price', -110)
+    k.setdefault('price', -110)  # synthetic-fixture
     k.setdefault('book', 'BookA')
     k.setdefault('timestamp', '2026-01-01 00:00')
     k.setdefault('tz', 't')
@@ -33,10 +33,10 @@ def _fixture_menu(away, home):
     (so switching games drops a prior game's selections)."""
     hb = str(home).split()[-1].upper()[:3]
     raw = [
-        _leg(player='QB1', team='AAA', position='QB', category='QB', stat='Pass Yards', direction='OVER', line=250.5, price=-110),
+        _leg(player='QB1', team='AAA', position='QB', category='QB', stat='Pass Yards', direction='OVER', line=250.5, price=-110),  # synthetic-fixture
         _leg(player='QB1', team='AAA', position='QB', category='QB', stat='Pass Yards', direction='UNDER', line=250.5, price=None),
         _leg(player='WR1', team='AAA', category='Receiving', stat='Rec Yards', direction='OVER', line=70.5, price=-115),
-        _leg(player='WR2', team='AAA', category='Receiving', stat='Rec Yards', direction='OVER', line=55.5, price=-110),
+        _leg(player='WR2', team='AAA', category='Receiving', stat='Rec Yards', direction='OVER', line=55.5, price=-110),  # synthetic-fixture
         _leg(kind='game', category='Game Line', player=None, team=None, stat='Game Total', direction='OVER', line=47.5, price=-108),
         _leg(kind='game', category='Game Line', player=None, team=None, stat='Game Total', direction='UNDER', line=47.5, price=-112),
         _leg(kind='team_total', category='Team Total', player=None, team='AAA', stat='Team Total', direction='OVER', line=27.5, price=None),
