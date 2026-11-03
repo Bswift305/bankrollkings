@@ -210,6 +210,11 @@ SCORECARDS = [
     # date:AWAY@HOME identity, every module abstains (available+source, never a zeroed value), derived
     # reads labelled, deterministic order, cached route (no cold regression).
     ("NFL Matchup Center QC", "qc_nfl_matchup_center.py", 180),
+    # NFL weather/venue integrity (D1, 2026-11-03: open-air MIA rendered "indoor/calm"/"dome"): missing
+    # weather reads "Weather unavailable" on every surface (never indoor/calm/dome/0 mph), roof is a separate
+    # venue fact, forecasts join on (date, home) only, the licence gate applies on READ, unknown wind is None
+    # (never 0), and restoring the old template text fails the QC. Synthetic, offline.
+    ("NFL Weather/Venue Integrity QC", "qc_nfl_weather_venue_integrity.py", 180),
     # Shared ticket editor (King's Tickets): Today's Cards + King's Tickets render one shared
     # component from one builder; identical inputs -> identical ordered legs (the surfaces cannot drift).
     ("Shared Ticket Editor QC", "qc_ticket_editor_shared.py", 180),
