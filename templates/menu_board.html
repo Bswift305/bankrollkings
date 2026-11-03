@@ -139,6 +139,7 @@
             {% if l.hit %}<span class="mb-ev"><span class="k">Displayed history</span><span class="v">{{ l.hit }}%{% if l.sample %} across {{ l.sample }} games{% endif %}</span></span>{% endif %}
             <span class="mb-ev"><span class="k">Source</span><span class="v">{{ l.line_source }} &middot; {{ l.updated_label }}</span></span>
             <span class="mb-ev"><span class="k">Market price</span><span class="v">{{ l.price_note }}</span></span>
+            {% if l.kickoff_note %}<span class="mb-ev mb-kickoff-na"><span class="k">Kickoff</span><span class="v">{{ l.kickoff_note }}</span></span>{% endif %}
             <span class="mb-ev context"><span class="k">Why it is shown</span><span class="v">{{ l.reason }}</span></span>
           </span>
         </span>
