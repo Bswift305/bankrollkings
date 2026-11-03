@@ -6994,14 +6994,58 @@ def _football_team_scoring(sport_key):
     return out
 
 
+# --- NFL game weather: honest-unavailable contract (D1, 2026-11-03) ------------------------------
+# Missing weather is NEVER an affirmative condition. A game without a sourced forecast reads
+# NFL_WEATHER_UNAVAILABLE -- never "indoor", "calm", "dome" or 0 mph. Roof type is a SEPARATE fact
+# that may only come from a positive venue lookup (services/nfl_stadiums.py, keyed on the HOME team's
+# stadium; neutral-site/international venues are not detected) and never implies wind/calm.
+# Retractable-roof open/closed status is not sourced, so it is never asserted.
+NFL_WEATHER_UNAVAILABLE = 'Weather unavailable'
+# Bump when the shape/wording of weather-bearing cached rows changes (folded into their cache keys).
+NFL_WEATHER_CACHE_VERSION = 'wx-unavailable-v1'
+NFL_ROOF_LABELS = {
+    'outdoor': 'Open-air',
+    'dome': 'Dome (fixed roof)',
+    'retractable': 'Retractable roof (open/closed not sourced)',
+}
+
+
+def _nfl_weather_path():
+    return DATA_DIR / 'context' / 'NFL_GameWeather.csv'
+
+
+def _nfl_weather_licensed():
+    """Licence gate, applied on READ (resolved at call time, so tests can flip it). While off, no
+    stored Open-Meteo-derived wind is served -- a stale pre-gate file is never shown as current."""
+    return bool(globals().get('BK_WEATHER_SOURCE_LICENSED', False))
+
+
+def _nfl_weather_signature():
+    """Process-stable cache-key component for anything that caches weather-bearing rows: the
+    contract version, the licence-gate state and the weather file's token."""
+    return (NFL_WEATHER_CACHE_VERSION, _nfl_weather_licensed(), _build_file_token(_nfl_weather_path()))
+
+
+def _wx_date_key(value):
+    """Normalize a game/forecast date to 'YYYY-MM-DD' (both sides are Eastern calendar dates)."""
+    text = str(value or '').strip()
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', text[:10] or ''):
+        return text[:10]
+    parsed = pd.to_datetime(text, errors='coerce')
+    return '' if pd.isna(parsed) else parsed.strftime('%Y-%m-%d')
+
+
 def _nfl_game_wind_map():
-    """{(date, home_lower): wind_mph} from NFL_GameWeather.csv (upcoming outdoor games).
+    """{(date, home_lower): {'wind', 'gust'}} from NFL_GameWeather.csv (upcoming outdoor games).
 
     Wind is the one football totals signal the market underprices (backtested: outdoor
     15+ mph -> UNDER ~55%, +5% ROI out of sample), and it is a timing signal because
-    game-week forecasts update. Only outdoor stadiums are in the file.
+    game-week forecasts update. Only outdoor stadiums are in the file. Returns {} while the
+    weather-source licence gate is off (gate on read), so every surface shows unavailable.
     """
-    df = _load_cached_csv(DATA_DIR / 'context' / 'NFL_GameWeather.csv')
+    if not _nfl_weather_licensed():
+        return {}
+    df = _load_cached_csv(_nfl_weather_path())
     if df is None or df.empty or not {'Date', 'HomeTeam', 'WindMph'}.issubset(df.columns):
         return {}
     df = df.copy()
@@ -7009,13 +7053,52 @@ def _nfl_game_wind_map():
     gusts = pd.to_numeric(df['GustMph'], errors='coerce') if 'GustMph' in df.columns else None
     wind_map = {}
     for idx, row in df.iterrows():
-        date = str(row['Date']).strip()
+        date = _wx_date_key(row['Date'])
         home = str(row['HomeTeam']).strip().lower()
         wind = row['WindMph']
-        if date and home and pd.notna(wind):
+        if date and home and home != 'nan' and pd.notna(wind):
             gust = float(gusts[idx]) if gusts is not None and pd.notna(gusts[idx]) else None
             wind_map[(date, home)] = {'wind': float(wind), 'gust': gust}
     return wind_map
+
+
+def nfl_game_wind(wind_map, date, home):
+    """The forecast for exactly THIS game -- an (Eastern date, home team) join, never home-only, so a
+    weeks-old row for the same home team can never attach to a different game. Returns the wind
+    entry dict or None. None means UNKNOWN (never 0 mph, never calm)."""
+    if not wind_map:
+        return None
+    key = (_wx_date_key(date), str(home or '').strip().lower())
+    if not key[0] or not key[1]:
+        return None
+    return wind_map.get(key)
+
+
+def nfl_venue_roof(home):
+    """Roof type from a POSITIVE venue lookup of the home team's stadium, or None when unknown.
+    A separate fact from weather: a roof never implies wind or calm."""
+    try:
+        from services.nfl_stadiums import NFL_STADIUMS
+    except Exception:
+        return None
+    info = NFL_STADIUMS.get(str(home or '').strip())
+    return info[2] if info else None
+
+
+def nfl_weather_fields(wind_map, date, home):
+    """Shared weather + roof fields for a game row. wind is None when unknown (never 0);
+    weather_label reads NFL_WEATHER_UNAVAILABLE unless a forecast is on file."""
+    w = nfl_game_wind(wind_map, date, home)
+    wind = int(round(w['wind'])) if w else None
+    roof = nfl_venue_roof(home)
+    return {
+        'wind': wind,
+        'high_wind': bool(w and w['wind'] >= 15),
+        'weather_available': bool(w),
+        'weather_label': (f"{wind} mph wind" if w else NFL_WEATHER_UNAVAILABLE),
+        'roof': roof,
+        'roof_label': NFL_ROOF_LABELS.get(roof) if roof else None,
+    }
 
 
 def build_nfl_injury_changes(limit=15):
@@ -7120,7 +7203,7 @@ def build_football_preseason_markets(sport_key):
         wind_map = _nfl_game_wind_map()
         if wind_map:
             for row in game_totals:
-                wind = wind_map.get((str(row.get('date') or '').strip(), str(row.get('home') or '').strip().lower()))
+                wind = nfl_game_wind(wind_map, row.get('date'), row.get('home'))  # (date, home) join
                 if wind:
                     row['wind_mph'] = int(round(wind['wind']))
                     row['high_wind'] = wind['wind'] >= 15
@@ -34103,8 +34186,8 @@ def build_football_home_slate(sport_key='nfl'):
     """This week's UPCOMING games for the home-page quick-glance slate: matchup (abbrev),
     home spread, total, and wind with the high-wind UNDER flag. Only games from today
     (Eastern) forward -- a finished game shouldn't sit in 'today's slate' -- and only this
-    week, so it never balloons to a multi-week list. NFL pulls wind from NFL_GameWeather;
-    CFB shows lines only for now."""
+    week, so it never balloons to a multi-week list. NFL pulls wind from NFL_GameWeather
+    (date+home join, licence-gated); CFB has no wind source here and reads 'Weather unavailable'."""
     sk = str(sport_key or 'nfl').strip().lower()
     is_cfb = sk in ('cfb', 'ncaaf')
     try:
@@ -34118,15 +34201,15 @@ def build_football_home_slate(sport_key='nfl'):
         games = build_football_live_games(odds, sched, date_filter='all')
     except Exception:
         return []
-    wind_home = {}
+    # NFL: (date, home) join via the licence-gated wind map -- never a home-only join, never a
+    # default of 0. CFB has no sourced wind for this slate, so every CFB row is explicitly
+    # unavailable (and no NFL venue lookup is applied to college teams).
+    wind_map = {}
     if not is_cfb:
         try:
-            wx = _load_cached_csv(DATA_DIR / 'context' / 'NFL_GameWeather.csv')
-            for hm, w in zip(wx['HomeTeam'], pd.to_numeric(wx['WindMph'], errors='coerce')):
-                if pd.notna(w):
-                    wind_home[str(hm)] = int(round(float(w)))
+            wind_map = _nfl_game_wind_map() or {}
         except Exception:
-            pass
+            wind_map = {}
     full2abbr = {v: k for k, v in NFL_ABBR_TO_FULL.items()} if not is_cfb else {}
     today = sports_today_date()
     rows = []
@@ -34134,7 +34217,11 @@ def build_football_home_slate(sport_key='nfl'):
         if g.get('spread') is None and g.get('total') is None:
             continue
         a, h = g.get('away'), g.get('home')
-        wind = wind_home.get(h)
+        if is_cfb:
+            wx = {'wind': None, 'high_wind': False, 'weather_available': False,
+                  'weather_label': NFL_WEATHER_UNAVAILABLE, 'roof': None, 'roof_label': None}
+        else:
+            wx = nfl_weather_fields(wind_map, g.get('date'), h)
         try:
             gd = pd.to_datetime(g.get('date'), errors='coerce')
             d = gd.date() if pd.notna(gd) else None
@@ -34144,7 +34231,7 @@ def build_football_home_slate(sport_key='nfl'):
             'away': a, 'home': h,
             'away_abbr': full2abbr.get(a, a), 'home_abbr': full2abbr.get(h, h),
             'spread': g.get('spread'), 'total': g.get('total'),
-            'wind': wind, 'high_wind': bool(wind and wind >= 15),
+            **wx,
             'key': (nfl_key_number(g.get('spread')) if not is_cfb else None),
             '_d': d,
         })
@@ -46225,7 +46312,10 @@ _CFB_WX_CACHE = {}
 
 def _cfb_weather(away, home):
     """Kickoff weather for a CFB game (cfb_weather.json), matched by team names.
-    Returns a dict only when it's worth surfacing (windy, rain, or a dome)."""
+    Returns a dict only when it's worth surfacing (windy, rain, or a dome). The file is
+    Open-Meteo-derived, so it is withheld entirely while the licence gate is off (gate on read)."""
+    if not _nfl_weather_licensed():
+        return None
     path = bk_runtime.scenario_read_path('cfb_weather.json')
     try:
         mtime = os.path.getmtime(path)
@@ -46893,7 +46983,7 @@ def build_cfb_board_context():
     scen = os.path.join(BASE_DIR, 'data', 'scenarios')
     watch = [bk_runtime.scenario_read_path(f) for f in ('cfb_2026_results.json', 'cfb_line_moves.json',
                                                         'cfb_weather.json', 'cfb_power.json')]
-    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch)
+    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch) + (_nfl_weather_licensed(),)
     if _CFB_BOARD_CACHE.get('sig') == sig:
         return _CFB_BOARD_CACHE['data']
     _cff.clear_cache()
@@ -46908,7 +46998,9 @@ def build_cfb_board_context():
              if not g.get('completed') and g.get('spread_now') is not None]
     wk = min((g['week'] for g in moves), default=None)
     moves = [g for g in moves if g['week'] == wk] if wk is not None else []
-    wx = {(g['home'], g['away']): g for g in _j(watch[2]).get('games', [])}
+    # Open-Meteo-derived: withheld entirely while the weather licence gate is off (gate on read).
+    wx = ({(g['home'], g['away']): g for g in _j(watch[2]).get('games', [])}
+          if _nfl_weather_licensed() else {})
     fbs = _cff._fbs_teams()
     cands = []
     for g in moves:
@@ -47657,7 +47749,7 @@ def build_nfl_board_context():
     watch = [_nfl_scenario_path('nfl_scores.json'),
              DATA_DIR / 'props' / 'NFL_Props.csv', DATA_DIR / 'odds' / 'NFL_Odds.csv',
              DATA_DIR / 'context' / 'NFL_GameWeather.csv']
-    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch)
+    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch) + (_nfl_weather_signature(),)
     if _NFL_BOARD_CACHE.get('sig') == sig:
         return _NFL_BOARD_CACHE['data']
     _nt.clear_cache()
@@ -47676,10 +47768,9 @@ def build_nfl_board_context():
         for hh, aa2, hs, as_ in sc.get('games', []):
             act[hh].append(hs); act[aa2].append(as_)
         try:
-            wx = _load_cached_csv(DATA_DIR / 'context' / 'NFL_GameWeather.csv')
-            wind_home = dict(zip(wx['HomeTeam'], wx['WindMph']))
+            wind_map = _nfl_game_wind_map() or {}
         except Exception:
-            wind_home = {}
+            wind_map = {}
         odds = load_nfl_game_market_odds()
         for g in build_football_live_games(odds, load_nfl_schedule(), date_filter='week'):
             a, h = g.get('away'), g.get('home')
@@ -47691,7 +47782,10 @@ def build_nfl_board_context():
             if not tr or tr.get('lean') not in ('OVER', 'UNDER', 'UNDER (QB out)'):
                 continue
             edge = abs(tr.get('edge') or 0)
-            wind = wind_home.get(h, 0) or 0
+            # (date, home) join; None = UNKNOWN wind (never 0 / calm) -> no wind tier, no wind tag.
+            wx = nfl_weather_fields(wind_map, g.get('date'), h)
+            wind = wx['wind']
+            windy = wind is not None and wind >= 15
             div = 0
             if act.get(aa) and act.get(ha):
                 div = max(abs(off.get(aa, lp) - sum(act[aa]) / len(act[aa])),
@@ -47699,19 +47793,23 @@ def build_nfl_board_context():
             side = 'UNDER' if 'UNDER' in tr['lean'] else 'OVER'
             if 'QB out' in tr['lean']:
                 tier, base = 'Situational', 24 + edge
-            elif wind >= 15 and side == 'UNDER':
+            elif windy and side == 'UNDER':
                 tier, base = 'Backtest ~55% (not yet governed)', 36 + (wind - 15)
             else:
                 tier, base = 'Model', 18 + min(edge, 6)
             base -= max(0, div - 6) * 1.5  # penalize a projection that fights actual scoring (LV@NO)
             why = f"model {tr['proj_total']} vs {'%g' % float(tot)}"
-            if wind >= 15:
+            if windy:
                 why += f", wind {'%g' % wind}"
+            elif wind is None:
+                why += f", {NFL_WEATHER_UNAVAILABLE}"
             if 'QB out' in tr['lean']:
                 why += ", QB out"
             cands.append({'base': base, 'market': 'Total', 'tier': tier,
                           'play': f"{aa} @ {ha} {side} {'%g' % float(tot)}",
                           'matchup': '', 'game': f"{aa} @ {ha}", 'why': why, 'flag': '',
+                          'wind': wind, 'weather_label': wx['weather_label'],
+                          'roof': wx['roof'], 'roof_label': wx['roof_label'],
                           'kick': g.get('date') or g.get('kickoff') or g.get('time') or ''})
     except Exception:
         pass
@@ -47749,7 +47847,7 @@ def build_nfl_game_board_context():
     watch = [_nfl_scenario_path('nfl_scores.json'),
              DATA_DIR / 'odds' / 'NFL_Odds.csv',
              DATA_DIR / 'context' / 'NFL_GameWeather.csv']
-    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch)
+    sig = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in watch) + (_nfl_weather_signature(),)
     if _NFL_GAME_BOARD_CACHE.get('sig') == sig:
         return _NFL_GAME_BOARD_CACHE['data']
     _nt.clear_cache()
@@ -47769,10 +47867,9 @@ def build_nfl_game_board_context():
                     d = max(d, abs(off.get(t, lp) - sum(act[t]) / len(act[t])))
             return d
         try:
-            wx = _load_cached_csv(DATA_DIR / 'context' / 'NFL_GameWeather.csv')
-            wind_home = dict(zip(wx['HomeTeam'], wx['WindMph']))
+            wind_map = _nfl_game_wind_map() or {}
         except Exception:
-            wind_home = {}
+            wind_map = {}
         odds = load_nfl_game_market_odds()
         for g in build_football_live_games(odds, load_nfl_schedule(), date_filter='week'):
             a, h, sp, tot = g.get('away'), g.get('home'), g.get('spread'), g.get('total')
@@ -47781,7 +47878,10 @@ def build_nfl_game_board_context():
             aa, ha = _ncf.resolve(a), _ncf.resolve(h)
             game = f"{aa} @ {ha}"
             div = _div(aa, ha)
-            wind = wind_home.get(h, 0) or 0
+            # (date, home) join; None = UNKNOWN wind (never 0 / calm) -> no wind tier, tag or flag.
+            wx = nfl_weather_fields(wind_map, g.get('date'), h)
+            wind = wx['wind']
+            windy = wind is not None and wind >= 15
             # --- spread ---
             try:
                 pm = _nt.projected_margin(aa, ha)  # projected HOME margin (QB-out already in it)
@@ -47814,20 +47914,24 @@ def build_nfl_game_board_context():
                     side = 'UNDER' if 'UNDER' in tr['lean'] else 'OVER'
                     if 'QB out' in tr['lean']:
                         tier, base = 'Situational', 24 + edge
-                    elif wind >= 15 and side == 'UNDER':
+                    elif windy and side == 'UNDER':
                         tier, base = 'Validated', 36 + (wind - 15)
                     else:
                         tier, base = 'Model', 18 + min(edge, 6)
                     base -= max(0, div - 6) * 1.5
                     why = f"model {tr['proj_total']} vs {'%g' % float(tot)}"
-                    if wind >= 15:
+                    if windy:
                         why += f", wind {'%g' % wind}"
+                    elif wind is None:
+                        why += f", {NFL_WEATHER_UNAVAILABLE}"
                     if 'QB out' in tr['lean']:
                         why += ", QB out"
                     cands.append({'base': base, 'market': 'Total', 'tier': tier,
                                   'play': f"{aa} @ {ha} {side} {'%g' % float(tot)}",
                                   'game': game, 'why': why,
-                                  'flag': 'WIND' if (wind >= 15 and side == 'UNDER') else ''})
+                                  'wind': wind, 'weather_label': wx['weather_label'],
+                                  'roof': wx['roof'], 'roof_label': wx['roof_label'],
+                                  'flag': 'WIND' if (windy and side == 'UNDER') else ''})
             except Exception:
                 pass
     except Exception:
@@ -49617,8 +49721,9 @@ def build_nfl_totals_board_context(date_filter='week', band='all'):
         ao = (ou.get(away) or {}).get('over_rate')
         ho = (ou.get(home) or {}).get('over_rate')
         combined = ((ao + ho) / 2) if (ao is not None and ho is not None) else None
-        w = wind.get((str(g.get('date')), str(home).strip().lower()))
-        high_wind = bool(w and w['wind'] >= 15)
+        # (date, home) join, licence-gated; None = unknown wind -> 'Weather unavailable', never dome/0.
+        wx = nfl_weather_fields(wind, g.get('date'), home)
+        high_wind = wx['high_wind']
         fh = _match_first_half(fh_rows, g.get('date'), away, home)
         read = ''
         if high_wind:
@@ -49631,7 +49736,8 @@ def build_nfl_totals_board_context(date_filter='week', band='all'):
             'total_1h': (fh.get('th1') if fh else ''),
             'away_over': (round(ao * 100) if ao is not None else None), 'away_ou': (ou.get(away) or {}).get('record_label'),
             'home_over': (round(ho * 100) if ho is not None else None), 'home_ou': (ou.get(home) or {}).get('record_label'),
-            'wind': (round(w['wind']) if w else None), 'high_wind': high_wind,
+            'wind': wx['wind'], 'high_wind': high_wind,
+            'weather_label': wx['weather_label'], 'roof': wx['roof'], 'roof_label': wx['roof_label'],
             'read': read,
         })
     rows.sort(key=lambda r: (0 if r['read'] == 'wind_under' else 1, -r['total']))
@@ -49728,7 +49834,7 @@ def build_nfl_matchup_center_context():
     odds_path = DATA_DIR / 'odds' / 'NFL_Odds.csv'
     inj_path = DATA_DIR / 'injuries' / 'NFL_Injuries.csv'
     sig = (_build_file_token(odds_path, inj_path), _nfl_player_log_signature(),
-           str(sports_today_date()))
+           str(sports_today_date()), _nfl_weather_signature())
     _dkey = 'nfl_matchup_center'
     if _NFL_MATCHUP_CENTER_CACHE.get('sig') == sig and 'data' in _NFL_MATCHUP_CENTER_CACHE:
         return _NFL_MATCHUP_CENTER_CACHE['data']
@@ -49786,6 +49892,7 @@ def build_nfl_matchup_center_context():
     except Exception:
         ms_by_team = {}
     wind = _nfl_game_wind_map()
+    wx_as_of = _mtime_et(_nfl_weather_path()) if wind else ''
     try:
         ou_raw = _nfl_ou_tendencies()
         ou_by_team = {_mc_abbr(t.get('team')): t for t in ou_raw.get('teams', [])}
@@ -49809,12 +49916,14 @@ def build_nfl_matchup_center_context():
         spread = g.get('spread')
         book = str(g.get('book') or '').strip()
 
-        # weather (wind only has outdoor data; absence is unavailable, not "0 mph")
-        w = wind.get((date, home.strip().lower())) if wind else None
-        weather = _mc_mod(bool(w), source='NFL_GameWeather', as_of=odds_as_of,
-                          wind_mph=(round(w['wind']) if w else None),
-                          high_wind=bool(w and w['wind'] >= 15),
-                          note=('' if w else 'No outdoor wind forecast on file (dome or not published).'))
+        # weather: (date, home) join, licence-gated. Absence is "No forecast available" -- never
+        # "0 mph", calm or dome. Roof is a SEPARATE venue fact (home stadium lookup), never weather.
+        wx = nfl_weather_fields(wind, date, home)
+        weather = _mc_mod(wx['weather_available'], source='NFL_GameWeather',
+                          as_of=(wx_as_of if wx['weather_available'] else ''),
+                          wind_mph=wx['wind'], high_wind=wx['high_wind'],
+                          roof=wx['roof'], roof_label=wx['roof_label'],
+                          note=('' if wx['weather_available'] else 'No forecast available.'))
 
         # line movement -- identify book + captured times; label first/last CAPTURED, never open/close
         mv = None
@@ -49911,7 +50020,7 @@ def build_nfl_matchup_center_context():
         'lines_stale': _mc_lines_stale,   # wholesale-stale odds feed -> current line/total withheld (games kept)
         'module_freshness': {
             'market': odds_as_of, 'injuries': inj_as_of, 'ats_wave': wave_as_of,
-            'milestones': ms_as_of, 'weather': odds_as_of,
+            'milestones': ms_as_of, 'weather': wx_as_of,
         },
         'available': bool(rows),
     }
