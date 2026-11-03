@@ -65,6 +65,19 @@ class FeedSpec:
     # outside the contract and its rows are dropped + counted.
     line_markets: tuple = ()
     binary_markets: tuple = ()
+    # --- event-aware GAME-LINES model (opt-in; 2026-11 NBA game-lines correction) ---
+    # When True, the game-lines fetcher validates with validate_game_lines_event_slate() (event x book rows,
+    # h2h/spreads/totals quote contract) instead of the whole-file collapse test. event_id_col /
+    # event_time_col / book_col above carry the lines identity (GameID / EventCommenceAtUTC / Book).
+    lines_event_aware: bool = False
+    # LEGACY BRIDGE (first transition only): a prior file written before EventCommenceAtUTC existed carries
+    # its kickoff only as explicit Eastern wall-clock Date + Time. Used ONLY to classify prior events as
+    # started/future (DERIVED_LEGACY_KICKOFF); never written as provenance; fails closed on
+    # missing/ambiguous/nonexistent/unparseable times.
+    legacy_date_col: str = "Date"
+    legacy_time_col: str = "Time"
+    legacy_time_format: str = "%Y-%m-%d %H:%M"
+    legacy_tz: str = "America/New_York"
 
 
 def _finite_series(s):
@@ -482,6 +495,342 @@ def validate_feed_event_slate(df, spec: FeedSpec, prior_df=None, path=None, spor
     return ok, errors, receipt, (cur.reset_index(drop=True) if ok else None)
 
 
+# ---------------------------------------------------------------------------------------------------
+# Event-aware GAME-LINES contract, version game_lines_event_v1 (2026-11 NBA game-lines correction).
+# Full write-up + the F5 (NFL/NCAAF) migration path: docs/game_lines_event_contract.md.
+#
+# A game-lines file is one row per EVENT x BOOK carrying up to three markets on the row:
+#   h2h     -> AwayML + HomeML                    (both sides required)
+#   spreads -> Spread + SpreadOdds                (home-perspective point + its price)
+#   totals  -> Total (> 0) + OverOdds + UnderOdds (both sides required)
+# A price is a structurally valid American price when finite and |price| >= 100.
+#
+# FROZEN MALFORMED-ROW RULE (v1). Whole-feed REJECT (nothing published, prior bytes untouched):
+#   R1 a required column is missing (incl. GameID / EventCommenceAtUTC / Book)          STRUCTURAL_INVALID
+#   R2 any row with a blank GameID, a blank Away/Home, or a kickoff that is not
+#      canonical zero-offset UTC 'YYYY-MM-DDTHH:MM:SSZ'                                EVENT_IDENTITY_INVALID
+#   R3 one GameID carrying >1 kickoff or >1 Away@Home pairing                          EVENT_IDENTITY_INVALID
+#   R4 any non-null line/price value that is not a finite number (parser drift)        STRUCTURAL_INVALID
+#   R5 conflicting duplicate (GameID, Book) rows; unparseable LastUpdated; wrong-sport
+#      output path; a (GameID, Book) LastUpdated older than the prior's                STRUCTURAL_INVALID /
+#                                                                                       TIMESTAMP_REGRESSION
+#   R6 any provider error during the fetch                                             PROVIDER_ERROR
+#   R7 zero usable current (not-yet-started) events                                    NO_USABLE_CURRENT_EVENT
+#   R8 the prior artifact exists but is unreadable / lacks identity / its kickoff
+#      (provider UTC or DERIVED_LEGACY_KICKOFF) is missing/malformed/ambiguous/nonexistent PRIOR_BASELINE_INVALID
+#   R9 a previously published, still-future event has ZERO valid rows in the new pull EVENT_VANISHED
+# Market-level NULL (the incomplete market's fields are blanked; the row survives if another market does):
+#   M1 h2h incomplete / invalid price;  M2 spreads incomplete / invalid;  M3 totals incomplete / invalid
+# Row DROP (counted in the receipt, never published):
+#   D1 blank Book (an unattributable quote);  D2 no valid market left after M1-M3;
+#   D3 kickoff <= now (started/completed; excluded from BOTH sides -- not a malformation)
+# Coverage (never a reject in v1 -- there is NO per-event minimum): a still-future event that lost any book
+# or market vs the prior is COVERAGE_DEGRADED; a new event with fewer books than requested is
+# NEW_EVENT_SPARSE. Either makes coverage_status COVERAGE_DEGRADED (published, not "complete").
+# ---------------------------------------------------------------------------------------------------
+GAME_LINES_EVENT_CONTRACT_VERSION = "game_lines_event_v1"
+GAME_LINES_MARKETS = {
+    "h2h": ((), ("AwayML", "HomeML")),
+    "spreads": (("Spread",), ("SpreadOdds",)),
+    "totals": (("Total",), ("OverOdds", "UnderOdds")),
+}
+GAME_LINES_VALUE_COLS = ("AwayML", "HomeML", "Spread", "SpreadOdds", "Total", "OverOdds", "UnderOdds")
+AMERICAN_PRICE_MIN_ABS = 100.0
+
+
+def _num(df, c):
+    if c in df.columns:
+        return pd.to_numeric(df[c], errors="coerce").astype(float)
+    return pd.Series(np.nan, index=df.index, dtype=float)
+
+
+def _valid_american(v):
+    return v.notna() & np.isfinite(v) & (v.abs() >= AMERICAN_PRICE_MIN_ABS)
+
+
+def game_lines_market_masks(df) -> dict:
+    """{market: bool Series}: True where that market's quote on the row is COMPLETE and structurally valid
+    (rules M1-M3). Pure; used by the validator and by QC."""
+    spread, total = _num(df, "Spread"), _num(df, "Total")
+    return {
+        "h2h": _valid_american(_num(df, "AwayML")) & _valid_american(_num(df, "HomeML")),
+        "spreads": spread.notna() & np.isfinite(spread) & _valid_american(_num(df, "SpreadOdds")),
+        "totals": (total.notna() & np.isfinite(total) & (total > 0)
+                   & _valid_american(_num(df, "OverOdds")) & _valid_american(_num(df, "UnderOdds"))),
+    }
+
+
+def _blank(s):
+    v = s.astype(str).str.strip()
+    return s.isna() | v.str.lower().isin(["", "nan", "none", "<na>"])
+
+
+def _prior_kickoffs(prior_df, spec: FeedSpec):
+    """Classify-only kickoff instants for the PRIOR artifact. Returns (Series[UTC|NaT], basis, invalid
+    {code: rows}, derived_rows). A prior that carries the provider UTC column uses it (canonical Z only);
+    a LEGACY prior (no such column) derives a comparison instant from its explicit Eastern Date + Time --
+    labelled DERIVED_LEGACY_KICKOFF, never written anywhere as provenance, and failing closed on missing /
+    unparseable / ambiguous (DST fold) / nonexistent (DST gap) wall times."""
+    tc = spec.event_time_col
+    if tc in prior_df.columns:
+        k = _utc_z_series(prior_df[tc])
+        bad = int(k.isna().sum())
+        return k, "PROVIDER_UTC", ({"PRIOR_KICKOFF_NOT_CANONICAL_UTC": bad} if bad else {}), 0
+    from services.timeutils import eastern_wall_to_utc_strict, LEGACY_KICKOFF_OK, LEGACY_KICKOFF_MISSING
+    dc, tcol = spec.legacy_date_col, spec.legacy_time_col
+    invalid: dict = {}
+    if dc not in prior_df.columns or tcol not in prior_df.columns:
+        invalid[f"LEGACY_KICKOFF_{LEGACY_KICKOFF_MISSING}"] = int(len(prior_df))
+        return pd.Series(pd.NaT, index=prior_df.index, dtype="datetime64[ns, UTC]"), "DERIVED_LEGACY_KICKOFF", invalid, 0
+    memo: dict = {}
+    vals = []
+    for d, t in zip(prior_df[dc].tolist(), prior_df[tcol].tolist()):
+        key = (str(d), str(t))
+        if key not in memo:
+            memo[key] = eastern_wall_to_utc_strict(d, t, fmt=spec.legacy_time_format, tz_name=spec.legacy_tz)
+        dt, code = memo[key]
+        if code == LEGACY_KICKOFF_OK:
+            vals.append(pd.Timestamp(dt))
+        else:
+            vals.append(pd.NaT)
+            invalid[f"LEGACY_KICKOFF_{code}"] = invalid.get(f"LEGACY_KICKOFF_{code}", 0) + 1
+    k = pd.to_datetime(pd.Series(vals, index=prior_df.index), utc=True)
+    return k, "DERIVED_LEGACY_KICKOFF", invalid, int(k.notna().sum())
+
+
+def _event_sets(frame, ids, col):
+    out: dict = {}
+    if frame is None or col not in frame.columns:
+        return out
+    for e, v in zip(ids.tolist(), frame[col].tolist()):
+        sv = str(v).strip()
+        if sv and sv.lower() not in ("nan", "none"):
+            out.setdefault(e, set()).add(sv)
+    return out
+
+
+def _event_markets(frame, ids):
+    out: dict = {}
+    if frame is None or not len(frame):
+        return out
+    masks = game_lines_market_masks(frame)
+    for mkt, m in masks.items():
+        for e in ids[m.values].tolist():
+            out.setdefault(e, set()).add(mkt)
+    return out
+
+
+def validate_game_lines_event_slate(df, spec: FeedSpec, prior_df=None, path=None, sport_tokens=None,
+                                    provider_errors: int = 0, now=None, requested_books=None,
+                                    prior_unreadable: bool = False):
+    """Event-aware GAME-LINES validation (opt-in via spec.lines_event_aware). Returns
+    (ok, errors, receipt, publish_df). publish_df is the current-slate frame to publish when ok, else None.
+
+    Contract (game_lines_event_v1; see the frozen rule block above and docs/game_lines_event_contract.md):
+      * identity = GameID; authoritative kickoff = EventCommenceAtUTC (canonical Z, from provider
+        commence_time). Identity is never guessed.
+      * current/future slate only: kickoff <= now is excluded from BOTH sides and never published
+        (kickoff == now counts as started; now + 1s is eligible).
+      * a previously published still-future event with ZERO valid rows in the new pull rejects at any size.
+      * NO per-event minimum: >= 1 structurally valid current quote lets an event publish; reduced book /
+        market coverage is COVERAGE_DEGRADED in the receipt, new sparse events NEW_EVENT_SPARSE.
+      * legacy prior (no UTC column): DERIVED_LEGACY_KICKOFF from Eastern Date + Time, classify-only,
+        fail closed on missing / ambiguous / nonexistent / unparseable wall times.
+    """
+    now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
+    if now.tzinfo is None:
+        now = now.tz_localize("UTC")
+    now = now.tz_convert("UTC")
+    idc, tc, bc = spec.event_id_col, spec.event_time_col, spec.book_col
+    errors: list = []
+    receipt = {
+        "mode": "EVENT_AWARE_GAME_LINES",
+        "contract_version": GAME_LINES_EVENT_CONTRACT_VERSION,
+        "now_utc": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "kickoff_source": f"provider commence_time -> {tc} (canonical UTC 'Z')",
+        "provider_errors": int(provider_errors or 0),
+        "candidate_rows": int(len(df)) if df is not None else 0,
+        "prior_rows": int(len(prior_df)) if prior_df is not None else 0,
+        "prior_kickoff_basis": None, "derived_legacy_kickoff_rows": 0, "prior_kickoff_invalid": {},
+        "completed_events_removed": 0, "completed_rows_removed": 0,
+        "started_candidate_events": 0, "started_candidate_rows_removed": 0,
+        "identity_invalid_rows": 0, "rows_dropped_by_reason": {"blank_book": 0, "no_valid_market": 0},
+        "market_quotes_nulled_by_reason": {"h2h_incomplete": 0, "spreads_incomplete": 0, "totals_incomplete": 0},
+        "prior_active_events": 0, "overlapping_events_retained": 0, "new_events_added": 0,
+        "prior_active_events_absent": 0, "vanished_events": [],
+        "coverage_status": None, "coverage_degraded_events": [], "sparse_new_events": [],
+        "requested_book_count": len(requested_books) if requested_books else None,
+        "warnings": [], "final_published_rows": 0, "final_published_events": 0,
+        "decision": "REJECT", "reason_code": None,
+    }
+
+    def _reject(code, msg):
+        errors.append(msg)
+        if receipt["reason_code"] is None:
+            receipt["reason_code"] = code
+
+    if receipt["provider_errors"] > 0:
+        _reject("PROVIDER_ERROR", f"{receipt['provider_errors']} provider error(s) during the fetch")
+    if prior_unreadable:
+        _reject("PRIOR_BASELINE_INVALID", "the prior artifact exists but could not be read; the event "
+                "comparison cannot be skipped")
+    if df is None:
+        _reject("STRUCTURAL_INVALID", "frame is None")
+        return False, errors, receipt, None
+    missing = [c for c in dict.fromkeys(tuple(spec.required_cols) + (idc, tc, bc)) if c not in df.columns]
+    if missing:
+        for c in missing:
+            _reject("STRUCTURAL_INVALID", f"missing required column {c!r}")
+        return False, errors, receipt, None
+
+    # R2/R3 identity.
+    eid, eid_blank = _event_ids(df[idc])
+    kick = _utc_z_series(df[tc])
+    team_blank = _blank(df["Away"]) | _blank(df["Home"]) if {"Away", "Home"} <= set(df.columns) else \
+        pd.Series(False, index=df.index)
+    bad_identity = eid_blank | kick.isna() | team_blank
+    receipt["identity_invalid_rows"] = int(bad_identity.sum())
+    if receipt["identity_invalid_rows"]:
+        _reject("EVENT_IDENTITY_INVALID", f"{receipt['identity_invalid_rows']} rows have a missing/unparseable "
+                f"event identity, team, or non-canonical kickoff ({idc}/{tc}); identity is never guessed")
+    good = ~bad_identity
+    if good.any():
+        g = pd.DataFrame({"e": eid[good], "k": kick[good],
+                          "m": df.loc[good, "Away"].astype(str).str.strip() + "@" +
+                               df.loc[good, "Home"].astype(str).str.strip()})
+        multi_k = g.groupby("e")["k"].nunique()
+        multi_m = g.groupby("e")["m"].nunique()
+        bad_e = sorted(set(multi_k[multi_k > 1].index) | set(multi_m[multi_m > 1].index))
+        if bad_e:
+            _reject("EVENT_IDENTITY_INVALID", f"{len(bad_e)} event(s) carry conflicting kickoff/team identity, "
+                    f"e.g. {bad_e[:3]}")
+
+    # R4 parser drift: a non-null value that is not a finite number.
+    for c in GAME_LINES_VALUE_COLS:
+        if c in df.columns:
+            nbad = _finite_series(df[c])
+            if nbad:
+                _reject("STRUCTURAL_INVALID", f"{nbad} non-finite/non-numeric values in {c!r}")
+
+    # M1-M3 market-level null; D1/D2 row drop; D3 started exclusion.
+    work = df.copy()
+    masks = game_lines_market_masks(work)
+    for mkt, (pts, prices) in GAME_LINES_MARKETS.items():
+        cols = [c for c in pts + prices if c in work.columns]
+        if not cols:
+            continue
+        present = work[cols].notna().any(axis=1)
+        receipt["market_quotes_nulled_by_reason"][f"{mkt}_incomplete"] = int((good & present & ~masks[mkt]).sum())
+        for c in cols:
+            work[c] = pd.to_numeric(work[c], errors="coerce").astype(float).where(masks[mkt], np.nan)
+    any_valid = masks["h2h"] | masks["spreads"] | masks["totals"]
+    book_blank = _blank(df[bc])
+    receipt["rows_dropped_by_reason"]["blank_book"] = int((good & book_blank).sum())
+    receipt["rows_dropped_by_reason"]["no_valid_market"] = int((good & ~book_blank & ~any_valid).sum())
+    started = good & (kick <= now)
+    started_events = set(eid[started].tolist())
+    receipt["started_candidate_events"] = len(started_events)
+    receipt["started_candidate_rows_removed"] = int(started.sum())
+    keep = good & ~book_blank & any_valid & ~started
+    cur = work[keep]
+    cur_ids = eid[keep]
+
+    # Prior: classify started/future (provider UTC, or the DERIVED_LEGACY_KICKOFF bridge).
+    prior_active, prior_active_ids = None, None
+    if prior_df is not None and len(prior_df):
+        if idc not in prior_df.columns:
+            _reject("PRIOR_BASELINE_INVALID", f"prior artifact has no {idc!r} event identity column")
+        else:
+            p_eid, p_blank = _event_ids(prior_df[idc])
+            p_kick, basis, p_invalid, derived_n = _prior_kickoffs(prior_df, spec)
+            receipt["prior_kickoff_basis"] = basis
+            receipt["derived_legacy_kickoff_rows"] = derived_n
+            receipt["prior_kickoff_invalid"] = p_invalid
+            if int(p_blank.sum()):
+                _reject("PRIOR_BASELINE_INVALID", f"{int(p_blank.sum())} prior rows have no event identity")
+            if p_invalid:
+                _reject("PRIOR_BASELINE_INVALID", f"prior kickoff could not be established ({basis}): {p_invalid}; "
+                        "the comparison is never skipped -- failing closed")
+            p_ok = ~p_blank & p_kick.notna()
+            p_started = p_ok & ((p_kick <= now) | p_eid.isin(started_events))
+            receipt["completed_events_removed"] = int(p_eid[p_started].nunique())
+            receipt["completed_rows_removed"] = int(p_started.sum())
+            p_keep = p_ok & ~p_started
+            prior_active, prior_active_ids = prior_df[p_keep], p_eid[p_keep]
+
+    cand_counts = cur_ids.value_counts()
+    if len(cand_counts) == 0:
+        _reject("NO_USABLE_CURRENT_EVENT", "no usable current (not yet started) event with a valid quote")
+    # Structural checks on the publishable frame. The whole-file timestamp regression is replaced by a
+    # per-(GameID, Book) check below (a dropped book must not read as a regression of the others).
+    for e in _structural_errors(cur, spec, None, path, sport_tokens):
+        _reject("STRUCTURAL_INVALID", e)
+    if prior_active is not None and len(prior_active) and spec.timestamp_col in prior_active.columns \
+            and spec.timestamp_col in cur.columns and bc in prior_active.columns:
+        a = pd.DataFrame({"e": cur_ids.values, "b": cur[bc].astype(str).str.strip().values,
+                          "t": pd.to_datetime(cur[spec.timestamp_col], errors="coerce", utc=True, format="mixed").values})
+        p = pd.DataFrame({"e": prior_active_ids.values, "b": prior_active[bc].astype(str).str.strip().values,
+                          "t": pd.to_datetime(prior_active[spec.timestamp_col], errors="coerce", utc=True,
+                                              format="mixed").values})
+        m = a.merge(p.groupby(["e", "b"], as_index=False)["t"].max(), on=["e", "b"], suffixes=("", "_p"))
+        reg = m[m["t"].notna() & m["t_p"].notna() & (m["t"] < m["t_p"])]
+        if len(reg):
+            r0 = reg.iloc[0]
+            _reject("TIMESTAMP_REGRESSION", f"{len(reg)} (event, book) quote(s) are OLDER than the prior's, "
+                    f"e.g. {r0['e']}/{r0['b']}")
+
+    # R9 vanished + coverage.
+    prior_counts = prior_active_ids.value_counts() if prior_active_ids is not None else pd.Series(dtype=int)
+    overlap = set(prior_counts.index) & set(cand_counts.index)
+    new_events = set(cand_counts.index) - set(prior_counts.index)
+    vanished = sorted(set(prior_counts.index) - set(cand_counts.index))
+    receipt["prior_active_events"] = int(len(prior_counts))
+    receipt["overlapping_events_retained"] = len(overlap)
+    receipt["new_events_added"] = len(new_events)
+    receipt["prior_active_events_absent"] = len(vanished)
+    receipt["vanished_events"] = [{"event_id": e, "prior_rows": int(prior_counts[e])} for e in vanished]
+    if vanished:
+        ex = receipt["vanished_events"][0]
+        _reject("EVENT_VANISHED", f"{len(vanished)} previously published, not-yet-started event(s) have ZERO "
+                f"valid rows in the new pull, e.g. {ex['event_id']} ({ex['prior_rows']} prior rows)")
+
+    cur_books = _event_sets(cur, cur_ids, bc)
+    cur_mkts = _event_markets(cur, cur_ids)
+    if prior_active is not None and len(prior_active):
+        pv = game_lines_market_masks(prior_active)
+        p_any = (pv["h2h"] | pv["spreads"] | pv["totals"]).values
+        prior_books = _event_sets(prior_active[p_any], prior_active_ids[p_any], bc)
+        prior_mkts = _event_markets(prior_active, prior_active_ids)
+    else:
+        prior_books, prior_mkts = {}, {}
+    for e in sorted(overlap):
+        lost_b = sorted(prior_books.get(e, set()) - cur_books.get(e, set()))
+        lost_m = sorted(prior_mkts.get(e, set()) - cur_mkts.get(e, set()))
+        if lost_b or lost_m:
+            receipt["coverage_degraded_events"].append({
+                "event_id": e, "prior_books": sorted(prior_books.get(e, set())),
+                "current_books": sorted(cur_books.get(e, set())), "lost_books": lost_b, "lost_markets": lost_m})
+    target = len(requested_books) if requested_books else max((len(v) for v in cur_books.values()), default=0)
+    for e in sorted(new_events):
+        nb = len(cur_books.get(e, set()))
+        if nb < target:
+            receipt["sparse_new_events"].append({"event_id": e, "current_books": sorted(cur_books.get(e, set())),
+                                                 "books_expected": int(target)})
+    if receipt["coverage_degraded_events"]:
+        receipt["warnings"].append("COVERAGE_DEGRADED")
+    if receipt["sparse_new_events"]:
+        receipt["warnings"].append("NEW_EVENT_SPARSE")
+    receipt["coverage_status"] = "COVERAGE_DEGRADED" if receipt["warnings"] else "COMPLETE"
+
+    ok = not errors
+    receipt["decision"] = "PUBLISH" if ok else "REJECT"
+    if ok:
+        receipt["reason_code"] = "CURRENT_SLATE_VALID"
+        receipt["final_published_rows"] = int(len(cur))
+        receipt["final_published_events"] = int(len(cand_counts))
+    return ok, errors, receipt, (cur.reset_index(drop=True) if ok else None)
+
+
 # Per-feed specs (the authoritative current-market artifacts the narrow recovery fetches publish).
 GAME_LINES_SPEC = FeedSpec(
     kind="game_lines",
@@ -492,6 +841,30 @@ GAME_LINES_SPEC = FeedSpec(
     value_cols=("Spread", "Total", "SpreadOdds"),
     identity_cols=("Away", "Home"),
     min_rows=1,
+)
+
+# NBA game lines OPT IN to the event-aware game-lines contract (2026-11 correction): the NBA slate turns
+# over daily, and the whole-file collapse test above rejected a normal 45 -> 15 row turnover because the
+# prior held last night's PLAYED games while the candidate (commenceTimeFrom=now) holds only future ones.
+# Every other sport keeps GAME_LINES_SPEC unchanged; NFL/NCAAF migrate here per
+# docs/game_lines_event_contract.md (F5). No collapse ratio / per-event minimum applies.
+NBA_GAME_LINES_EVENT_SPEC = FeedSpec(
+    kind="game_lines",
+    required_cols=("Away", "Home", "LastUpdated"),
+    numeric_cols=("Spread", "Total", "SpreadOdds", "OverOdds", "UnderOdds", "AwayML", "HomeML"),
+    timestamp_col="LastUpdated",
+    id_cols=("GameID", "Book"),
+    value_cols=("Spread", "Total", "SpreadOdds"),
+    identity_cols=("Away", "Home"),
+    min_rows=1,
+    lines_event_aware=True,
+    event_id_col="GameID",
+    event_time_col="EventCommenceAtUTC",
+    book_col="Book",
+    legacy_date_col="Date",
+    legacy_time_col="Time",
+    legacy_time_format="%Y-%m-%d %H:%M",
+    legacy_tz="America/New_York",
 )
 
 PLAYER_PROPS_SPEC = FeedSpec(
