@@ -154,6 +154,26 @@ Four root causes, not seven. None is dismissed.
   may stop independent steps (recommended: no); (6) immediate recovery — a one-off `--allow-collapse` run costs one
   credit and [inference] would publish correct rows. **Nothing was run.**
 
+#### 2b. Owner decisions on 2a (2026-11-03) — build authorized on `fix/nba-game-lines-event-aware` from exact `a5de400`
+
+1. No isolated NBA-only algorithm; F5 is **not** merged wholesale. Build a **configurable event-aware game-lines
+   contract in the shared validation service**; NBA is the first production consumer. Record how F5 later migrates
+   onto it.
+2. **No invented per-event minimum** (the proposed `2` is rejected). First governed version: zero valid rows for a
+   previously published still-future event = reject; ≥ 1 structurally valid current quote may publish; reduced book
+   coverage is logged `COVERAGE_DEGRADED`. A read-only historical coverage audit must precede any stronger rule.
+3. **Governed one-time legacy kickoff bridge:** prior comparison instant derived from explicit Eastern Date+Time via
+   `America/New_York` (DST-aware), labelled `DERIVED_LEGACY_KICKOFF` in the receipt, used only to classify prior
+   events started/future, never written as provenance; missing/ambiguous/unparseable fails closed. Every newly
+   published row carries the provider's UTC kickoff.
+4. **Step isolation:** explicit dependency map; dependents report `SKIPPED_BLOCKED_BY_LINES`, independent fetches and
+   QCs continue, the run stays degraded. The 4-hourly line-movement job must never report a failed fetch as `OK`.
+5. **Customer containment** (same track): timezone-aware UTC age (fixes the props Eastern-vs-UTC bug, DST QC), actual
+   update time shown, prominent stale/unavailable state or no executable actions, played games never shown as a
+   current slate.
+6. **No paid recovery fetch or override today.** After code review + Linux gate, the next ordinary refresh is the
+   production test. Branch stays separate from D1, D4 and the Integrity group.
+
 ## 3. Read-only audits (code at exact `a5de400`)
 
 ### NFL props cadence and quota
