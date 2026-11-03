@@ -33204,6 +33204,7 @@ def build_nfl_featured_parlay(legs=3):
     board = build_nfl_floor_board(limit=60)
     now = _now_utc()                                   # one server clock for the whole ticket (D4)
     picked, games, removed_started, s_games = [], set(), [], set()
+    kickoff_unavailable = []                           # would qualify but for an unknown kickoff (shown)
     for f in board.get('floors', []):
         q = f.get('quote')
         if not q:
@@ -33218,6 +33219,11 @@ def build_nfl_featured_parlay(legs=3):
                 removed_started.append(f"{f.get('player')} {f.get('stat')} {f.get('line'):g}+")
                 s_games.add(g)
             continue
+        if why == ['MISSING_KICKOFF']:
+            # No governed kickoff instant: context only, never on the ticket -- and LISTED, not dropped.
+            if g not in games and len(kickoff_unavailable) < 6:
+                kickoff_unavailable.append(f"{f.get('player')} {f.get('stat')} {f.get('line'):g}+")
+            continue
         if why:
             continue                                   # no verified, fresh single-book quote
         f = dict(f, price=q['price'], book=q['book'], quote_at=q['updated_utc'])
@@ -33227,7 +33233,8 @@ def build_nfl_featured_parlay(legs=3):
         if len(picked) >= legs:
             break
     if len(picked) < legs:
-        return {'available': False, 'removed_started': removed_started}
+        return {'available': False, 'removed_started': removed_started,
+                'kickoff_unavailable': kickoff_unavailable}
     dec = 1.0
     for f in picked:
         p = f['price']
@@ -33239,7 +33246,7 @@ def build_nfl_featured_parlay(legs=3):
         indep *= (f['hit'] / 100.0)
     return {'available': True, 'legs': picked, 'american': int(am), 'decimal': round(dec, 2),
             'payout_5': round(5 * dec, 2), 'indep_pct': round(100 * indep),
-            'removed_started': removed_started,
+            'removed_started': removed_started, 'kickoff_unavailable': kickoff_unavailable,
             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
 
 
@@ -33373,6 +33380,10 @@ def _leg_kickoff_failure(leg, now=None):
 
 
 STARTED_LEG_NOTE = 'Game started — not on any ticket'
+# A leg with no governed kickoff instant (team lines, MLB hit floors, any prop row without a tz-aware
+# EventCommenceAtUTC) is MISSING_KICKOFF: context only, never dropped silently -- every proposed-ticket
+# surface shows it with exactly this label and no price / payout / ticket action.
+KICKOFF_UNAVAILABLE_NOTE = 'Kickoff unavailable — context only'
 
 
 def _leg_quote_failures(leg, now=None):
@@ -33831,6 +33842,7 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all', pos
     for l in pool:
         _why = _leg_quote_failures(l, _now)
         l['executable_now'] = not _why
+        l['kickoff_note'] = KICKOFF_UNAVAILABLE_NOTE if 'MISSING_KICKOFF' in _why else None
         if 'STARTED' in _why:
             # D4: the game has kicked off -- context only, never addable to a slip, never priced.
             l['price_note'] = STARTED_LEG_NOTE
@@ -33907,6 +33919,7 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
                     c.lower().replace('_', ' ') for c in why[id(l)])
             if 'STARTED' in why[id(l)]:
                 ctx['price_note'] = STARTED_LEG_NOTE
+            ctx['kickoff_note'] = KICKOFF_UNAVAILABLE_NOTE if 'MISSING_KICKOFF' in why[id(l)] else None
             ctx['updated_label'] = ctx.get('updated_label') or _updated_label(None)
             context_lines.append(ctx)
     # "Shadow" pools: legs that would be executable but for a started game. Used ONLY to detect which
@@ -33996,6 +34009,7 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
             break
     return {'available': bool(cards), 'cards': cards, 'bench': bench,
             'context_lines': context_lines[:20],
+            'n_context_lines': len(context_lines),   # >20 => the template says how many are not listed
             'prefs': {'sizes': sorted(set(sizes)), 'risk': risk, 'legs': legs, 'timeframe': tf_req},
             'window': tf,
             'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
@@ -46072,12 +46086,15 @@ def green_light_ticket():
     persists nothing. Honest unavailable state on failure."""
     try:
         tc = build_daily_cards(**load_card_prefs(_card_prefs_uid()))   # D4 kickoff gate runs inside
+        # Context-only legs (no verified quote / no governed kickoff) are SHOWN with their label, never
+        # silently dropped -- the same shared partial as Daily Cards / King's Tickets.
+        ctx_html = render_template('_unpriced_context_lines.html', **tc)
         if not (tc.get('cards')):
             _ns = (tc.get('kickoff_gate') or {}).get('n_started_excluded') or 0
             _sn = (f' {_ns} candidate leg{"s" if _ns != 1 else ""} removed &mdash; game started.' if _ns else '')
             return ('<div class="glw-note">No proposed ticket could be built from the current slate &mdash; '
-                    f'the lenses above still stand on their own.{_sn}</div>')
-        return render_template('_ticket_editor.html', **tc)
+                    f'the lenses above still stand on their own.{_sn}</div>' + ctx_html)
+        return render_template('_ticket_editor.html', **tc) + ctx_html
     except Exception:
         return ('<div class="glw-note">The proposed ticket is unavailable right now. The lenses above are '
                 'unaffected.</div>')

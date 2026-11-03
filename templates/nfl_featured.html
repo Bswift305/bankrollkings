@@ -81,7 +81,14 @@
   </div>
   {% endfor %}
   {% if parlay.removed_started %}<div class="fp-p-note fp-started" role="note"><b>{{ parlay.removed_started|length }} leg{{ '' if parlay.removed_started|length == 1 else 's' }} removed &mdash; game started</b> ({{ parlay.removed_started|join(', ') }}). Rebuilt from games that have not kicked off.</div>{% endif %}
+  {% if parlay.kickoff_unavailable %}<div class="fp-p-note fp-kickoff-na" role="note"><b>Kickoff unavailable — context only:</b> {{ parlay.kickoff_unavailable|join(', ') }}. No verified kickoff time, so these are never on the parlay.</div>{% endif %}
   <div class="fp-p-note">The three highest-floor legs on the board, each a different game (low correlation). Combined ~{{ parlay.indep_pct }}% if the legs were independent &mdash; a parlay still compounds the vig, so it&rsquo;s a value-shaped swing, not a lock. 21+</div>
+</div>
+{% elif parlay and (parlay.removed_started or parlay.kickoff_unavailable) %}
+<div class="fp-parlay fp-parlay-none">
+  <div class="fp-p-note">No featured parlay right now &mdash; not enough not-started legs with a verified price and kickoff.</div>
+  {% if parlay.removed_started %}<div class="fp-p-note fp-started" role="note"><b>{{ parlay.removed_started|length }} leg{{ '' if parlay.removed_started|length == 1 else 's' }} removed &mdash; game started</b> ({{ parlay.removed_started|join(', ') }}).</div>{% endif %}
+  {% if parlay.kickoff_unavailable %}<div class="fp-p-note fp-kickoff-na" role="note"><b>Kickoff unavailable — context only:</b> {{ parlay.kickoff_unavailable|join(', ') }}. No verified kickoff time, so these are never on the parlay.</div>{% endif %}
 </div>
 {% endif %}
 
