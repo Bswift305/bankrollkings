@@ -10,8 +10,9 @@
   <div class="dc-prov">Each leg price is <b>one sportsbook&rsquo;s quote</b> (book and capture time on hover), fresh within the live-market window. The combined number is <b>calculated</b> &mdash; not a sportsbook quote.</div>
   <button type="button" class="dc-save dc-saveimg">&#8681; Download image</button>
   <button type="button" class="dc-save dc-reroll" style="margin-left:7px;">&#8635; Reroll</button>
+  {% if c.removed_started %}<div class="dc-kickoff-note" role="note"><b>{{ c.removed_started|length }} leg{{ '' if c.removed_started|length == 1 else 's' }} removed &mdash; game started</b> ({{ c.removed_started|join(', ') }}). This ticket was rebuilt from games that have not kicked off.</div>{% endif %}
   {% for l in c.legs %}
-  <div class="dc-leg" data-game="{{ l.game }}" data-price="{{ l.price }}" data-tier="{{ l.tier }}" data-sport="{{ l.sport }}" data-reason="{{ l.reason }}" data-label="{{ l.label }}">
+  <div class="dc-leg" data-game="{{ l.game }}" data-price="{{ l.price }}" data-tier="{{ l.tier }}" data-sport="{{ l.sport }}" data-reason="{{ l.reason }}" data-label="{{ l.label }}" data-kickoff="{{ l.kickoff_utc or '' }}">
     <span class="dc-tag {{ l.tier }}">{{ 'SWING' if l.tier in ['swing','edge'] else 'FLOOR' }}</span>
     <span class="bd">
       <span class="tp">{{ l.label }} <span class="dc-sp">{{ l.sport }}</span></span>
@@ -44,10 +45,18 @@
 
 <div class="bkn-note" style="margin-top:18px;"><b>How these are built &mdash; honestly:</b> every card is <b>{{ cards[0].n if cards }}&ndash;5 legs, one per game</b> (cross-game, so the legs aren&rsquo;t correlated), weighted toward <b>floors</b> &mdash; props a player clears a high % of the time from real game logs &mdash; with a single <b>plus-money swing</b> for upside. The payout assumes the legs are <b>independent</b>; a parlay still <b>compounds the vig</b>, so even strong legs stacked are a value-shaped swing, not a lock. Floor % is each leg&rsquo;s real historical hit rate at that number, not a projection. Shop the price &mdash; a half-point or a better book changes the math. 21+</div>
 
+<style>.dc-kickoff-note{margin:8px 0 2px;font-size:12px;color:var(--text-muted);border-left:3px solid #d9a441;padding:4px 8px;}
+.dc-leg.dc-started{opacity:.55;}.dc-leg.dc-started .pr{color:#d9a441;}</style>
 <script id="dc-bench" type="application/json">{{ bench|tojson }}</script>
 <script>
 (function(){
   var bench=[]; try{ bench=JSON.parse(document.getElementById('dc-bench').textContent)||[]; }catch(e){}
+  // D4 kickoff gate, client mirror: the clock is the SERVER's (rendered at build time) advanced by
+  // elapsed page time -- never the browser's wall clock. A leg is usable only if its kickoff_utc is
+  // strictly after that clock; a missing/unparseable kickoff fails closed (never offered, never priced).
+  var SERVER_NOW=Date.parse("{{ server_now_utc or '' }}"), T0=(window.performance&&performance.now)?performance.now():0;
+  function nowMs(){ return SERVER_NOW+((window.performance&&performance.now)?performance.now()-T0:0); }
+  function notStarted(k){ var t=Date.parse(k||''); return !isNaN(t) && t>nowMs(); }
   var grid=document.querySelector('.dc-grid');
   function dec(p){ p=+p; return p>0 ? 1+p/100 : 1+100/Math.abs(p); }
   function amer(d){ return d>=2 ? Math.round((d-1)*100) : Math.round(-100/(d-1)); }
@@ -56,17 +65,21 @@
   function priceValid(l){ var raw=l.dataset.price, p=+raw; return raw!=='' && raw!=null && !isNaN(p) && p!==0; }
   function reprice(card){
     var legs=[].slice.call(card.querySelectorAll('.dc-leg')), d=1, nf=0, ns=0, bad=false;
-    legs.forEach(function(l){ if(!priceValid(l)){bad=true;} else { d*=dec(l.dataset.price); } if(l.dataset.tier==='floor')nf++;else ns++; });
+    legs.forEach(function(l){
+      var st=!notStarted(l.dataset.kickoff); l.classList.toggle('dc-started',st);
+      if(st){ var pr=l.querySelector('.pr'); if(pr){ pr.textContent='Started'; pr.title='Game started — remove this leg; it gets no price'; } }
+      if(st||!priceValid(l)){bad=true;} else { d*=dec(l.dataset.price); } if(l.dataset.tier==='floor')nf++;else ns++; });
     var odnum=card.querySelector('.odnum'), paynum=card.querySelector('.dc-paynum');
     // Invalid/unknown pricing ABSTAINS -- never fabricate a combined number. Recompute only when every
     // leg has a usable board number; the result stays labelled illustrative (assumes independent legs).
+    // A started leg (D4) gets no price math: the whole ticket abstains until it is removed.
     if(bad){ if(odnum)odnum.textContent='—'; if(paynum)paynum.textContent='—'; }
     else { if(odnum)odnum.textContent=sgn(amer(d)); var pay=5*d; if(paynum)paynum.textContent=(pay%1===0?pay:pay.toFixed(2)); }
     var m=card.querySelector('.dc-mix'); if(m) m.textContent=nf+' floor'+(nf!==1?'s':'')+' + '+ns+' swing'+(ns!==1?'s':'');
   }
   function writeLeg(leg, b){
     leg.dataset.game=b.game; leg.dataset.price=b.price; leg.dataset.tier=b.tier;
-    leg.dataset.sport=b.sport; leg.dataset.reason=b.reason||''; leg.dataset.label=b.label;
+    leg.dataset.sport=b.sport; leg.dataset.reason=b.reason||''; leg.dataset.label=b.label; leg.dataset.kickoff=b.kickoff_utc||'';
     var tag=leg.querySelector('.dc-tag'); tag.className='dc-tag '+tierClass(b.tier); tag.textContent=(b.tier==='floor'?'FLOOR':'SWING');
     var tp=leg.querySelector('.tp'); tp.textContent=b.label+' ';
     var sport=document.createElement('span'); sport.className='dc-sp'; sport.textContent=b.sport; tp.appendChild(sport);
@@ -82,21 +95,21 @@
     });
     var orig=btn.innerHTML; btn.disabled=true; btn.textContent='⏳ Rendering…';
     fetch('/tools/daily-card.png', {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF}, body:JSON.stringify({legs:legs})})
-      .then(function(r){ if(!r.ok) throw 0; return r.blob(); })
+      .then(function(r){ if(r.status===409){ return r.json().then(function(j){ throw (j&&j.message)||'A leg on this ticket has started.'; }); } if(!r.ok) throw 0; return r.blob(); })
       .then(function(blob){
         var url=URL.createObjectURL(blob), a=document.createElement('a');
         a.href=url; a.download='bankrollkings_ticket_'+legs.length+'leg.png';
         document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
         btn.disabled=false; btn.innerHTML=orig;
       })
-      .catch(function(){ btn.disabled=false; btn.innerHTML=orig; alert('Could not render the ticket image.'); });
+      .catch(function(e){ btn.disabled=false; btn.innerHTML=orig; alert(typeof e==='string'?e:'Could not render the ticket image.'); });
   }
   function eligibleSwaps(leg, card){
     var onCard=[].filter.call(card.querySelectorAll('.dc-leg'), function(x){return x!==leg;})
       .map(function(x){return x.dataset.game;});
     var want=leg.dataset.tier;
     return bench.filter(function(b){
-      return onCard.indexOf(b.game)<0 && !(b.game===leg.dataset.game && b.label===leg.dataset.label);
+      return notStarted(b.kickoff_utc) && onCard.indexOf(b.game)<0 && !(b.game===leg.dataset.game && b.label===leg.dataset.label);
     }).sort(function(a,b){
       var am=tierClass(a.tier)===tierClass(want)?0:1, bm=tierClass(b.tier)===tierClass(want)?0:1;
       return am-bm;
@@ -129,7 +142,7 @@
         var meta=document.createElement('span'); meta.className='dc-optionmeta'; meta.textContent=b.game+(b.reason?' · '+b.reason:'');
         var price=document.createElement('span'); price.className='dc-optionprice'; price.textContent=sgn(+b.price);
         main.appendChild(name); main.appendChild(meta); btn.appendChild(tag); btn.appendChild(main); btn.appendChild(price);
-        btn.addEventListener('click',function(){ writeLeg(activeLeg,b); reprice(activeCard); closeSwap(); });
+        btn.addEventListener('click',function(){ if(!notStarted(b.kickoff_utc)){ announce(activeCard,b.label+' — game started; not added.'); closeSwap(); return; } writeLeg(activeLeg,b); reprice(activeCard); closeSwap(); });
         swapList.appendChild(btn);
       });
     }
@@ -159,7 +172,7 @@
   }
   function eligibleAdds(card){
     var legs=cardLegs(card), games=legs.map(function(l){return l.dataset.game;}), keys=legs.map(legKey);
-    return bench.filter(function(b){ return games.indexOf(b.game)<0 && keys.indexOf(b.game+'|'+b.label)<0; });  // no duplicate canonical leg / same-game
+    return bench.filter(function(b){ return notStarted(b.kickoff_utc) && games.indexOf(b.game)<0 && keys.indexOf(b.game+'|'+b.label)<0; });  // no duplicate canonical leg / same-game
   }
   function removeLeg(leg, card){
     if(cardLegs(card).length<=MIN){ announce(card,'A ticket needs at least '+MIN+' legs — nothing removed.'); return; }
@@ -178,7 +191,7 @@
   function addLeg(card){
     var legs=cardLegs(card); if(legs.length>=MAX){ announce(card,'A ticket holds at most '+MAX+' legs.'); return; }
     var opt=eligibleAdds(card)[0];
-    if(!opt){ announce(card,'No eligible leg from a new game to add.'); return; }
+    if(!opt || !notStarted(opt.kickoff_utc)){ announce(card,'No eligible leg from a new game to add.'); return; }
     var node=legs[0].cloneNode(true);           // clone preserves markup; delegation handles its buttons
     writeLeg(node, opt);
     card.insertBefore(node, card.querySelector('.dc-cardfoot'));
@@ -187,7 +200,8 @@
   }
   function doReroll(card){
     var any=false;
-    cardLegs(card).forEach(function(leg){ var o=eligibleSwaps(leg,card); if(o.length){ writeLeg(leg,o[0]); any=true; } });
+    // Reroll never auto-inserts a leg that fails the kickoff predicate (re-checked at insert time).
+    cardLegs(card).forEach(function(leg){ var o=eligibleSwaps(leg,card); if(o.length && notStarted(o[0].kickoff_utc)){ writeLeg(leg,o[0]); any=true; } });
     if(any){ reprice(card); enforce(card); announce(card,'Ticket rerolled with fresh picks.'); }
   }
   // One delegated handler so dynamically-added legs behave identically (no per-node wiring to drift).
@@ -203,6 +217,10 @@
     if(t.closest('.dc-saveimg')){ downloadImage(card, t.closest('.dc-saveimg')); return; }
   });
   cardLegs; eligibleAdds;  // (referenced above)
-  [].forEach.call(document.querySelectorAll('.dc-card'), enforce);
+  function anyStarted(c){ return cardLegs(c).some(function(l){ return !notStarted(l.dataset.kickoff); }); }
+  function recheck(c){ if(anyStarted(c)){ reprice(c); if(!c.dataset.startedNoted){ c.dataset.startedNoted='1'; announce(c,'A leg on this ticket has started — it gets no price; remove it.'); } } }
+  [].forEach.call(document.querySelectorAll('.dc-card'), function(c){ enforce(c); recheck(c); });
+  // Kickoffs pass while the page is open: re-judge every leg against the server-anchored clock.
+  setInterval(function(){ [].forEach.call(document.querySelectorAll('.dc-card'), recheck); }, 30000);
 })();
 </script>

@@ -146,7 +146,7 @@
         <span class="mb-pr" title="{{ l.price_note }}">n/a</span>
       </div>
       {% else %}
-      <div class="mb-leg" data-game="{{ g.game }}" data-price="{{ l.price }}" data-tier="{{ l.tier }}" data-sport="{{ l.sport }}" data-reason="{{ l.reason }}" data-label="{{ l.label }}">
+      <div class="mb-leg" data-game="{{ g.game }}" data-price="{{ l.price }}" data-tier="{{ l.tier }}" data-sport="{{ l.sport }}" data-reason="{{ l.reason }}" data-label="{{ l.label }}" data-kickoff="{{ l.kickoff_utc or '' }}">
         <span class="mb-tag {{ l.tier }}">{{ 'FLOOR' if l.tier == 'floor' else ('EDGE' if l.tier == 'edge' else 'SWING') }}</span>
         <span class="mb-bd">
           <span class="mb-tp">{{ l.label }}<span class="mb-sp">{{ l.sport }}</span></span>
@@ -190,7 +190,12 @@
 <script>
 (function(){
   var CSRF="{{ csrf_token() }}";
-  var slip=[]; // {label,price,tier,sport,game,reason}
+  var slip=[]; // {label,price,tier,sport,game,reason,kickoff}
+  // D4 kickoff gate, client mirror: server clock (rendered at build) + elapsed page time -- never the
+  // browser's wall clock. Missing/unparseable kickoff fails closed. The server re-checks on save.
+  var SERVER_NOW=Date.parse("{{ server_now_utc or '' }}"), T0=(window.performance&&performance.now)?performance.now():0;
+  function nowMs(){ return SERVER_NOW+((window.performance&&performance.now)?performance.now()-T0:0); }
+  function notStarted(k){ var t=Date.parse(k||''); return !isNaN(t) && t>nowMs(); }
   function dec(p){ p=+p; return p>0 ? 1+p/100 : 1+100/Math.abs(p); }
   function amer(d){ return d>=2 ? Math.round((d-1)*100) : Math.round(-100/(d-1)); }
   function sgn(n){ return (n>0?'+':'')+n; }
@@ -228,14 +233,18 @@
       document.getElementById('mb-od').textContent=sgn(amer(d));
     } else { pr.style.display='none'; }
     document.getElementById('mb-save').disabled = slip.length<2 || slip.length>8;
+    if(slip.length>8) document.getElementById('mb-warn').textContent='Max 8 legs on a saved card.';
     document.getElementById('mb-warn').style.display = slip.length>8 ? 'block':'none';
     syncMarks();
   }
   function toggle(el){
     var l={label:el.dataset.label, price:+el.dataset.price, tier:el.dataset.tier,
-           sport:el.dataset.sport, game:el.dataset.game, reason:el.dataset.reason};
+           sport:el.dataset.sport, game:el.dataset.game, reason:el.dataset.reason, kickoff:el.dataset.kickoff};
     var i=slip.findIndex(function(x){ return key(x)===key(l); });
-    if(i>=0) slip.splice(i,1); else slip.push(l);
+    if(i>=0) slip.splice(i,1);
+    else if(!notStarted(l.kickoff)){ el.querySelector('.mb-add').disabled=true; el.querySelector('.mb-pr').textContent='Started';
+      var w=document.getElementById('mb-warn'); w.textContent=l.label+' — game started; not added.'; w.style.display='block'; return; }
+    else slip.push(l);
     render();
   }
   [].forEach.call(legEls(), function(el){
@@ -244,17 +253,19 @@
   document.getElementById('mb-clear').addEventListener('click', function(){ slip=[]; render(); });
   document.getElementById('mb-save').addEventListener('click', function(){
     var btn=this; if(slip.length<2||slip.length>8) return;
+    var st=slip.filter(function(l){ return !notStarted(l.kickoff); });
+    if(st.length){ var w=document.getElementById('mb-warn'); w.textContent=st.length+' leg'+(st.length!==1?'s':'')+' removed — game started. Remove '+st.map(function(l){return l.label;}).join(', ')+' and save again.'; w.style.display='block'; return; }
     var orig=btn.innerHTML; btn.disabled=true; btn.textContent='⏳ Rendering…';
     fetch('/tools/daily-card.png', {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
       body:JSON.stringify({legs:slip})})
-      .then(function(r){ if(!r.ok) throw 0; return r.blob(); })
+      .then(function(r){ if(r.status===409){ return r.json().then(function(j){ throw (j&&j.message)||'A leg on this ticket has started.'; }); } if(!r.ok) throw 0; return r.blob(); })
       .then(function(blob){
         var url=URL.createObjectURL(blob), a=document.createElement('a');
         a.href=url; a.download='bankrollkings_ticket_'+slip.length+'leg.png';
         document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
         btn.disabled=false; btn.innerHTML=orig;
       })
-      .catch(function(){ btn.disabled=false; btn.innerHTML=orig; alert('Could not render the ticket image.'); });
+      .catch(function(e){ btn.disabled=false; btn.innerHTML=orig; alert(typeof e==='string'?e:'Could not render the ticket image.'); });
   });
   render();
 })();

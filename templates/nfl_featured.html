@@ -80,6 +80,7 @@
     <span class="fp-p-meta">{{ l.game }} &middot; hits <b>{{ l.hit }}%</b>{% if l.price %} &middot; {{ '%+d'|format(l.price) }}{% endif %}</span>
   </div>
   {% endfor %}
+  {% if parlay.removed_started %}<div class="fp-p-note fp-started" role="note"><b>{{ parlay.removed_started|length }} leg{{ '' if parlay.removed_started|length == 1 else 's' }} removed &mdash; game started</b> ({{ parlay.removed_started|join(', ') }}). Rebuilt from games that have not kicked off.</div>{% endif %}
   <div class="fp-p-note">The three highest-floor legs on the board, each a different game (low correlation). Combined ~{{ parlay.indep_pct }}% if the legs were independent &mdash; a parlay still compounds the vig, so it&rsquo;s a value-shaped swing, not a lock. 21+</div>
 </div>
 {% endif %}
