@@ -15,16 +15,55 @@ single-worker box.
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).parent.resolve()
 
+# (label, command, timeout, Odds API sport key whose fetch receipt proves the outcome)
 STEPS = [
-    ("MLB game lines", [sys.executable, "fetch_mlb_game_lines.py", "--days", "3"], 240),
-    ("WNBA game lines", [sys.executable, "fetch_wnba_game_lines.py", "--days", "5"], 240),
+    ("MLB game lines", [sys.executable, "fetch_mlb_game_lines.py", "--days", "3"], 240, "baseball_mlb"),
+    ("WNBA game lines", [sys.executable, "fetch_wnba_game_lines.py", "--days", "5"], 240, "basketball_wnba"),
 ]
+
+# The ONLY benign non-zero exit: the provider answered with zero events in the window (off-season),
+# proven by a receipt written by THIS run. Exit code 1 alone cannot distinguish that from a provider
+# error, a validation reject, a cost-receipt failure or a publish failure -- so without that proof a
+# non-zero exit is a FAILURE, never "OK" (2026-11 correction).
+BENIGN_RECEIPT_OUTCOMES = frozenset({"NO_ACTIVE_EVENTS"})
+
+
+def _receipt_path(sport: str) -> Path:
+    return BASE_DIR / "data" / "tracking" / f"_last_game_lines_fetch_{sport}.json"
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def classify_step(returncode: int, sport: str, receipt_mtime_before: float) -> tuple[str, str]:
+    """Return (status, detail) with status in {OK, SKIPPED_NO_ACTIVE_EVENTS, FAILED}."""
+    if returncode == 0:
+        return "OK", "published"
+    path = _receipt_path(sport)
+    fresh = _mtime(path) > receipt_mtime_before
+    receipt = None
+    if fresh:
+        try:
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            receipt = None
+    if returncode == 1 and receipt and receipt.get("exit_code") == 1 \
+            and receipt.get("outcome") in BENIGN_RECEIPT_OUTCOMES:
+        return "SKIPPED_NO_ACTIVE_EVENTS", "provider returned zero events (proven by this run's receipt)"
+    if receipt:
+        return "FAILED", f"exit {returncode}, outcome={receipt.get('outcome')}"
+    return "FAILED", f"exit {returncode}, no fresh receipt proving a benign cause"
 
 
 def main() -> int:
@@ -32,8 +71,9 @@ def main() -> int:
     print("=" * 60)
     print("BANKROLL KINGS - LINE MOVEMENT SNAPSHOT CAPTURE")
     print("=" * 60)
-    for label, command, timeout in STEPS:
+    for label, command, timeout, sport in STEPS:
         print(f"\n[{label}]")
+        receipt_before = _mtime(_receipt_path(sport))
         try:
             result = subprocess.run(command, cwd=BASE_DIR, timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -44,11 +84,14 @@ def main() -> int:
             failures.append((label, str(exc)))
             print(f"FAILED: {exc}")
             continue
-        # fetch_game_lines returns 1 when no new rows were fetched (existing CSV preserved) —
-        # that is a benign "nothing to add", not a failure.
-        if result.returncode not in (0, 1):
-            failures.append((label, f"exit {result.returncode}"))
-            print(f"FAILED: exit {result.returncode}")
+        # fetch_game_lines returns 1 for EVERY non-publish (provider error, validation reject, cost receipt,
+        # publish failure, or a genuine zero-event window). Only this run's receipt can prove the benign one.
+        status, detail = classify_step(result.returncode, sport, receipt_before)
+        if status == "FAILED":
+            failures.append((label, detail))
+            print(f"FAILED: {detail}")
+        elif status == "SKIPPED_NO_ACTIVE_EVENTS":
+            print(f"SKIPPED (benign): {detail}")
         else:
             print("OK")
 
