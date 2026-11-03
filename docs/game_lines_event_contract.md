@@ -79,3 +79,46 @@ Customer surfaces use CLOCK A from `services/freshness_contract.py`:
 `LIVE_MARKET_MAX_AGE_HOURS = 6` (`app.LIVE_LINES_MAX_AGE_HOURS`) on the freshest provider `LastUpdated`,
 computed between timezone-aware UTC instants. NBA game lines refresh once a day, so outside roughly six
 hours after a refresh NBA lines show as stale and their prices are withheld.
+
+## Migration matrix (cross-sport)
+
+The NBA patch is **not** expanded to any other sport until its production behaviour is proven: at least
+one real slate turnover published on the event contract on prod (receipt `outcome=UPDATED`,
+`contract=game_lines_event_v1`), the legacy bridge used exactly once, and the customer surfaces showing
+the actual update time with stale prices withheld. Each row below is a separate, reviewed change.
+
+| Sport | Game-lines validation | Customer freshness | Plan |
+|---|---|---|---|
+| NBA | `game_lines_event_v1` (**this branch**) | `_format_nba_game_market_odds` keeps `LastUpdated` + `KickoffUTC`; CLOCK-A 6h gate fires; `/game-lines`, `/sports/nba` and the matchup lens withhold stale or started prices | Ship, then prove on prod before any other row moves |
+| NFL / NCAAF | Whole-file `GAME_LINES_SPEC` today; F5 (unmerged football game-lines slate branch) has its own validator | Shared `_format_game_market_odds` drops `LastUpdated` | Move F5 onto **this** shared event-aware contract (see "F5 migration"); do not merge F5's separate validator |
+| MLB / WNBA | Whole-file `GAME_LINES_SPEC` | Shared formatter drops `LastUpdated` | Migrate before their next active season (spec + `EVENT_AWARE_GAME_LINES_SPORTS` entry + provenance-keeping formatter + QC case) |
+| Every sport | -- | Timezone-aware ages (`services/timeutils`, naive `LastUpdated` = Eastern wall clock) and an honest stale state (actual update time shown, prices non-executable past `LIVE_LINES_MAX_AGE_HOURS`) | Required for every sport's migration |
+
+**Known gap, all non-NBA sports:** `load_wnba_game_market_odds`, `load_mlb_game_market_odds`,
+`load_nfl_game_market_odds` and `load_ncaaf_game_market_odds` all load through the shared
+`_format_game_market_odds`, whose `keep_cols` does not include `LastUpdated`. `get_lines_refresh_meta`
+therefore sees no timestamp, reports `age_hours=None` / `is_stale=False`, and the fail-closed stale gate
+in `build_game_market_lookup` **never fires** for those sports: a days-old WNBA/MLB/NFL/NCAAF line can
+still render as current. Fixing this is part of each sport's migration row above, not of the NBA patch.
+
+The 6-hour executable-price rule (`LIVE_LINES_MAX_AGE_HOURS`, CLOCK A) is an owner decision. No
+migration may loosen it.
+
+## Follow-up design item: independent NBA props event adapter
+
+Owner decision (kept): when NBA game lines fail to publish, `refresh_nba_daily.py` reports
+`player_props` as `SKIPPED_BLOCKED_BY_LINES`. Props are lines-dependent because
+`fetch_player_props.py` validates NBA props against an independent eligible-event manifest, and that
+manifest is `NBA_Odds.csv` (`SPORT_EVENT_MANIFESTS` / `_eligible_event_keys`). Without a fresh lines
+publish the manifest can still list played games, so props coverage would be judged against the wrong
+slate.
+
+Props may run without lines **only** after an independent NBA props event adapter exists. Requirements:
+
+1. It establishes event identity (provider event id) and kickoff (provider UTC `commence_time`) directly
+   from authoritative props-side provider data (the props `/events` listing), not from `NBA_Odds.csv`.
+2. The denominator for slate coverage stays independent of the props response itself (a missing event
+   must not drop out of both numerator and denominator).
+3. Started/unknown-kickoff events fail closed exactly as in this contract.
+4. It has its own written contract and QC before `STEP_LINES_DEPENDENCY["player_props"]` changes from
+   `True`. Until then the skip stays.
