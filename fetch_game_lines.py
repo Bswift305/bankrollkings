@@ -11,8 +11,10 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
@@ -20,7 +22,7 @@ from urllib.request import urlopen
 
 import pandas as pd
 from services.env_loader import load_local_env
-from services.timeutils import to_eastern_datetime_str
+from services.timeutils import to_eastern_datetime_str, to_utc_z_str
 
 
 BASE_DIR = Path(__file__).parent.resolve()
@@ -83,6 +85,58 @@ BOOKMAKER_TITLES = {
     "betmgm": "BetMGM",
     "caesars": "Caesars",
 }
+
+# Sports whose game lines validate per EVENT (docs/game_lines_event_contract.md). Only these sports'
+# artifacts carry the EventCommenceAtUTC column; every other sport keeps the GAME_LINES_SPEC whole-file
+# validator and a byte-for-byte unchanged schema. NFL/NCAAF (F5) migrate by adding a spec here.
+EVENT_AWARE_GAME_LINES_SPORTS = frozenset({"basketball_nba"})
+EVENT_TIME_COL = "EventCommenceAtUTC"
+
+# Per-run provider facts (events returned by /odds), recorded so the receipt can tell a genuine
+# NO_ACTIVE_EVENTS (provider answered: zero events in the window) from a failure.
+_FETCH_FACTS: dict = {}
+
+# Receipt outcome vocabulary for _last_game_lines_fetch_<sport>.json. Only NO_ACTIVE_EVENTS is a proven
+# benign non-publish; every other non-UPDATED outcome is a failure.
+LINES_UPDATED = "UPDATED"
+LINES_NO_ACTIVE_EVENTS = "NO_ACTIVE_EVENTS"
+LINES_PROVIDER_ERROR = "PROVIDER_ERROR"
+LINES_VALIDATION_FAILED = "VALIDATION_FAILED"
+LINES_COST_RECEIPT_FAILED = "COST_RECEIPT_FAILED"
+LINES_PUBLISH_FAILED = "PUBLISH_FAILED"
+
+
+def _event_spec_for(sport: str):
+    if sport not in EVENT_AWARE_GAME_LINES_SPORTS:
+        return None
+    from services.feed_validation import NBA_GAME_LINES_EVENT_SPEC
+    return {"basketball_nba": NBA_GAME_LINES_EVENT_SPEC}.get(sport)
+
+
+def lines_receipt_path(sport: str) -> Path:
+    return BASE_DIR / "data" / "tracking" / f"_last_game_lines_fetch_{sport.replace('/', '_')}.json"
+
+
+def _sha256_file(path: Path):
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _write_lines_receipt(sport: str, payload: dict) -> None:
+    """Atomically write the per-sport game-lines fetch receipt (every exit path). Sanitized: counts,
+    event ids, book names, hashes and reason codes only -- never prices or the API key."""
+    path = lines_receipt_path(sport)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        tmp.replace(path)
+        print(f"Game-lines receipt: {path.name} (outcome={payload.get('outcome')}, "
+              f"published={payload.get('published')})")
+    except OSError as exc:
+        print(f"[WARN] could not write game-lines receipt: {exc}")
 
 
 def get_api_key(cli_value: str | None) -> str:
@@ -172,6 +226,9 @@ def blank_row(event: dict, bookmaker_title: str) -> dict:
         "UnderOdds": pd.NA,
         "Book": bookmaker_title,
         "GameID": event.get("id", ""),
+        # Authoritative provider kickoff, canonical UTC 'Z' (never derived from the Eastern display
+        # Date/Time). Kept only for EVENT_AWARE_GAME_LINES_SPORTS by build_dataframe.
+        EVENT_TIME_COL: to_utc_z_str(commence_time),
         "LastUpdated": "",
     }
 
@@ -246,6 +303,8 @@ def fetch_odds_rows(api_key: str, sport: str, bookmakers: str, markets: list[str
         commenceTimeTo=commence_to,
     )
     payload = get_json(url)
+    _FETCH_FACTS["events_returned"] = len(payload) if isinstance(payload, list) else None
+    _FETCH_FACTS["event_ids"] = sorted(str(e.get("id") or "") for e in payload) if isinstance(payload, list) else []
     rows = []
     for event in payload:
         for bookmaker in event.get("bookmakers", []):
@@ -253,7 +312,7 @@ def fetch_odds_rows(api_key: str, sport: str, bookmakers: str, markets: list[str
     return rows
 
 
-def build_dataframe(rows: list[dict]) -> pd.DataFrame:
+def build_dataframe(rows: list[dict], include_event_utc: bool = False) -> pd.DataFrame:
     columns = [
         "Date",
         "Time",
@@ -272,6 +331,8 @@ def build_dataframe(rows: list[dict]) -> pd.DataFrame:
         "GameID",
         "LastUpdated",
     ]
+    if include_event_utc:
+        columns.insert(columns.index("GameID") + 1, EVENT_TIME_COL)
 
     df = pd.DataFrame(rows)
     if df.empty:
@@ -291,7 +352,7 @@ def build_schedule_alias(df: pd.DataFrame) -> pd.DataFrame:
 
     alias_columns = [
         "Date", "Time", "Away", "Home",
-        "AwayFull", "HomeFull", "Book", "GameID", "LastUpdated"
+        "AwayFull", "HomeFull", "Book", "GameID", EVENT_TIME_COL, "LastUpdated"
     ]
     available = [col for col in alias_columns if col in df.columns]
     alias_df = df[available].copy()
@@ -408,14 +469,49 @@ def main() -> int:
     print(f"Days ahead: {args.days}")
     print()
 
+    run_id = uuid.uuid4().hex
+    fetch_start = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    event_spec = _event_spec_for(sport)
+    requested_books = [b.strip() for b in str(args.bookmakers or "").split(",") if b.strip()]
+    outputs = {"odds": output_path, "schedules": schedules_output_path, "schedule_alias": schedule_alias_output_path}
+    sha_before = {k: _sha256_file(p) for k, p in outputs.items()}
+
     all_rows: list[dict] = []
     fetch_failed = False
+    _FETCH_FACTS.clear()
     try:
         all_rows = fetch_odds_rows(api_key, sport, args.bookmakers, markets, args.regions, args.days)
         print(f"Loaded {len(all_rows)} bookmaker rows from the standard /odds endpoint")
     except Exception as exc:
         print(f"ERROR: {exc}")
         fetch_failed = True
+
+    def finish(outcome: str, exit_code: int, vreceipt=None, errors=(), published_rows: int = 0) -> int:
+        """Write the receipt for THIS run (every exit path) and return the exit code."""
+        _write_lines_receipt(sport, {
+            "run_id": run_id,
+            "sport": sport,
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "fetch_start": fetch_start,
+            "fetch_end": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "contract": (vreceipt or {}).get("contract_version") or (
+                "game_lines_event_v1" if event_spec is not None else "GAME_LINES_SPEC whole-file"),
+            "requested_bookmakers": requested_books,
+            "markets": list(markets),
+            "days": args.days,
+            "provider_fetch_failed": bool(fetch_failed),
+            "events_returned": _FETCH_FACTS.get("events_returned"),
+            "raw_bookmaker_rows": len(all_rows),
+            "outcome": outcome,
+            "exit_code": int(exit_code),
+            "published": outcome == LINES_UPDATED,
+            "published_rows": int(published_rows) if outcome == LINES_UPDATED else 0,
+            "validation_errors": [str(e) for e in list(errors)[:12]],
+            "validation": vreceipt,
+            "outputs": {k: {"path": str(p.name), "sha256_before": sha_before[k], "sha256_after": _sha256_file(p)}
+                        for k, p in outputs.items()},
+        })
+        return exit_code
 
     # Per-request quota receipt (incident 2026-10-23): prove the fetch cost from the response usage
     # headers; FAIL the receipt rather than guess if the provider omitted them.
@@ -425,38 +521,77 @@ def main() -> int:
         status="HTTP 200" if not fetch_failed else "fetch error",
         ledger_base_dir=BASE_DIR)
 
-    df = build_dataframe(all_rows)
+    df = build_dataframe(all_rows, include_event_utc=event_spec is not None)
     if fetch_failed and df.empty:
         print()
         print("No new game-line rows were fetched. Preserving existing CSV files instead of overwriting with an empty dataset.")
-        return 1
+        return finish(LINES_PROVIDER_ERROR, 1, errors=["provider fetch failed"])
     if not cost_ok:
         print("Cost receipt FAILED (missing usage headers or cost over budget). Preserving existing files.")
-        return 1
+        return finish(LINES_COST_RECEIPT_FAILED, 1, errors=["cost receipt failed"])
+    if not fetch_failed and _FETCH_FACTS.get("events_returned") == 0:
+        # The provider ANSWERED with zero events in the window (off-season / between slates). Proven benign
+        # non-publish: nothing to add, existing files preserved. Exit code unchanged (1) for every caller;
+        # the receipt is what distinguishes this from a failure.
+        print()
+        print("Provider returned zero events in the fetch window. Preserving existing files (NO_ACTIVE_EVENTS).")
+        return finish(LINES_NO_ACTIVE_EVENTS, 1, errors=["provider returned zero events"])
 
     # Strong semantic validation on the TEMP frame + atomic replace. A structurally-wrong fetch (bad
     # schema, non-finite lines, timestamp regression, conflicting duplicates, wrong-sport path, implausible
     # collapse) must NOT replace last-known-good (incident 2026-10-23).
-    from services.atomic_csv import atomic_write_csv, CsvValidationError
-    from services.feed_validation import GAME_LINES_SPEC, validate_feed
-    try:
-        prior = pd.read_csv(output_path) if output_path.exists() else None
-    except Exception:
-        prior = None
-    ok, errs = validate_feed(df, GAME_LINES_SPEC, prior_df=prior, path=output_path,
-                             sport_tokens=_sport_tokens(sport), allow_collapse=bool(getattr(args, "allow_collapse", False)))
+    from services.atomic_csv import atomic_write_csv_set, CsvValidationError
+    from services.feed_validation import GAME_LINES_SPEC, validate_feed, validate_game_lines_event_slate
+    prior, prior_unreadable = None, False
+    if output_path.exists():
+        try:
+            prior = pd.read_csv(output_path)
+        except Exception:
+            prior, prior_unreadable = None, True
+    vreceipt = None
+    if event_spec is not None:
+        # Event-aware game-lines contract (docs/game_lines_event_contract.md): last night's PLAYED games in
+        # the prior must not make today's current slate read as a collapse. Started events are removed from
+        # both sides and never published; a still-future published event that vanishes fails closed.
+        if getattr(args, "allow_collapse", False):
+            print("[INFO] --allow-collapse is ignored for event-aware game-lines validation.")
+        ok, errs, vreceipt, publish_df = validate_game_lines_event_slate(
+            df, event_spec, prior_df=prior, path=output_path, sport_tokens=_sport_tokens(sport),
+            provider_errors=1 if fetch_failed else 0, requested_books=requested_books,
+            prior_unreadable=prior_unreadable)
+        print("---- VALIDATION RECEIPT (event-aware game lines) ----")
+        for k in ("contract_version", "now_utc", "provider_errors", "prior_rows", "prior_kickoff_basis",
+                  "derived_legacy_kickoff_rows", "prior_kickoff_invalid", "candidate_rows",
+                  "completed_events_removed", "completed_rows_removed", "started_candidate_rows_removed",
+                  "identity_invalid_rows", "rows_dropped_by_reason", "market_quotes_nulled_by_reason",
+                  "prior_active_events", "overlapping_events_retained", "new_events_added",
+                  "prior_active_events_absent", "vanished_events", "coverage_status", "coverage_degraded_events",
+                  "sparse_new_events", "final_published_rows", "final_published_events", "decision",
+                  "reason_code"):
+            print(f"  {k}: {vreceipt.get(k)}")
+        if ok:
+            df = publish_df
+    else:
+        ok, errs = validate_feed(df, GAME_LINES_SPEC, prior_df=prior, path=output_path,
+                                 sport_tokens=_sport_tokens(sport), allow_collapse=bool(getattr(args, "allow_collapse", False)))
     if not ok:
         print("Strong validation FAILED, preserving existing files:")
         for e in errs:
             print(f"  - {e}")
-        return 1
+        outcome = (LINES_PROVIDER_ERROR if (vreceipt or {}).get("reason_code") == "PROVIDER_ERROR"
+                   else LINES_VALIDATION_FAILED)
+        return finish(outcome, 1, vreceipt, errors=errs)
     try:
-        atomic_write_csv(df, output_path, index=False, required_cols=["Away", "Home"])
-        atomic_write_csv(df, schedules_output_path, index=False, required_cols=["Away", "Home"])
-        atomic_write_csv(build_schedule_alias(df), schedule_alias_output_path, index=False)
+        # The three artifacts publish as one unit: every temp is staged + checked before ANY replace, so a
+        # failure leaves all three byte-identical.
+        atomic_write_csv_set([
+            (df, output_path, {"index": False, "required_cols": ["Away", "Home"]}),
+            (df, schedules_output_path, {"index": False, "required_cols": ["Away", "Home"]}),
+            (build_schedule_alias(df), schedule_alias_output_path, {"index": False}),
+        ])
     except CsvValidationError as exc:
         print(f"Atomic publish failed, preserving existing files: {exc}")
-        return 1
+        return finish(LINES_PUBLISH_FAILED, 1, vreceipt, errors=[str(exc)])
     if not args.skip_line_movement:
         append_line_movement_snapshot(df, sport)
 
@@ -464,7 +599,7 @@ def main() -> int:
     print(f"Saved {len(df)} rows to {output_path}")
     print(f"Mirrored {len(df)} rows to {schedules_output_path}")
     print(f"Updated schedule alias at {schedule_alias_output_path}")
-    return 0
+    return finish(LINES_UPDATED, 0, vreceipt, published_rows=len(df))
 
 
 if __name__ == "__main__":
