@@ -52,7 +52,26 @@ identically on base `63060a9` — the known no-user-store 401 pair fixed in the 
   - `--allow-collapse` bypasses nothing;
   - 50%/20-row are documented as **inherited conservative thresholds, not football-validated constants**.
 
-## Not yet done (each needs owner authorization)
+## Deploy — 2026-11-03 00:45 UTC (owner-approved fast-forward)
+
+- Pre-checks (read-only): `origin/master` == `63060a9`; range = exactly `f6b54e7`, `a5de400`; diff = the 3
+  files; prod HEAD `63060a9`, tracked tree clean; capture OFF (no `BK_*CAPTURE*`/`BK_RESEARCH_CANDIDATE*`
+  in `.env`, unit environment or drop-ins; 0 capture processes); public + local probe 200.
+- `git push origin a5de400:refs/heads/master` → `63060a9..a5de400` (fast-forward, no force).
+- Post-deploy (read-only): prod HEAD **`a5de4003e6d6462e448bd1bcef8a965288ff2c05`**, tracked tree clean;
+  `bankrollkings` active/running since 00:45:04 UTC (restart by bk-deploy, prewarm ok "for a5de400");
+  public + local probe **200**; capture still **OFF** (same checks, all zero).
+- Not done, per instruction: no integrity-group merge, no cache purge, no producer run, no paid request,
+  no artifact change. Prod `NFL_Props.csv` is still Sunday's slate until the ordinary run.
+
+## Next: production acceptance at the ordinary Tue 2026-11-03 13:00 UTC bk-daily (read-only)
+
+Report the overall bk-daily result separately from props acceptance. If validation rejects: no
+`--allow-collapse`, no paid retry, no manual replace — report the exact reason code and the event. A
+single withdrawn future event = evidence for a future governed withdrawal/cancellation (event-status)
+contract, not a reason to weaken the rule.
+
+## Originally pending (each needed owner authorization)
 
 1. Fast-forward `master` `63060a9` → `a5de400` and push (auto-deploy pulls + restarts within ~2 min).
 2. No cache purge is needed for this change. It touches only the fetcher, and the board caches key on
