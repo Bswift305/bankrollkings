@@ -40,6 +40,14 @@ from services.env_loader import load_local_env
 # the props/lines freshness helpers below can use it as a def-time default, keeping customer-facing
 # freshness on the exact same source as monitoring (qc_odds_feed / generate_run_status).
 from services.freshness_contract import LIVE_MARKET_MAX_AGE_HOURS as _LIVE_MARKET_MAX_AGE_HOURS
+# Timezone-aware instants for every customer-facing age (2026-11): a naive Eastern LastUpdated compared with
+# a naive server "now" (UTC on prod) overstated every age by 4-5h.
+from services.timeutils import (
+    eastern_wall_to_utc_strict as _eastern_wall_to_utc_strict,
+    format_eastern_display as _format_eastern_display,
+    instant_to_utc as _instant_to_utc,
+    utc_now as _utc_now,
+)
 from services.football_intelligence import (
     build_ncaaf_current_season_context as build_ncaaf_current_season_context_service,
     build_ncaaf_matchup_signal_context as build_ncaaf_matchup_signal_context_service,
@@ -3604,7 +3612,33 @@ def load_nfl_player_stats_history():
     return combined
 
 
-def get_props_refresh_meta(props_df, max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS):
+def _freshest_feed_instant(values, now_utc, ignore_future=True):
+    """Freshest provider timestamp of a LastUpdated column as an aware UTC instant, or None.
+
+    A NAIVE value is the fetchers' Eastern wall clock (to_eastern_datetime_str) and is interpreted in
+    America/New_York -- never in the server's ambient zone; an aware value is converted. DST ambiguity
+    resolves to the earliest plausible instant (an age is never understated). With ignore_future, values
+    more than 5 minutes ahead of now are skipped unless nothing else parses (legacy props behaviour)."""
+    instants = []
+    try:
+        uniq = pd.Series(values).dropna().unique().tolist()
+    except Exception:
+        uniq = []
+    for v in uniq:
+        inst = _instant_to_utc(v)
+        if inst is not None:
+            instants.append(inst)
+    if not instants:
+        return None
+    if ignore_future:
+        limit = now_utc + timedelta(minutes=5)
+        valid = [i for i in instants if i <= limit]
+        if valid:
+            return max(valid)
+    return max(instants)
+
+
+def get_props_refresh_meta(props_df, max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS, now=None):
     if props_df is None or props_df.empty:
         return {
             'last_updated': 'Unknown',
@@ -3624,18 +3658,16 @@ def get_props_refresh_meta(props_df, max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS):
 
     last_updated = 'Unknown'
     age_hours = None
+    last_updated_utc = None
     if 'LastUpdated' in props_df.columns:
-        parsed = pd.to_datetime(props_df['LastUpdated'], errors='coerce')
-        parsed = parsed.dropna()
-        if not parsed.empty:
-            now_ts = pd.Timestamp.now(tz=getattr(parsed.dt, 'tz', None)) if hasattr(parsed, 'dt') and getattr(parsed.dt, 'tz', None) is not None else pd.Timestamp.now()
-            valid_parsed = parsed[parsed <= (now_ts + pd.Timedelta(minutes=5))]
-            freshest = valid_parsed.max() if not valid_parsed.empty else parsed.max()
-            last_updated = freshest.strftime('%b %d, %Y %I:%M %p')
-            try:
-                age_hours = round(float((pd.Timestamp.now(tz=freshest.tz) if getattr(freshest, 'tzinfo', None) else pd.Timestamp.now()) - freshest).total_seconds() / 3600.0, 2)
-            except Exception:
-                age_hours = None
+        # Timezone-aware: both instants are UTC (naive LastUpdated = Eastern wall clock). The old naive
+        # comparison against a naive server "now" overstated ages by 4-5h on the UTC prod box.
+        now_utc = _instant_to_utc(now, naive_tz='UTC') if now is not None else _utc_now()
+        freshest = _freshest_feed_instant(props_df['LastUpdated'], now_utc, ignore_future=True)
+        if freshest is not None:
+            last_updated = _format_eastern_display(freshest)
+            last_updated_utc = freshest.strftime('%Y-%m-%dT%H:%M:%SZ')
+            age_hours = round((now_utc - freshest).total_seconds() / 3600.0, 2)
 
     is_stale = bool(age_hours is not None and max_age_hours is not None and age_hours > max_age_hours)
     status = 'stale' if is_stale else 'live'
@@ -3645,6 +3677,7 @@ def get_props_refresh_meta(props_df, max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS):
 
     return {
         'last_updated': last_updated,
+        'last_updated_utc': last_updated_utc,
         'age_hours': age_hours,
         'book_count': len(books),
         'books': books,
@@ -3665,35 +3698,31 @@ def get_props_refresh_meta(props_df, max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS):
 LIVE_LINES_MAX_AGE_HOURS = _LIVE_MARKET_MAX_AGE_HOURS
 
 
-def get_lines_refresh_meta(odds_df, max_age_hours=LIVE_LINES_MAX_AGE_HOURS):
+def get_lines_refresh_meta(odds_df, max_age_hours=LIVE_LINES_MAX_AGE_HOURS, now=None):
     """Freshness of a game-LINES (odds) feed -- the game-lines analogue of get_props_refresh_meta. Reads
     the `LastUpdated` column the Odds fetch writes; flags is_stale past max_age_hours (the documented
     live-market window). Callers FAIL CLOSED on is_stale (suppress current-line rows), not merely warn.
-    Self-contained: never mutates or depends on the props path."""
+    Self-contained: never mutates or depends on the props path. Ages are computed between timezone-aware
+    UTC instants (a naive LastUpdated is the fetchers' Eastern wall clock)."""
     if odds_df is None or getattr(odds_df, 'empty', True):
-        return {'last_updated': 'Unknown', 'age_hours': None, 'is_stale': False,
+        return {'last_updated': 'Unknown', 'last_updated_utc': None, 'age_hours': None, 'is_stale': False,
                 'status': 'unavailable', 'warning': '', 'has_lines': False}
-    last_updated, age_hours = 'Unknown', None
+    last_updated, age_hours, last_updated_utc = 'Unknown', None, None
     if 'LastUpdated' in odds_df.columns:
-        parsed = pd.to_datetime(odds_df['LastUpdated'], errors='coerce').dropna()
-        if not parsed.empty:
-            freshest = parsed.max()
-            try:
-                last_updated = freshest.strftime('%b %d, %Y %I:%M %p')
-            except Exception:
-                last_updated = str(freshest)
-            try:
-                now_ts = pd.Timestamp.now(tz=freshest.tz) if getattr(freshest, 'tzinfo', None) else pd.Timestamp.now()
-                age_hours = round(float((now_ts - freshest).total_seconds()) / 3600.0, 2)
-            except Exception:
-                age_hours = None
+        now_utc = _instant_to_utc(now, naive_tz='UTC') if now is not None else _utc_now()
+        freshest = _freshest_feed_instant(odds_df['LastUpdated'], now_utc, ignore_future=False)
+        if freshest is not None:
+            last_updated = _format_eastern_display(freshest)
+            last_updated_utc = freshest.strftime('%Y-%m-%dT%H:%M:%SZ')
+            age_hours = round((now_utc - freshest).total_seconds() / 3600.0, 2)
     is_stale = bool(age_hours is not None and max_age_hours is not None and age_hours > max_age_hours)
     warning = ''
     if is_stale:
         warning = (f"These game lines are {age_hours:.0f}h old (last updated {last_updated}). "
                    "They may not reflect the current market — shown as stale, not live.")
-    return {'last_updated': last_updated, 'age_hours': age_hours, 'is_stale': is_stale,
-            'status': 'stale' if is_stale else 'live', 'warning': warning, 'has_lines': True}
+    return {'last_updated': last_updated, 'last_updated_utc': last_updated_utc, 'age_hours': age_hours,
+            'is_stale': is_stale, 'status': 'stale' if is_stale else 'live', 'warning': warning,
+            'has_lines': True}
 
 
 def load_live_props_feed(max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS, require_fresh=False):
@@ -18037,7 +18066,7 @@ def ou_rate_color(value):
     return '#FF6B6B'
 
 
-def _format_game_market_odds(df):
+def _format_game_market_odds(df, extra_keep=()):
     working = df.copy()
     rename_map = {}
     if 'ML_Home' in working.columns:
@@ -18066,18 +18095,152 @@ def _format_game_market_odds(df):
     if 'Book' not in working.columns:
         working['Book'] = 'DraftKings'
 
-    keep_cols = [col for col in ['Date', 'Time', 'Away', 'Home', 'AwayML', 'HomeML', 'Spread', 'SpreadOdds', 'Total', 'OverOdds', 'UnderOdds', 'Book', 'GameID'] if col in working.columns]
+    keep_cols = [col for col in ['Date', 'Time', 'Away', 'Home', 'AwayML', 'HomeML', 'Spread', 'SpreadOdds', 'Total', 'OverOdds', 'UnderOdds', 'Book', 'GameID', *extra_keep] if col in working.columns]
     return working[keep_cols].dropna(subset=[col for col in ['Date', 'Away', 'Home'] if col in working.columns])
+
+
+# NBA game lines keep their PROVENANCE through the formatter (2026-11 correction). The shared formatter
+# drops LastUpdated, so get_lines_refresh_meta could never see an NBA line's age and the CLOCK-A fail-closed
+# gate in build_game_market_lookup never fired for NBA. NBA rows also carry `KickoffUTC`: the provider's
+# EventCommenceAtUTC when present, else -- for a legacy file written before that column existed -- an
+# instant DERIVED from the explicit Eastern Date + Time (KickoffBasis says which). Unknown/ambiguous ->
+# '' (never shown as a current game). Other sports keep the unchanged shared formatter.
+NBA_LINES_KICKOFF_COL = 'KickoffUTC'
+
+
+def _nba_kickoff_utc(row_date, row_time, event_utc=None):
+    """(kickoff 'YYYY-MM-DDTHH:MM:SSZ' or '', basis). Provider UTC wins; else strict Eastern derivation."""
+    ev = str(event_utc or '').strip()
+    if ev and ev.lower() != 'nan' and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', ev):
+        return ev, 'PROVIDER_UTC'
+    dt, code = _eastern_wall_to_utc_strict(row_date, row_time)
+    if dt is None:
+        return '', f'UNKNOWN_{code}'
+    return dt.strftime('%Y-%m-%dT%H:%M:%SZ'), 'DERIVED_LEGACY_KICKOFF'
+
+
+def _format_nba_game_market_odds(df):
+    working = _format_game_market_odds(df, extra_keep=('LastUpdated', 'EventCommenceAtUTC'))
+    if working.empty:
+        working[NBA_LINES_KICKOFF_COL] = pd.Series(dtype=str)
+        working['KickoffBasis'] = pd.Series(dtype=str)
+        return working
+    ev = working['EventCommenceAtUTC'] if 'EventCommenceAtUTC' in working.columns else pd.Series('', index=working.index)
+    times = working['Time'] if 'Time' in working.columns else pd.Series('', index=working.index)
+    pairs = [_nba_kickoff_utc(d, t, e) for d, t, e in zip(working['Date'], times, ev)]
+    working[NBA_LINES_KICKOFF_COL] = [p[0] for p in pairs]
+    working['KickoffBasis'] = [p[1] for p in pairs]
+    return working
 
 
 def load_game_market_odds():
     primary = DATA_DIR / 'odds' / 'NBA_Odds.csv'
     secondary = DATA_DIR / 'schedules' / 'NBA_Odds.csv'
     if primary.exists():
-        return _load_cached_csv(primary, transform=_format_game_market_odds)
+        return _load_cached_csv(primary, transform=_format_nba_game_market_odds)
     if secondary.exists():
-        return _load_cached_csv(secondary, transform=_format_game_market_odds)
+        return _load_cached_csv(secondary, transform=_format_nba_game_market_odds)
     return pd.DataFrame()
+
+
+def _kickoff_is_current(kickoff_utc, now_utc):
+    """True only for a known kickoff strictly after now (kickoff == now has started)."""
+    inst = _instant_to_utc(kickoff_utc, naive_tz='UTC') if kickoff_utc else None
+    return bool(inst is not None and inst > now_utc)
+
+
+def nba_game_lines_status(odds_df=None, now=None):
+    """Request-time NBA game-lines status for customer surfaces (never cached: it depends on `now`).
+
+    Threshold: CLOCK A, LIVE_LINES_MAX_AGE_HOURS (services/freshness_contract.py, 6h) on the freshest
+    provider LastUpdated, between timezone-aware UTC instants. `executable` is True only when lines exist,
+    are not stale, and at least one game has not started -- surfaces must not expose prices or actions
+    otherwise. Started games (kickoff <= now, or kickoff unknown) are never part of the current slate."""
+    now_utc = _instant_to_utc(now, naive_tz='UTC') if now is not None else _utc_now()
+    if odds_df is None:
+        odds_df = load_game_market_odds()
+    meta = get_lines_refresh_meta(odds_df, now=now_utc)
+    current_keys, started_keys = set(), set()
+    if odds_df is not None and not getattr(odds_df, 'empty', True) and NBA_LINES_KICKOFF_COL in odds_df.columns:
+        for _, row in odds_df.iterrows():
+            key = (str(row.get('Date', '')).strip(), normalize_team_abbr(row.get('Away', '')),
+                   normalize_team_abbr(row.get('Home', '')))
+            if _kickoff_is_current(row.get(NBA_LINES_KICKOFF_COL), now_utc):
+                current_keys.add(key)
+            else:
+                started_keys.add(key)
+    has_lines = bool(meta.get('has_lines'))
+    is_stale = bool(meta.get('is_stale')) or (has_lines and meta.get('age_hours') is None)
+    executable = bool(has_lines and not is_stale and current_keys)
+    if not has_lines:
+        state, headline = 'unavailable', 'NBA game lines unavailable'
+    elif is_stale:
+        state, headline = 'stale', 'Current NBA lines unavailable — feed is stale'
+    elif not current_keys:
+        state, headline = 'no_current', 'No upcoming NBA games with current lines'
+    else:
+        state, headline = 'live', 'NBA game lines current'
+    return {
+        'state': state,
+        'headline': headline,
+        'has_lines': has_lines,
+        'is_stale': is_stale,
+        'executable': executable,
+        'last_updated': meta.get('last_updated') or 'Unknown',
+        'last_updated_utc': meta.get('last_updated_utc'),
+        'age_hours': meta.get('age_hours'),
+        'max_age_hours': LIVE_LINES_MAX_AGE_HOURS,
+        'current_game_count': len(current_keys),
+        'started_game_count': len(started_keys - current_keys),
+        'started_keys': sorted(started_keys - current_keys),
+        'current_keys': sorted(current_keys),
+        'now_utc': now_utc.strftime('%Y-%m-%dT%H:%M:%SZ'),
+    }
+
+
+_NBA_MARKET_FIELDS_BLANK = {'market': {}, 'market_total': None, 'market_spread': None, 'market_book': None,
+                            'market_summary': '', 'market_loaded': False, 'market_updated': ''}
+
+
+def _apply_nba_lines_containment(context, now=None):
+    """Request-time containment over a (possibly cached / snapshotted) NBA command-center context.
+
+    Returns a NEW dict (the cached object is never mutated) carrying `nba_lines_status`. When lines are not
+    executable (stale / unavailable) every game-line market on the page is withheld; a game whose kickoff
+    has passed is marked started and its pregame market withheld, so a played game never renders as a
+    current-slate price."""
+    if not isinstance(context, dict):
+        return context
+    status = nba_game_lines_status(now=now)
+    started = {tuple(k) for k in status.get('started_keys', [])}
+    out = dict(context)
+    out['nba_lines_status'] = status
+
+    def _contain(items):
+        if not isinstance(items, list):
+            return items
+        result = []
+        for item in items:
+            if not isinstance(item, dict):
+                result.append(item)
+                continue
+            g = dict(item)
+            key = (str(g.get('Date', '')).strip(), normalize_team_abbr(g.get('Away', '')),
+                   normalize_team_abbr(g.get('Home', '')))
+            is_started = key in started
+            if is_started:
+                g['lines_started'] = True
+            if (not status['executable'] or is_started) and any(k in g for k in ('market', 'market_summary')):
+                g.update(_NBA_MARKET_FIELDS_BLANK)
+                g['market_withheld_reason'] = 'started' if is_started else status['state']
+            result.append(g)
+        return result
+
+    for key in ('upcoming_today', 'upcoming_tomorrow', 'upcoming_future', 'postseason_matchups',
+                'tonight_cards', 'matchup_lens_board'):
+        if key in out:
+            out[key] = _contain(out[key])
+    return out
 
 
 def load_wnba_game_market_odds():
@@ -18135,11 +18298,17 @@ def build_game_market_lookup(odds_df):
             return lookup
     except Exception:
         pass
+    # Current slate only (NBA, the frame carries KickoffUTC): a game whose kickoff has passed -- or whose
+    # kickoff cannot be established -- never gets a pregame price attached as if it were current.
+    kickoff_gate = NBA_LINES_KICKOFF_COL in odds_df.columns
+    now_utc = _utc_now() if kickoff_gate else None
     for _, row in odds_df.iterrows():
         away = normalize_team_abbr(row.get('Away', '') or row.get('AwayFull', ''))
         home = normalize_team_abbr(row.get('Home', '') or row.get('HomeFull', ''))
         date = str(row.get('Date', '')).strip()
         if not away or not home:
+            continue
+        if kickoff_gate and not _kickoff_is_current(row.get(NBA_LINES_KICKOFF_COL), now_utc):
             continue
         payload = {
             'away_ml': row.get('AwayML'),
@@ -30566,7 +30735,9 @@ def build_nba_command_center_context(postseason_only):
     # withheld data).
     if not _nba_source_gate.nba_stats_enabled():
         return _nba_command_center_gated_stub(postseason_only)
-    cache_key = f'nba_command_center::{int(bool(postseason_only))}'
+    # v2 (2026-11): the NBA odds transform now keeps LastUpdated/KickoffUTC, so the builder's market
+    # annotations differ -- bump the namespace so a pre-change memory/disk value is never served.
+    cache_key = f'nba_command_center::v2::{int(bool(postseason_only))}'
     cache_version = _build_file_token(
         DATA_DIR / 'schedules' / 'NBA_Schedule.csv',
         DATA_DIR / 'gamelogs' / 'NBA_GameLogs.csv',
@@ -30880,6 +31051,9 @@ def render_nba_matchup_lens_page():
     nba_context = snapshot.get('payload') if snapshot else build_nba_command_center_context(postseason_only)
     if nba_context.get('nba_gated'):
         nba_context = {**nba_context, 'nba_market_facts': _nba_gated_market_facts()}  # fresh; agrees w/ board
+    # Request-time lines containment over the cached/snapshotted context (stale -> prices withheld;
+    # started games never priced as current; actual update time shown).
+    nba_context = _apply_nba_lines_containment(nba_context)
     return render_template('dashboard.html', matchup_lens_mode=True, **nba_context)
 
 
@@ -30903,6 +31077,8 @@ def nba_page():
         # Recompute the licensed market facts LIVE so the counts always agree with the live board, even
         # when a (possibly stale) snapshot payload is served. Cheap cached-feed read; no provider/paid fetch.
         nba_context = {**nba_context, 'nba_market_facts': _nba_gated_market_facts()}
+    # Request-time lines containment over the cached/snapshotted context (see _apply_nba_lines_containment).
+    nba_context = _apply_nba_lines_containment(nba_context)
     return render_template('dashboard.html', **nba_context)
 
 
@@ -39094,8 +39270,14 @@ def game_lines_page():
     odds_df = load_game_market_odds()
     postseason_only = postseason_only_enabled()
     team_filter = get_team_filter(postseason_only)
-    market_lookup = build_game_market_lookup(odds_df)
+    # Containment (2026-11): request-time lines status (actual update time, CLOCK-A staleness) and the
+    # current slate only -- a game whose kickoff has passed is never listed as a current game line, and no
+    # price renders unless the feed is executable (fresh + has an upcoming game).
+    lines_status = nba_game_lines_status(odds_df)
+    now_utc = _instant_to_utc(lines_status['now_utc'], naive_tz='UTC')
+    market_lookup = build_game_market_lookup(odds_df) if lines_status['executable'] else {}
     games_by_date = {}
+    started_excluded = 0
 
     for _, game in schedule_df.iterrows():
         date = str(game.get('Date', 'Unknown'))
@@ -39105,6 +39287,11 @@ def game_lines_page():
         home_key = normalize_team_abbr(home)
         if away and home and away != 'nan' and home != 'nan':
             if not team_in_filter(away_key, team_filter) or not team_in_filter(home_key, team_filter):
+                continue
+            kickoff, _basis = _nba_kickoff_utc(game.get('Date', ''), game.get('Time', ''),
+                                               game.get('EventCommenceAtUTC', ''))
+            if not _kickoff_is_current(kickoff, now_utc):
+                started_excluded += 1
                 continue
             market = market_lookup.get((date, away_key, home_key)) or market_lookup.get(('any', away_key, home_key)) or {}
             if date not in games_by_date:
@@ -39122,7 +39309,8 @@ def game_lines_page():
                 ),
             })
 
-    return render_template('game_lines.html', games_by_date=games_by_date, postseason_only=postseason_only)
+    return render_template('game_lines.html', games_by_date=games_by_date, postseason_only=postseason_only,
+                           lines_status=lines_status, started_excluded=started_excluded)
 
 @app.route('/team/<team>')
 def team(team):

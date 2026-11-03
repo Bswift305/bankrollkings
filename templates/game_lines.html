@@ -17,6 +17,8 @@
     </div>
 </div>
 
+{% include '_nba_lines_status.html' %}
+
 <div class="card mb-24">
     <div class="card-header">
         <div class="card-title">Platform Lens</div>
@@ -51,7 +53,7 @@
             </thead>
             <tbody>
                 {% for game in day_games %}
-                {% set market = game.market %}
+                {% set market = game.market if (lines_status is not defined or lines_status.executable) else {} %}
                 <tr>
                     <td><a href="/matchup/{{ game.Away }}-{{ game.Home }}?postseason={{ 1 if postseason_only else 0 }}">{{ matchup_mark(game.Away, game.Home, '@', 'sm') }}</a></td>
                     <td>
@@ -70,7 +72,7 @@
                         <span style="color: var(--text-muted);">-</span>
                         {% endif %}
                     </td>
-                    <td>{% if market and market.book %}{{ market.book }}{% else %}<span style="color: var(--text-muted);">No line loaded</span>{% endif %}</td>
+                    <td>{% if market and market.book %}{{ market.book }}{% elif lines_status is defined and not lines_status.executable %}<span style="color: var(--text-muted);">Withheld (not live)</span>{% else %}<span style="color: var(--text-muted);">No line loaded</span>{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -81,8 +83,8 @@
 {% else %}
 <div class="card">
     <div class="empty-state">
-        <div class="empty-state-title">No game lines loaded</div>
-        <div class="empty-state-copy">Refresh the game odds file to populate spreads, totals, and moneylines.</div>
+        <div class="empty-state-title">No upcoming games with current lines</div>
+        <div class="empty-state-copy">{% if started_excluded %}{{ started_excluded }} game{{ '' if started_excluded == 1 else 's' }} in the loaded file already started and {{ 'is' if started_excluded == 1 else 'are' }} not a current slate. {% endif %}New lines appear after the next successful game-lines refresh.</div>
     </div>
 </div>
 {% endfor %}
