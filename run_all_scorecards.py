@@ -99,6 +99,15 @@ SCORECARDS = [
     # "trust any nonempty fetch". Comparable fresh prior keeps the collapse test. NBA props opts in; other
     # feeds unaffected. Structural checks reject in both modes. Pure/offline (synthetic frames).
     ("Slate-Aware Validation QC", "qc_slate_validation.py", 90),
+    # Event-aware GAME LINES (2026-11 NBA correction, game_lines_event_v1): a normal 45->15 slate turnover
+    # (prior = last night's played games) publishes; a still-future event that vanishes rejects; no per-event
+    # minimum (COVERAGE_DEGRADED instead); legacy Eastern kickoff bridge fails closed on DST fold/gap;
+    # provider UTC kickoff in every published row; atomic 3-file publish; NBA chain isolation
+    # (SKIPPED_BLOCKED_BY_LINES); line-movement never OK on failure; /game-lines + command-center
+    # containment. Offline (stub provider, temp dirs, faked subprocesses).
+    ("Game-Lines Event Slate QC", "qc_game_lines_event_slate.py", 300),
+    # Props/lines AGE between timezone-aware UTC instants (naive LastUpdated = Eastern), DST-correct.
+    ("Odds Age Timezone QC", "qc_odds_age_timezone.py", 180),
     # Run Status DEGRADED (Oct 24 monitoring-truth fix): overall must read DEGRADED -- never GREEN -- when
     # a current-market Odds family is stale (a sport whose game lines are fresh but props are stale), a
     # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages
