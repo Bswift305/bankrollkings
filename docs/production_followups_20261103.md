@@ -108,6 +108,52 @@ Four root causes, not seven. None is dismissed.
   odds health `[PASS]` is the authoritative result. Consider labelling the pre-check as a pre-refresh snapshot so it
   is not read as a failure.
 
+### 2a. NBA game-lines slate turnover — read-only RCA (failure #3; code at exact `a5de400`, no network, nothing edited)
+
+- **Path.** `refresh_nba_daily.py:29-47` → `fetch_game_lines.py --days 5` (default `basketball_nba`) →
+  `validate_feed(df, GAME_LINES_SPEC, prior_df=<current NBA_Odds.csv>, allow_collapse=False)` (`:441-452`).
+  `services/feed_validation.py:158-162` rejects when `rows < 0.5 × prior` (prior ≥ 5). A row is event × book
+  (`:250-252`); the prior is the **whole** file being replaced, with no kickoff filter (`:443`).
+- **Root cause 1 — whole-file collapse on a daily-turnover feed.** The candidate holds only not-yet-started games
+  (`commenceTimeFrom=now`, `:235`); the prior still holds Monday's played games. 45 → 15 ≈ 11–12 → 4 events × ~4
+  books. [inference] That is normal turnover, not a loss. Same class as the accepted props fix and F5.
+- **Root cause 2 — halt-on-first-failure.** Only `player_props` is soft (`:70-84`); any other non-zero exit returns
+  (`:94-101`). A lines reject therefore skipped **all 11 later steps** (props, injuries, officiating ×2, coverage,
+  calibration, runtime snapshots, 4 QCs), not just props. Props genuinely depend on lines: the NBA props validator
+  uses `NBA_Odds.csv` as its independent event list (`fetch_player_props.py:124-153, 835-858`).
+  [inference] Running props against Monday's stale list would likely spend credits and then reject (coverage < 100%).
+- **Reuse.** F5 is not an ancestor of `a5de400` and covers NFL/NCAAF only; adding NBA to it works only when the
+  previous line-movement snapshot already held the next day's games, otherwise it falls back to the absolute rule.
+  `validate_feed_event_slate` cannot be reused unchanged: it needs `EventCommenceAtUTC` (absent from lines output),
+  its malformed-row rule reads `Line` (absent → every row dropped), and its per-event floor (20 prior rows) can never
+  fire at ≤ 4 rows/event.
+- **Blast radius.** `NBA_Odds.csv` feeds `load_game_market_odds` (`app.py:17990`) on frontpage, NBA command center,
+  live prop context, schedule, `/game-lines`, team, series, matchup and fantasy; `load_schedule` (`:20682`) also
+  derives the NBA schedule from it. **No line-age label exists downstream** (`_format_game_market_odds` drops
+  `LastUpdated`), so `/game-lines` shows Monday's played games at pre-game lines as current. Stale props are hidden
+  instead (`require_fresh=True` → empty board after 6h). [inference] Props `LastUpdated` is naive Eastern compared
+  with naive UTC "now" on prod, overstating age by ~5h — a separate small defect.
+- **Same latent defect elsewhere.** NCAAF still fails most Sundays until F5 merges; WNBA/MLB lines (off-season) have
+  it too, and `refresh_line_movement_snapshots.py:47-49` reports exit 1 as benign (silent OK). NFL passes only
+  because `--days 130` holds the rest of the season.
+- **Proposed correction (proposal only; new branch off `a5de400`, e.g. `fix/nba-game-lines-event-aware`).**
+  Add `EventCommenceAtUTC` (canonical `Z`) to lines output; a game-lines usable-row rule (one complete market);
+  `NBA_GAME_LINES_EVENT_SPEC` — a vanished not-yet-started event rejects at any size, started events excluded from
+  both sides, provider error / zero usable events reject; publish only the current-slate frame to all outputs and the
+  movement snapshot, with a props-format receipt; `refresh_nba_daily` classifies a lines reject as DEGRADED and keeps
+  running the independent steps. QC `qc_game_lines_event_slate.py`: 45→15 replay publishes; vanished future event,
+  4→1 books, provider error, zero usable, blank GameID, non-`Z` kickoff reject; kickoff == now excluded / now+1s
+  eligible; malformed row dropped; migration prior without the UTC column; other sports unchanged; stubbed end-to-end
+  reject leaves file hashes unchanged; lines reject still runs injuries + QCs; rerun `qc_slate_validation`,
+  `qc_props_slate_turnover`, `qc_odds_recovery_preflight`.
+- **Owner decisions required before build:** (1) new NBA event-aware path vs F5 + NBA by configuration;
+  (2) per-event floor `min_prior_rows=2` — new, not evidence-derived; (3) migration of today's prior that lacks the
+  UTC column — as sketched the comparison would be skipped (**fail-open**), so either a one-time kickoff derived from
+  Eastern Date/Time labelled DERIVED (F5 precedent) or one explicit operator-approved run; (4) on lines reject, skip
+  props with an explicit "lines manifest unavailable" outcome (recommended) or run them; (5) whether a lines reject
+  may stop independent steps (recommended: no); (6) immediate recovery — a one-off `--allow-collapse` run costs one
+  credit and [inference] would publish correct rows. **Nothing was run.**
+
 ## 3. Read-only audits (code at exact `a5de400`)
 
 ### NFL props cadence and quota
