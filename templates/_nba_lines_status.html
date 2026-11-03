@@ -1,0 +1,25 @@
+{# NBA game-lines status (2026-11 containment). Expects `lines_status` = app.nba_game_lines_status(...).
+   Always shows the ACTUAL provider update time; when the feed is not executable (stale / unavailable / no
+   upcoming game) it says plainly that no price on the page is a live, bettable market. #}
+{% if lines_status %}
+<div class="card mb-20 nba-lines-status" data-lines-state="{{ lines_status.state }}"
+     data-lines-executable="{{ 1 if lines_status.executable else 0 }}"
+     style="border-color: {% if lines_status.executable %}rgba(110,168,166,0.35){% else %}var(--danger){% endif %};">
+    <div class="card-header">
+        <div class="card-title">{{ lines_status.headline }}</div>
+        <span class="badge" style="background: {% if lines_status.executable %}var(--accent){% else %}var(--danger){% endif %}; color: var(--bg-primary, #000);">
+            {% if lines_status.executable %}LIVE{% elif lines_status.state == 'stale' %}STALE{% elif lines_status.state == 'no_current' %}NO CURRENT GAMES{% else %}UNAVAILABLE{% endif %}
+        </span>
+    </div>
+    <div class="p-16" style="font-size: 12px; color: var(--text-muted);">
+        Game lines last updated: <strong style="color: var(--text-bright);">{{ lines_status.last_updated }}</strong>{% if lines_status.age_hours is not none %} ({{ '%.1f'|format(lines_status.age_hours) }}h ago){% endif %}.
+        {% if not lines_status.executable %}
+        <strong style="color: var(--danger);">Prices are withheld.</strong>
+        A game line older than {{ lines_status.max_age_hours|int }}h, or for a game that has started, is not a live market &mdash; nothing on this page is a current, bettable price.
+        {% endif %}
+        {% if lines_status.started_game_count %}
+        {{ lines_status.started_game_count }} game{{ '' if lines_status.started_game_count == 1 else 's' }} already started {{ 'is' if lines_status.started_game_count == 1 else 'are' }} not shown as current.
+        {% endif %}
+    </div>
+</div>
+{% endif %}

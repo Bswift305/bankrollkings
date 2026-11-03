@@ -7,6 +7,7 @@
 
 {% block content %}
 {% set matchup_guide = get_method_guide('matchup_lens') %}
+{% if nba_lines_status and not nba_gated %}{% with lines_status = nba_lines_status %}{% include '_nba_lines_status.html' %}{% endwith %}{% endif %}
 <style>
 .dashboard-spotlight {
     border-color: rgba(132,215,210,0.28) !important;
@@ -1300,7 +1301,9 @@
                                 <div class="tonight-label">Market Read</div>
                                 <div class="tonight-panel-value-compact">{{ card.market_summary }}</div>
                                 <div class="tonight-copy">
-                                    {% if card.market_loaded %}
+                                    {% if card.market_withheld_reason %}
+                                    Price withheld &mdash; {{ 'the game has started' if card.market_withheld_reason == 'started' else 'game lines are not live' }}.
+                                    {% elif card.market_loaded %}
                                     Current loaded line context for this matchup.{% if card.market_updated %} Last update: {{ card.market_updated }}.{% endif %}
                                     {% else %}
                                     Game-line feed has not fully populated this matchup yet.
@@ -1546,7 +1549,7 @@
                 </div>
                 <div class="nba-check-cell">
                     <div class="nba-matchup-kicker">Price Check</div>
-                    <div class="nba-series-note" style="color: var(--text-bright);">{{ game.market_summary or 'Market waiting' }}</div>
+                    <div class="nba-series-note" style="color: var(--text-bright);">{% if game.market_withheld_reason %}Price withheld ({{ 'game started' if game.market_withheld_reason == 'started' else 'lines not live' }}){% else %}{{ game.market_summary or 'Market waiting' }}{% endif %}</div>
                     <div class="nba-series-note" style="color: var(--text-muted);">Price decides whether the read is still playable.</div>
                 </div>
                 <div class="nba-check-cell">
@@ -1585,6 +1588,7 @@
                 {% if postseason_only and game.series_status %}<div style="margin-top: 6px; font-size: 11px; color: var(--accent); font-weight: 700;">{{ game.series_status }}</div>{% endif %}
                 {% if postseason_only and game.last_result %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.last_result }}{% if game.next_game_number %} | Game {{ game.next_game_number }}{% endif %}</div>{% endif %}
                 {% if game.market_summary %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.market_summary }}</div>{% endif %}
+                {% if game.lines_started %}<div style="margin-top: 3px; font-size: 10px; color: var(--danger);">Started &mdash; pregame line withheld, not a current market</div>{% endif %}
             </a>
             {% endfor %}
             {% else %}
@@ -1609,6 +1613,7 @@
                 {% if postseason_only and game.series_status %}<div style="margin-top: 6px; font-size: 11px; color: var(--accent); font-weight: 700;">{{ game.series_status }}</div>{% endif %}
                 {% if postseason_only and game.last_result %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.last_result }}{% if game.next_game_number %} | Game {{ game.next_game_number }}{% endif %}</div>{% endif %}
                 {% if game.market_summary %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.market_summary }}</div>{% endif %}
+                {% if game.lines_started %}<div style="margin-top: 3px; font-size: 10px; color: var(--danger);">Started &mdash; pregame line withheld, not a current market</div>{% endif %}
             </a>
             {% endfor %}
             {% else %}
@@ -1633,6 +1638,7 @@
                 {% if postseason_only and game.series_status %}<div style="margin-top: 6px; font-size: 11px; color: var(--accent); font-weight: 700;">{{ game.series_status }}</div>{% endif %}
                 {% if postseason_only and game.last_result %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.last_result }}{% if game.next_game_number %} | Game {{ game.next_game_number }}{% endif %}</div>{% endif %}
                 {% if game.market_summary %}<div style="margin-top: 3px; font-size: 10px; color: var(--text-muted);">{{ game.market_summary }}</div>{% endif %}
+                {% if game.lines_started %}<div style="margin-top: 3px; font-size: 10px; color: var(--danger);">Started &mdash; pregame line withheld, not a current market</div>{% endif %}
             </a>
             {% endfor %}
             {% else %}
