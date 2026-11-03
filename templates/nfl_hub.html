@@ -93,6 +93,7 @@
     {% for l in parlay.legs %}
     <div class="why" style="padding:6px 0;border-top:1px solid rgba(255,255,255,.06);margin-top:6px;"><b>{{ l.player }}</b> {{ l.stat }} <b style="color:var(--bkn-accent);">{{ '%g'|format(l.line) }}+</b> &middot; {{ l.game }} &middot; hits {{ l.hit }}%{% if l.price %} &middot; {{ '%+d'|format(l.price) }}{% endif %}</div>
     {% endfor %}
+    {% if parlay.removed_started %}<div class="why fp-started" role="note" style="padding-top:6px;"><b>{{ parlay.removed_started|length }} leg{{ '' if parlay.removed_started|length == 1 else 's' }} removed &mdash; game started</b> ({{ parlay.removed_started|join(', ') }}). Rebuilt from games that have not kicked off.</div>{% endif %}
   </div>
   {% else %}<div class="bkn-empty">The featured parlay builds from the strongest floors once this week&rsquo;s props are in.</div>{% endif %}
 </div>
