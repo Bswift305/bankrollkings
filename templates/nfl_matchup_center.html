@@ -73,7 +73,8 @@
       <div class="mc-label">Weather {{ freshness(g.weather) }}</div>
       {% if g.weather.available %}
         <div class="mc-vals"><span>Wind <b>{{ g.weather.wind_mph }} mph</b>{% if g.weather.high_wind %} <span class="mc-flag">15+ totals-under flag</span>{% endif %}</span></div>
-      {% else %}{{ na(g.weather) }}{% endif %}
+      {% else %}<span class="mc-na">No forecast available</span>{% endif %}
+      {% if g.weather.roof_label %}<div class="mc-vals"><span>Roof (home stadium) <b>{{ g.weather.roof_label }}</b></span></div>{% endif %}
     </div>
 
     <!-- Injuries -->

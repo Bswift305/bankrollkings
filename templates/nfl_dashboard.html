@@ -129,7 +129,7 @@
                     <td class="mu">{{ g.away_abbr }}<span class="at">@</span>{{ g.home_abbr }}</td>
                     <td class="num">{% if g.spread is not none %}{{ '%+g'|format(g.spread) }}{% if g.key %}<span class="key{% if g.key.startswith('key') %} soft{% endif %}">{{ g.key }}</span>{% endif %}{% else %}<span class="dim">&mdash;</span>{% endif %}</td>
                     <td class="num">{% if g.total is not none %}{{ '%g'|format(g.total) }}{% else %}<span class="dim">&mdash;</span>{% endif %}</td>
-                    <td class="wx">{% if g.wind is not none %}&#128168; {{ g.wind }} mph{% if g.high_wind %}<span class="u">UNDER</span>{% endif %}{% else %}<span class="dim">&mdash; indoor/calm</span>{% endif %}</td>
+                    <td class="wx">{% if g.wind is not none %}&#128168; {{ g.wind }} mph{% if g.high_wind %}<span class="u">UNDER</span>{% endif %}{% else %}<span class="dim">Weather unavailable</span>{% endif %}</td>
                     <td class="act"><a href="{{ game_lines_path }}?postseason={{ 1 if postseason_only else 0 }}" class="btn btn-secondary btn-sm">Open</a></td>
                 </tr>
                 {% endfor %}

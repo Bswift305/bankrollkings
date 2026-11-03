@@ -82,7 +82,7 @@
       <td class="nt-1h">{{ r.total_1h or '&mdash;'|safe }}</td>
       {{ ovcell(r.away_over, r.away_ou) }}
       {{ ovcell(r.home_over, r.home_ou) }}
-      <td>{% if r.wind is not none %}<span class="{{ 'nt-wind-h' if r.high_wind else 'nt-wind-c' }}">{{ r.wind }}{% if r.high_wind %}🌬{% endif %}</span>{% else %}<span class="nt-wind-c">dome</span>{% endif %}</td>
+      <td>{% if r.wind is not none %}<span class="{{ 'nt-wind-h' if r.high_wind else 'nt-wind-c' }}">{{ r.wind }}{% if r.high_wind %}🌬{% endif %}</span>{% else %}<span class="nt-wind-c">Weather unavailable</span>{% endif %}</td>
       <td>
         {% if r.read == 'wind_under' %}<span class="nt-read wind">🌬 Wind Under</span>
         {% elif r.read == 'over' %}<span class="nt-read over">Over env</span>
