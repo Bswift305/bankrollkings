@@ -229,6 +229,10 @@ NFL_BOARD = [
 NOW = datetime.now(timezone.utc)
 FRESH_AT = (NOW - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
 STALE_AT = (NOW - timedelta(hours=9)).strftime('%Y-%m-%dT%H:%M:%SZ')
+# D4 kickoff gate: an executable leg also needs a canonical kickoff strictly after the server clock.
+# Fixture games kick off well in the future so this QC keeps testing the PRICE contract only
+# (qc_ticket_kickoff_gate.py owns the kickoff contract).
+KICKOFF_AT = (NOW + timedelta(hours=30)).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
 def _quote(player, line, price, game, at=FRESH_AT, book='SynBook'):
@@ -240,7 +244,8 @@ def _floor(i, game, price, quote='fresh'):
     player = f'P{i}'
     q = None if quote is None else _quote(player, 40.5, price, game, FRESH_AT if quote == 'fresh' else STALE_AT)
     return {'player': player, 'stat': 'Rec Yds', 'line': 40.5, 'game': game, 'price': price, 'hit': 90 - i,
-            'n': 12, 'edge': 2, 'stat_key': 'rec', 'quote': q}  # hit 90-i clears MENU_FLOOR_MIN_HIT
+            'n': 12, 'edge': 2, 'stat_key': 'rec', 'quote': q,  # hit 90-i clears MENU_FLOOR_MIN_HIT
+            'event_id': f'evt-{i}', 'kickoff_utc': KICKOFF_AT}
 
 
 PROP_FLOORS = (  # synthetic priced props, distinct games: 6 fresh single-book quotes, 2 none, 1 stale
@@ -255,7 +260,7 @@ UNQUOTED_GAMES = {'LV @ LAC', 'SEA @ ARI', 'PIT @ CLE'}
 def check_executable_contract():
     os.environ.setdefault('SECRET_KEY', 'qc-unpriced-legs')
     import app
-    base = {'price': -150, 'line': 40.5, 'quote': _quote('P', 40.5, -150, 'A @ B')}
+    base = {'price': -150, 'line': 40.5, 'quote': _quote('P', 40.5, -150, 'A @ B'), 'kickoff_utc': KICKOFF_AT}
 
     def variant(leg_over=None, **q_over):
         leg = dict(base, quote=dict(base['quote']))
