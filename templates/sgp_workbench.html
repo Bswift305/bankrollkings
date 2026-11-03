@@ -41,6 +41,9 @@
 .sgp-note{font-size:12.5px;color:var(--text-muted);line-height:1.6}
 .sgp-disc{border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:rgba(184,115,51,.06);font-weight:600;font-size:12.5px;line-height:1.6}
 .sgp-held{border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:rgba(240,180,41,.07);font-size:12.5px;line-height:1.6}
+.sgp-leg.ctx{opacity:.72;border-style:dashed}
+.sgp-kick{font-weight:700;color:var(--accent-copper,#b87333)}
+.sgp-rejected{border:1px solid var(--danger);border-radius:12px;padding:12px 14px;background:rgba(255,80,80,.06);font-size:12.5px;line-height:1.6}
 @media(max-width:760px){
   .sgp-games{grid-template-columns:1fr}
   .sgp-leg{flex-wrap:wrap}
@@ -74,7 +77,12 @@
   {% if not away %}
     <div class="sgp-sec"><div class="sgp-note">Pick a matchup above to begin.</div></div>
   {% elif abstain %}
-    <div class="sgp-sec"><div class="sgp-note">{{ abstain }}</div></div>
+    <div class="sgp-sec"><div class="sgp-note">{{ abstain }}</div>
+    {% for u in unresolved_selected %}
+      <div class="sgp-leg sel ctx" data-unresolved="{{ u.id }}"><div class="meta"><div class="lab">{{ u.id }}</div><div class="sub"><span class="sgp-kick">{{ u.note }}</span></div></div><a class="sgp-btn rm" href="{{ u.remove_url }}">&minus;</a></div>
+    {% endfor %}
+    {% if handoff and handoff.status == 'rejected' %}<div class="sgp-rejected" data-sgp-rejected="1"><b>Ticket not exportable.</b> {{ handoff.message }}</div>{% endif %}
+    </div>
   {% else %}
 
   <!-- 2. WHAT'S CHANGED -->
@@ -108,19 +116,20 @@
       {% for grp in menu %}
       <div class="sgp-catlabel">{{ grp.cat }}</div>
       {% for leg in grp.legs %}
-      <div class="sgp-leg {% if leg.selected %}sel{% endif %}">
+      <div class="sgp-leg {% if leg.selected %}sel{% endif %}{% if not leg.ticket_ok %} ctx{% endif %}" data-leg-id="{{ leg.id }}" data-kickoff-status="{{ leg.kickoff_status or 'ok' }}">
         <div class="meta">
           <div class="lab">{{ leg.label }}</div>
           <div class="sub">
+            {% if not leg.ticket_ok %}<span class="sgp-kick">{{ leg.kickoff_note }}</span><br>{% endif %}
             {{ leg.book }} &middot;
-            {% if leg.price is not none %}<span class="sgp-price">{{ '%+d'|format(leg.price) }}</span>{% else %}<span class="sgp-price na">price unavailable</span>{% endif %}
+            {% if not leg.ticket_ok %}<span class="sgp-price na">no price &mdash; not addable</span>{% elif leg.price is not none %}<span class="sgp-price">{{ '%+d'|format(leg.price) }}</span>{% else %}<span class="sgp-price na">price unavailable</span>{% endif %}
             &middot; {{ leg.timestamp or 'time unknown' }} ({{ leg.tz }})
             <br>{{ leg.lineage }}
             {% if leg.lean %}<br><span class="warn">Context: tackle-volume lean {{ leg.lean }}</span>{% endif %}
             {% if leg.inj %}<br><span class="warn">Injury/role: {{ leg.inj }}</span>{% endif %}
           </div>
         </div>
-        <a class="sgp-btn {% if leg.selected %}rm{% else %}add{% endif %}" href="{{ leg.toggle_url }}">{% if leg.selected %}&minus;{% else %}+{% endif %}</a>
+        {% if leg.toggle_url %}<a class="sgp-btn {% if leg.selected %}rm{% else %}add{% endif %}" href="{{ leg.toggle_url }}">{% if leg.selected %}&minus;{% else %}+{% endif %}</a>{% endif %}
       </div>
       {% endfor %}
       {% endfor %}
@@ -131,17 +140,24 @@
 
   <!-- 5. SELECTED SGP -->
   <div class="sgp-sec" id="sgp-selected">
-    <h2>5 &middot; Selected SGP ({{ selected|length }} leg{{ '' if selected|length == 1 else 's' }})</h2>
-    {% if selected %}
+    <h2>5 &middot; Selected SGP ({{ selected|length + unresolved_selected|length }} leg{{ '' if (selected|length + unresolved_selected|length) == 1 else 's' }})</h2>
+    {% if selected or unresolved_selected %}
       {% for leg in selected %}
-      <div class="sgp-leg sel">
+      <div class="sgp-leg sel{% if not leg.ticket_ok %} ctx{% endif %}" data-selected-id="{{ leg.id }}" data-kickoff-status="{{ leg.kickoff_status or 'ok' }}">
         <div class="meta">
           <div class="lab">{{ leg.label }}</div>
-          <div class="sub">{{ leg.book }} &middot; {% if leg.price is not none %}<span class="sgp-price">{{ '%+d'|format(leg.price) }}</span>{% else %}<span class="sgp-price na">price unavailable</span>{% endif %} &middot; {{ leg.timestamp or 'time unknown' }} ({{ leg.tz }}) &middot; quote scope: {{ leg.quote_scope }}</div>
+          <div class="sub">{% if not leg.ticket_ok %}<span class="sgp-kick">{{ leg.held_note }}</span> &middot; {{ leg.book }} &middot; <span class="sgp-price na">no price</span>{% else %}{{ leg.book }} &middot; {% if leg.price is not none %}<span class="sgp-price">{{ '%+d'|format(leg.price) }}</span>{% else %}<span class="sgp-price na">price unavailable</span>{% endif %}{% endif %} &middot; {{ leg.timestamp or 'time unknown' }} ({{ leg.tz }}) &middot; quote scope: {{ leg.quote_scope }}</div>
         </div>
         <a class="sgp-btn rm" href="{{ leg.remove_url }}">&minus;</a>
       </div>
       {% endfor %}
+      {% for u in unresolved_selected %}
+      <div class="sgp-leg sel ctx" data-unresolved="{{ u.id }}">
+        <div class="meta"><div class="lab">{{ u.id }}</div><div class="sub"><span class="sgp-kick">{{ u.note }}</span></div></div>
+        <a class="sgp-btn rm" href="{{ u.remove_url }}">&minus;</a>
+      </div>
+      {% endfor %}
+      {% if ticket_gate and not ticket_gate.executable %}<div class="sgp-note" style="margin-top:6px;"><span class="sgp-kick">Judged at server time {{ ticket_gate.server_now_utc }}.</span> A marked leg is never removed for you &mdash; remove or rebuild it to export this ticket.</div>{% endif %}
       <div style="margin-top:8px;"><a class="sgp-chip" href="{{ clear_url }}">Clear all / switch game</a></div>
       <div class="sgp-note" style="margin-top:6px;">Only legs from this one game can be added. Choosing another matchup starts a fresh slip.</div>
     {% else %}
@@ -149,6 +165,7 @@
     {% endif %}
   </div>
 
+  {% if selected or unresolved_selected %}
   {% if selected %}
   <!-- 6. ALIGNMENT & CONTRADICTIONS -->
   <div class="sgp-sec">
@@ -182,10 +199,14 @@
     <div class="sgp-note" style="margin-top:8px;">We do not multiply individual leg probabilities into an SGP probability. If you compute a naive product yourself, remember: &ldquo;{{ independence_label }}&rdquo; Each leg shows its own book price; a combined-ticket price is never assigned back to individual legs.</div>
   </div>
 
+  {% endif %}
+
   <!-- 8. HANDOFFS -->
   <div class="sgp-sec">
     <h2>8 &middot; Hand off the ticket</h2>
-    {% if handoff and handoff.status == 'held' %}
+    {% if handoff and handoff.status == 'rejected' %}
+    <div class="sgp-rejected" data-sgp-rejected="1"><b>Ticket not exportable &mdash; kickoff gate.</b> {{ handoff.message }}</div>
+    {% elif handoff and handoff.status == 'held' %}
     <div class="sgp-held">
       <b>Parlay Builder transfer held &mdash; contract mismatch.</b> {{ handoff.message }}
       <div style="margin-top:6px;">Fields the current Parlay Builder cannot carry without loss: <b>{{ handoff.dropped_fields|join(', ') }}</b>{% if handoff.multi_leg_unsupported %}, plus multi-leg same-game import{% endif %}.</div>

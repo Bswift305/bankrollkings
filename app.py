@@ -33361,7 +33361,7 @@ def _canonical_kickoff_utc(value):
 
 def _kickoff_gate_failure(kickoff, now):
     """THE kickoff predicate (D4) -- the single rule every proposed-ticket surface goes through, via
-    _leg_kickoff_failure (the kickoff half of _leg_quote_failures). A leg is eligible only
+    _leg_kickoff_failure (called by _leg_quote_failures and the SGP Workbench). A leg is eligible only
     if its canonical kickoff is STRICTLY after the server clock `now` (aware UTC). Returns None when
     eligible, 'STARTED' when kickoff <= now (kickoff == now is started), 'MISSING_KICKOFF' when the
     kickoff is unknown / unparseable / naive (fail closed)."""
@@ -33374,8 +33374,8 @@ def _kickoff_gate_failure(kickoff, now):
 def _leg_kickoff_failure(leg, now=None):
     """The kickoff half of the executable-leg contract for ONE leg dict: `_kickoff_gate_failure` on
     the leg's own `kickoff_utc` against the server clock. The ONLY caller of the predicate -- the full
-    contract (`_leg_quote_failures`) reaches it through here, and any other ticket surface must reuse
-    this rather than write a second rule."""
+    contract (`_leg_quote_failures`) and the SGP Workbench (whose legs carry per-book facts, not a
+    single-book `quote`) both reach the one predicate through here, so there is no second rule."""
     return _kickoff_gate_failure((leg or {}).get('kickoff_utc'), now or _now_utc())
 
 
@@ -47976,6 +47976,58 @@ def _sgp_leg_id(book, kind, who, stat, direction, line):
                      ('' if line is None else str(line))])
 
 
+def _sgp_row_event_identity(r):
+    """{'event_id', 'kickoff_utc'} for ONE NFL_Props.csv book row (D4): the provider event id and the
+    canonical tz-aware commence instant fetch_player_props writes (EventId / EventCommenceAtUTC).
+    Missing / naive / unparseable commence time => kickoff_utc None (the kickoff gate fails it closed)."""
+    k = _canonical_kickoff_utc(r.get('EventCommenceAtUTC'))
+    eid = r.get('EventId')
+    eid = None if eid is None or (isinstance(eid, float) and pd.isna(eid)) else (str(eid).strip() or None)
+    if eid in ('nan', '<NA>', 'None'):
+        eid = None
+    return {'event_id': eid, 'kickoff_utc': (_utc_iso(k) if k is not None else None)}
+
+
+# D4 SGP Workbench labels. Browsing a started market stays possible, clearly labelled and never addable.
+SGP_STARTED_MENU_NOTE = 'Started — live/historical market, not addable'
+SGP_STARTED_HELD_NOTE = 'Started — remove or rebuild'
+SGP_UNRESOLVED_NOTE = 'No longer on the board — kickoff unavailable; remove or rebuild'
+
+
+def _sgp_apply_kickoff_gate(lg, now):
+    """Judge ONE workbench leg against the server clock with the shared kickoff rule
+    (_leg_kickoff_failure -> _kickoff_gate_failure; no second predicate). Annotates the leg:
+    kickoff_status None / 'STARTED' / 'MISSING_KICKOFF', ticket_ok (may enter a ticket, show its price,
+    be offered by a picker), and the visible notes for the menu and for a held selection."""
+    why = _leg_kickoff_failure(lg, now)
+    lg['kickoff_status'] = why
+    lg['ticket_ok'] = why is None
+    if why == 'STARTED':
+        lg['kickoff_note'], lg['held_note'] = SGP_STARTED_MENU_NOTE, SGP_STARTED_HELD_NOTE
+    elif why:
+        lg['kickoff_note'] = lg['held_note'] = KICKOFF_UNAVAILABLE_NOTE
+    else:
+        lg['kickoff_note'] = lg['held_note'] = None
+    return why
+
+
+def _sgp_ticket_gate(selected, unresolved_ids, now):
+    """Server-side kickoff verdict for the WHOLE workbench ticket at `now` (server clock; nothing from
+    the browser). Every selected leg is re-judged here -- not trusted from an earlier annotation -- and a
+    selected id that no longer resolves on this game's board counts as unknown kickoff (fail closed).
+    Any started / unknown-kickoff leg => not executable: no export, copy, handoff or ticket build."""
+    started, missing = [], []
+    for lg in selected or []:
+        why = _leg_kickoff_failure(lg, now)
+        if why == 'STARTED':
+            started.append(lg.get('label'))
+        elif why:
+            missing.append(lg.get('label'))
+    gone = list(unresolved_ids or [])
+    return {'executable': not (started or missing or gone), 'started': started,
+            'missing_kickoff': missing, 'unresolved': gone, 'server_now_utc': _utc_iso(now)}
+
+
 def _nfl_sgp_leg_menu(away, home):
     """Full per-book leg menu for ONE NFL game, grouped by category and ordered FACTUALLY (category,
     player/team, stat, line, sportsbook). Book-specific: a book's price is never paired with another
@@ -48025,6 +48077,7 @@ def _nfl_sgp_leg_menu(away, home):
                 if rd and rd.get('lean') != 'COIN FLIP':
                     lean = rd['lean']
             inj = _nfl_qb_out_impact(cat, pos, qb_out_teams[team]) if team in qb_out_teams else None
+            ident = _sgp_row_event_identity(r)          # D4: per-row event id + canonical kickoff
             for direction, oc in (('OVER', 'OverOdds'), ('UNDER', 'UnderOdds')):
                 legs.append({
                     'kind': 'player', 'category': cat, 'player': pl, 'team': team, 'position': pos,
@@ -48032,7 +48085,12 @@ def _nfl_sgp_leg_menu(away, home):
                     'book': book, 'timestamp': ts, 'tz': _SGP_TZ_NOTE, 'quote_scope': 'individual',
                     'lineage': 'Odds API player props (NFL_Props.csv)', 'lean': lean, 'inj': inj,
                     'label': f"{pl} {direction} {st} {line:g}",
-                    'id': _sgp_leg_id(book, 'player', pl, st, direction, line)})
+                    'id': _sgp_leg_id(book, 'player', pl, st, direction, line), **ident})
+
+    # D4: NFL_Odds / NFL_FirstHalf carry only Eastern display Date/Time strings -- no governed tz-aware
+    # commence instant -- so game-line and team-total legs have kickoff_utc None: shown, labelled
+    # "Kickoff unavailable — context only", never addable, never priced, never on an exported ticket.
+    _no_kick = {'event_id': None, 'kickoff_utc': None}
 
     # ---- game lines: game total (O/U, priced) + spread sides (encoded as opposing OVER/UNDER sides) ----
     try:
@@ -48055,7 +48113,7 @@ def _nfl_sgp_leg_menu(away, home):
                         'price': _sgp_price(r.get(oc)), 'book': book, 'timestamp': ts, 'tz': _SGP_TZ_NOTE,
                         'quote_scope': 'individual', 'lineage': 'Odds API game lines (NFL_Odds.csv)',
                         'label': f"Game Total {direction} {tot:g}",
-                        'id': _sgp_leg_id(book, 'game', 'Game', 'Game Total', direction, tot)})
+                        'id': _sgp_leg_id(book, 'game', 'Game', 'Game Total', direction, tot), **_no_kick})
             sp = pd.to_numeric(pd.Series([r.get('Spread')]), errors='coerce').iloc[0]
             if not pd.isna(sp):
                 sp = float(sp)
@@ -48070,14 +48128,14 @@ def _nfl_sgp_leg_menu(away, home):
                     'book': book, 'timestamp': ts, 'tz': _SGP_TZ_NOTE, 'quote_scope': 'individual',
                     'lineage': 'Odds API game lines (NFL_Odds.csv)',
                     'label': f"{home_ab} spread {sp:+g}",
-                    'id': _sgp_leg_id(book, 'game', home_ab, 'Spread', 'OVER', sp)})
+                    'id': _sgp_leg_id(book, 'game', home_ab, 'Spread', 'OVER', sp), **_no_kick})
                 legs.append({
                     'kind': 'game', 'category': 'Game Line', 'player': None, 'team': away_ab,
                     'stat': 'Spread', 'direction': 'UNDER', 'line': -sp, 'price': None,
                     'book': book, 'timestamp': ts, 'tz': _SGP_TZ_NOTE, 'quote_scope': 'individual',
                     'lineage': 'Odds API game lines (NFL_Odds.csv)',
                     'label': f"{away_ab} spread {-sp:+g}",
-                    'id': _sgp_leg_id(book, 'game', away_ab, 'Spread', 'UNDER', -sp)})
+                    'id': _sgp_leg_id(book, 'game', away_ab, 'Spread', 'UNDER', -sp), **_no_kick})
 
     # ---- team totals + period lines (NFL_FirstHalf): line-only, no captured side prices -> unavailable --
     try:
@@ -48103,7 +48161,8 @@ def _nfl_sgp_leg_menu(away, home):
                         'book': book, 'timestamp': ts, 'tz': _SGP_TZ_NOTE, 'quote_scope': 'individual',
                         'lineage': 'Odds API period/team-total lines (NFL_FirstHalf.csv) — line only',
                         'label': f"{team_ab} team total {direction} {tt:g}",
-                        'id': _sgp_leg_id(book, 'team_total', team_ab, 'Team Total', direction, tt)})
+                        'id': _sgp_leg_id(book, 'team_total', team_ab, 'Team Total', direction, tt),
+                        **_no_kick})
 
     # Factual ordering only: category, player/team, stat, line, sportsbook.
     legs.sort(key=lambda x: (_SGP_MENU_ORDER.index(x['category']) if x['category'] in _SGP_MENU_ORDER else 99,
@@ -48123,10 +48182,30 @@ _SGP_HANDOFF_REQUIRED = ['game', 'player_or_team', 'stat', 'direction', 'line', 
 _SGP_HANDOFF_PARLAY_ACCEPTS = ['player_or_team', 'stat', 'direction', 'line']  # single leg, no price/book/ts
 
 
-def _sgp_handoff_state(selected):
+def _sgp_handoff_state(selected, gate=None):
     """V1 handoff: the existing Parlay Builder accepts a single leg (player/stat/direction/line) with no
     price/sportsbook/timestamp/quote-scope and no multi-leg SGP import. That loses required fields, so the
-    handoff is HELD and the mismatch reported; the user gets a full-fidelity copyable summary instead."""
+    handoff is HELD and the mismatch reported; the user gets a full-fidelity copyable summary instead.
+    D4: if the server-side kickoff gate says the ticket carries a started / unknown-kickoff leg, the
+    handoff is REJECTED -- no copy/export, no King's Tickets build -- until the user removes or rebuilds
+    it. With no gate passed, it is computed here on the server clock (never skipped)."""
+    if gate is None:
+        gate = _sgp_ticket_gate(selected, [], _now_utc())
+    if not gate.get('executable'):
+        n_s = len(gate.get('started') or [])
+        n_m = len(gate.get('missing_kickoff') or [])
+        n_u = len(gate.get('unresolved') or [])
+        parts = []
+        if n_s:
+            parts.append(f"{n_s} leg{'s' if n_s != 1 else ''} started")
+        if n_m:
+            parts.append(f"{n_m} leg{'s' if n_m != 1 else ''} with kickoff unavailable")
+        if n_u:
+            parts.append(f"{n_u} leg{'s' if n_u != 1 else ''} no longer on the board")
+        return {'status': 'rejected', 'reason': 'kickoff_gate', 'gate': gate,
+                'message': ('This ticket cannot be exported, copied or handed off: ' + '; '.join(parts)
+                            + '. Remove or rebuild the marked leg(s) -- nothing was removed for you.'),
+                'leg_count': len(selected or []) + n_u}
     missing = [f for f in _SGP_HANDOFF_REQUIRED if f not in _SGP_HANDOFF_PARLAY_ACCEPTS]
     return {
         'status': 'held',
@@ -48159,6 +48238,7 @@ def build_sgp_workbench_context(game=None, selected_ids=None, thesis='custom'):
         'disclosure': _sgp.CORRELATION_DISCLOSURE, 'independence_label': _sgp.INDEPENDENCE_LABEL,
         'handoff': None, 'journal_enabled': bool(DECISION_JOURNAL_ENABLED),
         'available': False, 'abstain': None, 'tz_note': _SGP_TZ_NOTE,
+        'unresolved_selected': [], 'ticket_gate': None, 'server_now_utc': None,
     }
     if not game:
         return ctx
@@ -48183,31 +48263,47 @@ def build_sgp_workbench_context(game=None, selected_ids=None, thesis='custom'):
     menu = _nfl_sgp_leg_menu(away, home)
     ctx['menu'] = menu
     ctx['available'] = bool(menu)
-    if not menu:
-        ctx['abstain'] = 'No genuinely captured legs for this game right now.'
-        return ctx
+    # D4: ONE server clock for this request (never the browser's); the menu is rebuilt per request, and
+    # every leg is judged here, after any cache, by the shared kickoff rule.
+    now = _now_utc()
+    ctx['server_now_utc'] = _utc_iso(now)
+    for grp in menu:
+        for lg in grp['legs']:
+            _sgp_apply_kickoff_gate(lg, now)
     by_id = {lg['id']: lg for grp in menu for lg in grp['legs']}
-    # single-game only by construction (ids not in this game's menu are dropped) + de-duplicated so a
-    # repeated selection is idempotent.
-    cur = list(dict.fromkeys(i for i in (selected_ids or []) if i in by_id))
+    # single-game only by construction (ids not in this game's menu never become selected legs) +
+    # de-duplicated so a repeated selection is idempotent. D4: a requested id that does NOT resolve on
+    # this game's board (e.g. its game kicked off and the feed dropped it) is NOT silently deleted -- it
+    # stays in the URL state, is listed for the user to remove/rebuild, and blocks any export.
+    want = list(dict.fromkeys(str(i) for i in (selected_ids or []) if str(i).strip()))
+    cur = [i for i in want if i in by_id]
+    unresolved = [i for i in want if i not in by_id]
     selected = [by_id[i] for i in cur]
     ctx['selected'] = selected
     from urllib.parse import urlencode
 
     def _toggle(leg_id):
-        nxt = [i for i in cur if i != leg_id] if leg_id in cur else cur + [leg_id]
+        nxt = [i for i in want if i != leg_id] if leg_id in want else want + [leg_id]
         return '/tools/sgp-workbench?' + urlencode([('game', game), ('thesis', thesis)]
                                                    + [('sel', i) for i in nxt])
+    ctx['unresolved_selected'] = [{'id': i, 'note': SGP_UNRESOLVED_NOTE, 'remove_url': _toggle(i)}
+                                  for i in unresolved]
     for grp in menu:
         for lg in grp['legs']:
             lg['selected'] = lg['id'] in cur
-            lg['toggle_url'] = _toggle(lg['id'])
+            # Pickers never offer a started / unknown-kickoff leg: no Add link (removal stays possible).
+            lg['toggle_url'] = _toggle(lg['id']) if (lg['selected'] or lg['ticket_ok']) else None
     for lg in selected:
         lg['remove_url'] = _toggle(lg['id'])
     # a thesis switch preserves the current selection (same game); clear drops all legs (explicit action)
     ctx['thesis_url'] = lambda tk: '/tools/sgp-workbench?' + urlencode(
-        [('game', game), ('thesis', tk)] + [('sel', i) for i in cur])
+        [('game', game), ('thesis', tk)] + [('sel', i) for i in want])
     ctx['clear_url'] = '/tools/sgp-workbench?' + urlencode([('game', game), ('thesis', thesis)])
+    ctx['ticket_gate'] = _sgp_ticket_gate(selected, unresolved, now) if (selected or unresolved) else None
+    if not menu:
+        ctx['abstain'] = 'No genuinely captured legs for this game right now.'
+        ctx['handoff'] = _sgp_handoff_state(selected, ctx['ticket_gate']) if unresolved else None
+        return ctx
     # game total line for the remaining-points math (R10)
     gtl = None
     for grp in menu:
@@ -48216,7 +48312,8 @@ def build_sgp_workbench_context(game=None, selected_ids=None, thesis='custom'):
                 gtl = lg['line']
                 break
     ctx['evaluation'] = _sgp.evaluate(selected, thesis, game_total_line=gtl) if selected else None
-    ctx['handoff'] = _sgp_handoff_state(selected) if selected else None
+    ctx['handoff'] = (_sgp_handoff_state(selected, ctx['ticket_gate'])
+                      if (selected or unresolved) else None)
     return ctx
 
 
