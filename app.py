@@ -6561,6 +6561,9 @@ def build_live_game_lookup(odds_df, schedule_df):
             'over_odds': row.get('OverOdds'),
             'under_odds': row.get('UnderOdds'),
             'slug': slug,
+            # F7 provenance: '' for frames without a Source column; 'CFBD' only ever comes from
+            # load_ncaaf_context_slate (context surfaces), whose CFBD rows carry no price.
+            'source': _first_team_name(row.get('Source')),
         }
         lookup[slug] = lookup[game_key]
     return lookup
@@ -6705,6 +6708,9 @@ def build_football_live_games(odds_df, schedule_df, date_filter='all', day_filte
         home = str(market.get('home') or '').strip()
         if not away or not home:
             continue
+        _src = str(market.get('source') or '').strip()
+        _is_cfbd = _src.upper() == 'CFBD'
+        _summary = format_game_market_summary(market, home)
         rows.append({
             'away': away,
             'home': home,
@@ -6713,15 +6719,19 @@ def build_football_live_games(odds_df, schedule_df, date_filter='all', day_filte
             'time': str(market.get('time') or '').strip(),
             'spread': market.get('spread'),
             'total': market.get('total'),
-            'away_ml': market.get('away_ml'),
-            'home_ml': market.get('home_ml'),
-            # Display label: the feed's own book, else 'Unrecorded source' -- never an invented
-            # bookmaker. book_source is the RAW label (None when unrecorded) for provenance logic.
-            'book': _clean_book(market.get('book')) or UNRECORDED_SOURCE,
+            'away_ml': None if _is_cfbd else market.get('away_ml'),
+            'home_ml': None if _is_cfbd else market.get('home_ml'),
+            # Display label: CFBD context label, the feed's own book, else 'Unrecorded source' -- never an
+            # invented bookmaker. book_source is the RAW label (None when unrecorded) for provenance logic.
+            'book': (NCAAF_CFBD_CONTEXT_LABEL if _is_cfbd
+                     else (_clean_book(market.get('book')) or UNRECORDED_SOURCE)),
             'book_source': _clean_book(market.get('book')) or None,
             'updated_utc': _utc_iso(_feed_stamp_to_utc(market.get('updated'))),
             'slug': market.get('slug'),
-            'summary': format_game_market_summary(market, home),
+            'summary': (f"{_summary} · {NCAAF_CFBD_CONTEXT_LABEL}" if (_is_cfbd and _summary) else _summary),
+            # F7: per-row line provenance. line_label is non-empty ONLY for a CFBD context line.
+            'line_source': _src,
+            'line_label': NCAAF_CFBD_CONTEXT_LABEL if _is_cfbd else '',
         })
     # Collapse case-variant duplicates: the schedule keeps proper case ('Wyoming')
     # while the odds feed normalizes known CFB names to abbreviations ('WYOMING'),
@@ -18041,14 +18051,200 @@ def load_nfl_game_market_odds():
     return pd.DataFrame()
 
 
+# ---- F7: NCAAF odds single-writer split (docs/f7_ncaaf_odds_writers_proposal.md) ----------------------
+# data/odds/NCAAF_Odds.csv (+ mirror + NCAAF_Schedule.csv alias) are written ONLY by the Odds API
+# (fetch_game_lines.py): real book rows with real prices -> MARKET/PLAY surfaces read them and nothing else.
+# CFBD writes its OWN artifacts (NCAAF_CFBD_Schedule.csv / NCAAF_CFBD_Lines.csv) with NO price columns.
+# CFBD numbers appear ONLY on CONTEXT surfaces, through load_ncaaf_context_slate(), labeled exactly
+# NCAAF_CFBD_CONTEXT_LABEL, with every price field None. CFBD consensus is never an executable line.
+NCAAF_CFBD_CONTEXT_LABEL = 'CFBD consensus — no book price'
+NCAAF_CFBD_CONTEXT_MAX_AGE_HOURS = 48     # CFBD runs once daily; older retrieval is not shown at all
+_NCAAF_PRICE_COLS = ('SpreadOdds', 'OverOdds', 'UnderOdds', 'AwayML', 'HomeML')
+
+
+def _ncaaf_cfbd_row_mask(df):
+    """True for rows that came from CFBD (legacy residue `Book='CFBD consensus'` from the pre-F7 writer,
+    or any Source=='CFBD' row). Used to FIREWALL market/play readers from CFBD rows."""
+    mask = pd.Series(False, index=df.index)
+    if 'Book' in df.columns:
+        mask |= df['Book'].astype(str).str.contains('cfbd', case=False, na=False)
+    if 'Source' in df.columns:
+        mask |= df['Source'].astype(str).str.strip().str.lower().eq('cfbd')
+    return mask
+
+
+def _ncaaf_market_only(df):
+    """MARKET FIREWALL: drop every CFBD row. Until the one-time F7 cutover lands on prod, the legacy file
+    can still hold the old CFBD writer's rows (fabricated -110 prices); they must never reach a market
+    surface. After cutover this is a no-op on Odds-API-only data."""
+    if df is None or getattr(df, 'empty', True):
+        return df if df is not None else pd.DataFrame()
+    return df[~_ncaaf_cfbd_row_mask(df)].copy()
+
+
+def _format_ncaaf_game_market_odds(df):
+    return _format_game_market_odds(_ncaaf_market_only(df))
+
+
+def _ncaaf_market_raw(df):
+    """Odds-API rows with ALL columns kept (AwayFull/HomeFull/LastUpdated) for the context composer."""
+    out = _ncaaf_market_only(df)
+    if not out.empty and 'Date' in out.columns:
+        out['Date'] = pd.to_datetime(out['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+    for col in ('Spread', 'Total') + _NCAAF_PRICE_COLS:
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors='coerce')
+    return out
+
+
 def load_ncaaf_game_market_odds():
+    """MARKET/PLAY binding: Odds API book rows ONLY (never a CFBD row; see _ncaaf_market_only)."""
     primary = DATA_DIR / 'odds' / 'NCAAF_Odds.csv'
     secondary = DATA_DIR / 'schedules' / 'NCAAF_Odds.csv'
     if primary.exists():
-        return _load_cached_csv(primary, transform=_format_game_market_odds)
+        return _load_cached_csv(primary, transform=_format_ncaaf_game_market_odds)
     if secondary.exists():
-        return _load_cached_csv(secondary, transform=_format_game_market_odds)
+        return _load_cached_csv(secondary, transform=_format_ncaaf_game_market_odds)
     return pd.DataFrame()
+
+
+def _format_ncaaf_cfbd_frame(df):
+    """CFBD artifact reader: CFBD rows only, and NEVER a price/book column even if one appears on disk."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    out = df.drop(columns=[c for c in _NCAAF_PRICE_COLS + ('Book',) if c in df.columns]).copy()
+    if 'Source' in out.columns:
+        out = out[out['Source'].astype(str).str.strip().str.upper() == 'CFBD']
+    else:
+        return pd.DataFrame()
+    if 'Date' in out.columns:
+        out['Date'] = pd.to_datetime(out['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
+    for col in ('Away', 'Home'):
+        if col in out.columns:
+            out[col] = out[col].astype(str).str.strip()
+    for col in ('Spread', 'Total'):
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors='coerce')
+    return out.dropna(subset=[c for c in ('Date', 'Away', 'Home') if c in out.columns])
+
+
+def load_ncaaf_cfbd_schedule():
+    return _load_cached_csv(DATA_DIR / 'schedules' / 'NCAAF_CFBD_Schedule.csv',
+                            transform=_format_ncaaf_cfbd_frame, default=pd.DataFrame())
+
+
+def load_ncaaf_cfbd_lines():
+    return _load_cached_csv(DATA_DIR / 'odds' / 'NCAAF_CFBD_Lines.csv',
+                            transform=_format_ncaaf_cfbd_frame, default=pd.DataFrame())
+
+
+def _ncaaf_school_key(name, schools):
+    """Longest CFBD school name (lowercased) that `name` equals or starts with at a word boundary
+    ('Texas Tech Red Raiders' -> 'texas tech', never 'texas'). None when nothing matches."""
+    q = str(name or '').strip().lower()
+    if not q or q == 'nan':
+        return None
+    if q in schools:
+        return q
+    for s in sorted(schools, key=len, reverse=True):
+        if q.startswith(s + ' '):
+            return s
+    return None
+
+
+def _ncaaf_cfbd_consensus(provider_rows):
+    """Context-only consensus from CFBD provider rows: CFBD's own 'consensus' provider when present,
+    else the LOWER MEDIAN of the posted values -- always a number some provider actually posted, never
+    an average no one dealt. Returns (spread, total, n_providers)."""
+    import statistics
+    rows = list(provider_rows)
+    named = [r for r in rows if str(r.get('ProviderName') or '').strip().lower() == 'consensus']
+    pick = named or rows
+
+    def _one(col):
+        vals = sorted(float(r[col]) for r in pick if r.get(col) is not None and not pd.isna(r.get(col)))
+        return statistics.median_low(vals) if vals else None
+    return _one('Spread'), _one('Total'), len(rows)
+
+
+def _ncaaf_cfbd_fresh(df, max_age_hours=NCAAF_CFBD_CONTEXT_MAX_AGE_HOURS):
+    if df is None or df.empty or 'FetchedAtUTC' not in df.columns:
+        return False
+    ts = pd.to_datetime(df['FetchedAtUTC'], errors='coerce', utc=True).dropna()
+    if ts.empty:
+        return False
+    return (pd.Timestamp.now(tz='UTC') - ts.max()).total_seconds() / 3600.0 <= max_age_hours
+
+
+def load_ncaaf_context_slate():
+    """F7 read-time composer -- CONTEXT surfaces ONLY (Best Spots, Big Favorites, totals pace, CFB matchup
+    card). Never call this from a market/play surface. Never written to disk.
+
+    Returns (odds_df, schedule_df) for build_football_live_games, every line row carrying `Source`:
+      - universe: the CFBD schedule (full FBS slate, CFBD school names, so the CFBD-keyed trend joins work)
+        when present, else the Odds-API alias (exactly the market loaders' rows, Source='odds_api');
+      - line: the Odds API book row matched by date + longest-prefix school name (Source='odds_api', real
+        Book and prices); else the CFBD provider consensus (Source='CFBD', Book=NCAAF_CFBD_CONTEXT_LABEL,
+        EVERY price field None); else no line (schedule-only game).
+    Stale Odds API rows (wholesale-stale feed) and CFBD retrievals older than
+    NCAAF_CFBD_CONTEXT_MAX_AGE_HOURS are not used."""
+    line_cols = ['Date', 'Time', 'Away', 'Home', 'Spread', 'Total', *_NCAAF_PRICE_COLS, 'Book', 'GameID', 'Source']
+    w1 = pd.DataFrame()
+    for p in (DATA_DIR / 'odds' / 'NCAAF_Odds.csv', DATA_DIR / 'schedules' / 'NCAAF_Odds.csv'):
+        if p.exists():
+            w1 = _load_cached_csv(p, transform=_ncaaf_market_raw, default=pd.DataFrame())
+            break
+    try:
+        if not w1.empty and get_lines_refresh_meta(w1).get('is_stale'):
+            w1 = w1.iloc[0:0]
+    except Exception:
+        pass
+
+    sched = load_ncaaf_cfbd_schedule()
+    if sched is None or sched.empty:
+        odds = load_ncaaf_game_market_odds()
+        if odds is not None and not odds.empty:
+            odds = odds.assign(Source='odds_api')
+        return odds, load_ncaaf_schedule()
+
+    lines = load_ncaaf_cfbd_lines()
+    if not _ncaaf_cfbd_fresh(lines):
+        lines = pd.DataFrame()
+    by_game = {}
+    if not lines.empty and 'CfbdGameId' in lines.columns:
+        for rec in lines.to_dict('records'):
+            by_game.setdefault(str(rec.get('CfbdGameId')), []).append(rec)
+
+    schools_by_date = {}
+    for rec in sched.to_dict('records'):
+        schools_by_date.setdefault(rec['Date'], set()).update({rec['Away'].lower(), rec['Home'].lower()})
+    w1_idx = {}
+    if not w1.empty:
+        w1s = w1.sort_values([c for c in ('Date', 'Book') if c in w1.columns])
+        for rec in w1s.to_dict('records'):
+            d = str(rec.get('Date') or '')
+            schools = schools_by_date.get(d, set())
+            ak = _ncaaf_school_key(_first_team_name(rec.get('AwayFull'), rec.get('Away')), schools)
+            hk = _ncaaf_school_key(_first_team_name(rec.get('HomeFull'), rec.get('Home')), schools)
+            if ak and hk:
+                w1_idx.setdefault((d, ak, hk), rec)
+
+    rows = []
+    for g in sched.to_dict('records'):
+        base = {'Date': g['Date'], 'Time': g.get('Time') or '', 'Away': g['Away'], 'Home': g['Home']}
+        m = w1_idx.get((g['Date'], g['Away'].lower(), g['Home'].lower()))
+        if m is not None:
+            rows.append({**base, 'Spread': m.get('Spread'), 'Total': m.get('Total'),
+                         **{c: m.get(c) for c in _NCAAF_PRICE_COLS},
+                         'Book': m.get('Book'), 'GameID': m.get('GameID'), 'Source': 'odds_api'})
+            continue
+        spread, total, n = _ncaaf_cfbd_consensus(by_game.get(str(g.get('CfbdGameId')), []))
+        if spread is None and total is None:
+            continue   # no line from either source -> schedule-only game (abstain)
+        rows.append({**base, 'Spread': spread, 'Total': total, **{c: None for c in _NCAAF_PRICE_COLS},
+                     'Book': NCAAF_CFBD_CONTEXT_LABEL, 'GameID': '', 'Source': 'CFBD'})
+    odds = pd.DataFrame(rows, columns=line_cols)
+    return odds, sched[['Date', 'Time', 'Away', 'Home']].copy()
 
 
 def build_game_market_lookup(odds_df):
@@ -20813,12 +21009,14 @@ def load_ncaaf_schedule():
     odds_schedule_path = DATA_DIR / 'schedules' / 'NCAAF_Odds.csv'
     odds_primary_path = DATA_DIR / 'odds' / 'NCAAF_Odds.csv'
 
-    schedule_df = _load_cached_csv(path, transform=_format_schedule, default=pd.DataFrame())
+    # F7 market firewall: the schedule frames feed build_live_game_lookup alongside the odds, so a legacy
+    # CFBD row (Book='CFBD consensus', fabricated -110) in the mirror must be dropped here too.
+    schedule_df = _load_cached_csv(path, transform=_format_ncaaf_schedule, default=pd.DataFrame())
     odds_df = pd.DataFrame()
     if odds_schedule_path.exists():
-        odds_df = _load_cached_csv(odds_schedule_path, transform=_format_schedule, default=pd.DataFrame())
+        odds_df = _load_cached_csv(odds_schedule_path, transform=_format_ncaaf_schedule, default=pd.DataFrame())
     elif odds_primary_path.exists():
-        odds_df = _load_cached_csv(odds_primary_path, transform=_format_schedule, default=pd.DataFrame())
+        odds_df = _load_cached_csv(odds_primary_path, transform=_format_ncaaf_schedule, default=pd.DataFrame())
 
     if schedule_df.empty:
         return odds_df
@@ -20832,6 +21030,10 @@ def load_ncaaf_schedule():
     if sort_cols:
         combined = combined.sort_values(sort_cols).reset_index(drop=True)
     return combined
+
+
+def _format_ncaaf_schedule(df):
+    return _format_schedule(_ncaaf_market_only(df))
 
 
 def load_ncaamb_schedule():
@@ -34667,7 +34869,7 @@ def _render_football_method_page(sport_key, method_key):
                 })
                 method_view['summary_cards'] = [
                     {'label': 'Matchups', 'value': len(live_games), 'note': 'live slate rows loaded'},
-                    {'label': 'Book Source', 'value': len(_books), 'note': ', '.join(_books[:4]) or 'CFBD consensus'},
+                    {'label': 'Book Source', 'value': len(_books), 'note': ', '.join(_books[:4]) or 'no book lines posted'},  # F7: market view never shows CFBD
                     {'label': 'Avg Total', 'value': avg_total if avg_total else '-', 'note': 'live market total average'},
                 ]
             elif not live_odds.empty or not live_schedule.empty:
@@ -46584,13 +46786,16 @@ def build_cfb_matchup_context():
     week_games = []
     sidx = _cfb_streaks_by_team()
     try:
-        for g in build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week'):
+        # F7 CONTEXT surface: CFBD universe + names (so streak/weather joins match); a CFBD line is
+        # labeled `CFBD consensus — no book price`, never priced.
+        for g in build_football_live_games(*load_ncaaf_context_slate(), date_filter='week'):
             a, h = g.get('away'), g.get('home')
             if a and h:
                 wg = {
                     'away': a, 'home': h,
                     'spread': _format_signed_line(g.get('spread')),
                     'total': g.get('total'), 'date': g.get('date'), 'time': g.get('time'),
+                    'line_label': g.get('line_label', ''),
                 }
                 # Current-season form + common-opponent read (this year's games, not
                 # last year's ATS) -- the "think like this" layer.
@@ -49262,7 +49467,8 @@ def build_cfb_totals_context():
                 }
             except (KeyError, ValueError, TypeError, IndexError):
                 continue
-        for g in build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter='week'):
+        # F7 CONTEXT surface: CFBD universe + names; a CFBD line is labeled, never priced.
+        for g in build_football_live_games(*load_ncaaf_context_slate(), date_filter='week'):
             a, h = g.get('away'), g.get('home')
             pa, ph = prof.get(a), prof.get(h)
             if not (a and h and pa and ph):
@@ -49278,6 +49484,7 @@ def build_cfb_totals_context():
                 'posted': (round(float(posted), 1) if pd.notna(posted) else None),
                 'gap': (round(proj - float(posted), 1) if pd.notna(posted) else None),
                 'read': read,
+                'line_label': g.get('line_label', ''),
             })
         to_week.sort(key=lambda r: -r['pace'])
     except Exception:
@@ -49573,7 +49780,8 @@ def build_cfb_best_spots_context(date_filter='week'):
 
     live_cards = []
     try:
-        games = build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter=date_filter)
+        # F7 CONTEXT surface: CFBD universe + names; a CFBD line is labeled, never priced.
+        games = build_football_live_games(*load_ncaaf_context_slate(), date_filter=date_filter)
     except Exception:
         games = []
     for g in games:
@@ -49585,6 +49793,7 @@ def build_cfb_best_spots_context(date_filter='week'):
                 'date': g.get('date', ''), 'time': g.get('time', ''),
                 'spread': _format_signed_line(g.get('spread')), 'total': g.get('total'),
                 'headline': headline, 'bullets': bullets, 'strength': strength,
+                'line_label': g.get('line_label', ''),
             })
     live_cards.sort(key=lambda c: -c['strength'])
     live_cards = live_cards[:10]
@@ -49647,7 +49856,8 @@ def build_cfb_big_favorites_context(date_filter='today', threshold=30):
     teams = _load_scenario_json(_CFB_MU_CACHE2, 'cfb_matchup.json').get('teams', {})
     fh_rows = load_football_first_half('ncaaf')
     try:
-        games = build_football_live_games(load_ncaaf_game_market_odds(), load_ncaaf_schedule(), date_filter=date_filter)
+        # F7 CONTEXT surface (folded into Best Spots): labeled CFBD lines allowed, never priced.
+        games = build_football_live_games(*load_ncaaf_context_slate(), date_filter=date_filter)
     except Exception:
         games = []
 
@@ -49703,6 +49913,7 @@ def build_cfb_big_favorites_context(date_filter='today', threshold=30):
             'team_pct': (round(tr[0] * 100) if tr and tr[0] is not None else None),
             'team_rec': (tr[1] if tr else ''), 'team_avg': (tr[2] if tr else None),
             'read': read, 'huge': line >= 48,
+            'line_label': g.get('line_label', ''),
         })
     rows.sort(key=lambda r: -r['line'])
     return {
@@ -49734,9 +49945,16 @@ def build_cfb_totals_board_context(date_filter='today', band='all'):
     cols = [c.get('label') for c in board.get('columns', [])]
     idx = {lab: i for i, lab in enumerate(cols)}
     look = {r[0]: r for r in board.get('rows', []) if r}
+    # F7: this is a MARKET surface (posted totals on the Live Board & Lines view), so it stays bound to
+    # the Odds API rows only. Their names are 'Georgia Bulldogs' while cfb_totals.json is keyed by CFBD
+    # school ('Georgia'), so resolve by longest school prefix instead of an exact join that always missed.
+    _look_lc = {str(k).strip().lower(): k for k in look}
 
     def cell(team, label):
         r = look.get(team)
+        if r is None:
+            _k = _ncaaf_school_key(team, set(_look_lc))
+            r = look.get(_look_lc[_k]) if _k else None
         if not r or label not in idx:
             return None
         return r[idx[label]]
