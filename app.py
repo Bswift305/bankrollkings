@@ -33119,21 +33119,32 @@ def build_nfl_featured_parlay(legs=3):
     floor board's reliability ranking. Honest: still a parlay -- compounds the vig -- but
     built from the highest-floor legs on the board, not a longshot."""
     board = build_nfl_floor_board(limit=60)
-    picked, games = [], set()
+    now = _now_utc()                                   # one server clock for the whole ticket (D4)
+    picked, games, removed_started, s_games = [], set(), [], set()
     for f in board.get('floors', []):
         q = f.get('quote')
-        if not q or not _leg_is_executable({'price': q['price'], 'line': f.get('line'), 'quote': q,
-                                            'kickoff_utc': f.get('kickoff_utc')}):
+        if not q:
+            continue
+        why = _leg_quote_failures({'price': q['price'], 'line': f.get('line'), 'quote': q,
+                                   'kickoff_utc': f.get('kickoff_utc')}, now)
+        g = f.get('game') or f.get('player')
+        if why == ['STARTED']:
+            # Would have qualified but its game has started: never on the ticket, and DISCLOSED --
+            # the parlay is rebuilt from not-yet-started games, never a silent substitute.
+            if g not in s_games and g not in games:
+                removed_started.append(f"{f.get('player')} {f.get('stat')} {f.get('line'):g}+")
+                s_games.add(g)
+            continue
+        if why:
             continue                                   # no verified, fresh single-book quote
         f = dict(f, price=q['price'], book=q['book'], quote_at=q['updated_utc'])
-        g = f.get('game') or f.get('player')
         if g in games:
             continue
         picked.append(f); games.add(g)
         if len(picked) >= legs:
             break
     if len(picked) < legs:
-        return {'available': False}
+        return {'available': False, 'removed_started': removed_started}
     dec = 1.0
     for f in picked:
         p = f['price']
@@ -33145,6 +33156,7 @@ def build_nfl_featured_parlay(legs=3):
         indep *= (f['hit'] / 100.0)
     return {'available': True, 'legs': picked, 'american': int(am), 'decimal': round(dec, 2),
             'payout_5': round(5 * dec, 2), 'indep_pct': round(100 * indep),
+            'removed_started': removed_started,
             'updated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
 
 
@@ -33275,6 +33287,9 @@ def _leg_kickoff_failure(leg, now=None):
     contract (`_leg_quote_failures`) reaches it through here, and any other ticket surface must reuse
     this rather than write a second rule."""
     return _kickoff_gate_failure((leg or {}).get('kickoff_utc'), now or _now_utc())
+
+
+STARTED_LEG_NOTE = 'Game started — not on any ticket'
 
 
 def _leg_quote_failures(leg, now=None):
@@ -33633,8 +33648,9 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all', pos
     eye. Same pool the Daily Card draws from. Filter by sport (nfl/cfb/mlb), tier
     (floor/swing), and position (nfl player props only). Floors first within each game, then
     swings/edges."""
+    _now = _now_utc()                                  # one server clock for the whole board (D4)
     floors, swings = _card_pools(legs if legs in ('all', 'props', 'lines') else 'all',
-                                 mlb_limit=60, cfb_limit=20, nfl_line_limit=16)
+                                 mlb_limit=60, cfb_limit=20, nfl_line_limit=16, now=_now)
     pool, seen = [], set()
     for l in floors + swings:                          # combine; 'lines' mode doubles floors==swings
         key = (l.get('sport'), l.get('label'), l.get('game'))
@@ -33729,11 +33745,17 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all', pos
                 and (l.get('pos') or '').lower() == pos_f]
     # Executability is decided ONCE here (one clock) and carried to the template: a non-executable
     # leg renders as context -- no price, implied %, or slip control -- with the reason it abstains.
-    _now = datetime.now(timezone.utc)
     for l in pool:
         _why = _leg_quote_failures(l, _now)
         l['executable_now'] = not _why
-        if _why and l.get('quote'):
+        if 'STARTED' in _why:
+            # D4: the game has kicked off -- context only, never addable to a slip, never priced.
+            l['price_note'] = STARTED_LEG_NOTE
+            l['market_pct'] = None
+            if l.get('quote'):
+                l['line_source'] = l['quote'].get('book') or UNRECORDED_SOURCE
+                l['updated_label'] = _updated_label(l['quote'].get('updated_utc'))
+        elif _why and l.get('quote'):
             l['price_note'] = 'Quote not current — ' + ', '.join(c.lower().replace('_', ' ') for c in _why)
             l['line_source'] = l['quote'].get('book') or UNRECORDED_SOURCE
             l['updated_label'] = _updated_label(l['quote'].get('updated_utc'))
@@ -33765,6 +33787,8 @@ def build_menu_board(legs='all', timeframe='smart', sport='all', tier='all', pos
             'positions': menu_positions,
             'coverage': menu_coverage,
             'counts': {'games': len(out), 'legs': sum(len(gd['legs']) for gd in out)},
+            'n_started': sum(1 for gd in out for l in gd['legs'] if l.get('price_note') == STARTED_LEG_NOTE),
+            'server_now_utc': _utc_iso(_now),
             'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
 
 
@@ -33778,13 +33802,18 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
     sizes = [n for n in (sizes or [3, 4, 5]) if n in (2, 3, 4, 5)] or [3, 4, 5]
     risk = risk if risk in _SWINGS_BY_RISK else 'balanced'
     legs = legs if legs in ('all', 'props', 'lines') else 'all'
-    floors, swings = _card_pools(legs)
+    # D4: ONE server clock for the whole build -- every leg on every card, the bench and the context
+    # rows are judged against the same instant, AFTER every cache (the floor board is cached; this is not).
+    now = _now_utc()
+    floors, swings = _card_pools(legs, now=now)
+    why = {id(l): _leg_quote_failures(l, now) for l in floors + swings}
     # A card is a ticket: only legs with a verified price may sit on one, be priced, or be offered
     # as a swap. Unpriced team lines are returned separately as context (line + source, no price).
+    # A leg whose game has started is context only (STARTED) -- never a card leg, swap or price.
     context_lines, _cseen = [], set()
     for l in floors + swings:
         k = (l.get('sport'), l.get('label'), l.get('game'))
-        if not _leg_is_executable(l) and k not in _cseen:
+        if why[id(l)] and k not in _cseen:
             _cseen.add(k)
             ctx = {f: l.get(f) for f in ('sport', 'kind', 'label', 'game', 'line', 'reason',
                                           'hit', 'sample', 'price_note', 'line_source', 'updated_label')}
@@ -33792,11 +33821,19 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
                 ctx['line_source'] = l['quote'].get('book') or UNRECORDED_SOURCE
                 ctx['updated_label'] = _updated_label(l['quote'].get('updated_utc'))
                 ctx['price_note'] = 'Quote not current — ' + ', '.join(
-                    c.lower().replace('_', ' ') for c in _leg_quote_failures(l))
+                    c.lower().replace('_', ' ') for c in why[id(l)])
+            if 'STARTED' in why[id(l)]:
+                ctx['price_note'] = STARTED_LEG_NOTE
             ctx['updated_label'] = ctx.get('updated_label') or _updated_label(None)
             context_lines.append(ctx)
-    floors = [l for l in floors if _leg_is_executable(l)]
-    swings = [l for l in swings if _leg_is_executable(l)]
+    # "Shadow" pools: legs that would be executable but for a started game. Used ONLY to detect which
+    # card would have carried a started leg so the rebuild is DISCLOSED -- never to price or place one.
+    s_floors = [l for l in floors if not why[id(l)] or why[id(l)] == ['STARTED']]
+    s_swings = [l for l in swings if not why[id(l)] or why[id(l)] == ['STARTED']]
+    n_started = len({(l.get('sport'), l.get('label'), l.get('game'))
+                     for l in floors + swings if 'STARTED' in why[id(l)]})
+    floors = [l for l in floors if not why[id(l)]]
+    swings = [l for l in swings if not why[id(l)]]
 
     # --- timeframe filter: keep legs whose game is in the window (undated legs kept). 'smart'
     # = the weekend card on Fri-Sun, the full week otherwise. Falls back to 'week' if the
@@ -33807,10 +33844,13 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
         tf = 'weekend' if datetime.strptime(_card_today_eastern(), '%Y-%m-%d').weekday() in (4, 5, 6) else 'week'
     if tf != 'week':
         dmap, today = _game_date_map(), _card_today_eastern()
-        f2 = [l for l in floors if _passes_timeframe(dmap.get(str(l['game']).strip().lower()), tf, today)]
-        s2 = [l for l in swings if _passes_timeframe(dmap.get(str(l['game']).strip().lower()), tf, today)]
+
+        def _in_tf(pool):
+            return [l for l in pool if _passes_timeframe(dmap.get(str(l['game']).strip().lower()), tf, today)]
+        f2, s2 = _in_tf(floors), _in_tf(swings)
         if len({l['game'] for l in f2 + s2}) >= max(sizes):   # enough DISTINCT games to build
             floors, swings = f2, s2
+            s_floors, s_swings = _in_tf(s_floors), _in_tf(s_swings)
         else:
             tf = 'week'
 
@@ -33828,25 +33868,38 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
         return out
 
     nsw = _SWINGS_BY_RISK[risk]
-    cards = []
-    for N in sorted(set(sizes)):
+
+    def _assemble(N, fl, sw):
         used = set()
         k = min(nsw, N - 1)                             # swing legs (always >=1 floor)
-        core = _distinct(floors, used, N - k)
-        swing = _distinct(swings, used, k)
+        core = _distinct(fl, used, N - k)
+        swing = _distinct(sw, used, k)
         picked = core + swing
         if len(picked) < N:                            # backfill from the other pool
-            picked += _distinct(swings if len(core) >= len(floors) else floors, used, N - len(picked))
+            picked += _distinct(sw if len(core) >= len(fl) else fl, used, N - len(picked))
         if len(picked) < N:
-            picked += _distinct(floors + swings, used, N - len(picked))
+            picked += _distinct(fl + sw, used, N - len(picked))
+        return picked, swing
+
+    cards, rejected_started = [], []
+    for N in sorted(set(sizes)):
+        picked, swing = _assemble(N, floors, swings)
+        # Would this card have carried a started leg? Disclose it: the card is REBUILT from games
+        # not yet started (visible "N leg(s) removed — game started"), never silently substituted.
+        shadow, _ = _assemble(N, s_floors, s_swings)
+        removed = [l['label'] for l in shadow if why[id(l)] == ['STARTED']]
         if len(picked) < min(N, 2):
+            if removed:
+                rejected_started.append({'n': N, 'removed_started': removed})
             continue
-        am, dec, pay = _card_price(picked)
+        am, dec, pay = _card_price(picked, now)
         cards.append({'n': len(picked), 'legs': picked, 'american': am, 'decimal': dec,
-                      'payout_5': pay, 'swing': (swing[0]['label'] if swing else None)})
+                      'payout_5': pay, 'swing': (swing[0]['label'] if swing else None),
+                      'removed_started': removed})
     # Complete, de-duplicated candidate pool for the user-directed swap chooser.  It includes
     # the initially selected legs too, because a leg used on one card may be a valid replacement
-    # on another.  The browser excludes games already represented on the card being edited.
+    # on another.  The browser excludes games already represented on the card being edited, and
+    # (D4) any leg whose kickoff_utc is not strictly after the server-anchored clock.
     bench, seen = [], set()
     for l in floors + swings:
         key = (l.get('sport'), l.get('label'), l.get('game'))
@@ -33855,7 +33908,7 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
         seen.add(key)
         bench.append({k: l.get(k) for k in ('sport', 'kind', 'tier', 'label', 'game', 'price',
                                              'reason', 'hit', 'sample', 'market_pct', 'book', 'quote_at',
-                                             'quote_label')})
+                                             'quote_label', 'event_id', 'kickoff_utc')})
         if len(bench) >= 60:
             break
     return {'available': bool(cards), 'cards': cards, 'bench': bench,
@@ -33863,6 +33916,10 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
             'prefs': {'sizes': sorted(set(sizes)), 'risk': risk, 'legs': legs, 'timeframe': tf_req},
             'window': tf,
             'generated': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
+            # D4 disclosure + the server clock the browser editor anchors to (never its own clock).
+            'kickoff_gate': {'server_now_utc': _utc_iso(now), 'n_started_excluded': n_started,
+                             'rejected_started': rejected_started},
+            'server_now_utc': _utc_iso(now),
             'n_floors': len(floors), 'n_swings': len(swings)}
 
 
@@ -34540,8 +34597,25 @@ def daily_card_image():
         # Never price what the browser sends: each leg is re-resolved against the server's current
         # pool and kept only if it is executable there (verified, fresh single-book quote); the
         # price is the server's quote price, not the client's number.
-        _f, _s = _card_pools('all')
-        live = {(l.get('sport'), l.get('label'), l.get('game')): l for l in _f + _s if _leg_is_executable(l)}
+        now = _now_utc()                               # one server clock for this ticket (D4)
+        _f, _s = _card_pools('all', now=now)
+        live, started = {}, {}
+        for l in _f + _s:
+            k = (l.get('sport'), l.get('label'), l.get('game'))
+            _why = _leg_quote_failures(l, now)
+            if not _why:
+                live[k] = l
+            elif 'STARTED' in _why:
+                started[k] = l
+        # A ticket carrying a leg whose game has started is REJECTED whole -- visibly (409 + reason),
+        # never rendered with that leg silently dropped or replaced.
+        hit_started = [str(l.get('label'))[:60] for l in raw[:8] if isinstance(l, dict)
+                       and (l.get('sport'), l.get('label'), l.get('game')) in started]
+        if hit_started:
+            n_s = len(hit_started)
+            return jsonify({'error': 'started', 'removed_started': hit_started,
+                            'message': f"{n_s} leg{'s' if n_s != 1 else ''} removed — game started. "
+                                       "Remove the started leg and save again."}), 409
         legs = []
         for l in raw[:8]:
             if not isinstance(l, dict) or not l.get('label'):
@@ -34558,7 +34632,7 @@ def daily_card_image():
                          'kickoff_utc': srv.get('kickoff_utc')})
         if len(legs) < 3:
             abort(400)
-        am, dec, pay = _card_price(legs)
+        am, dec, pay = _card_price(legs, now)
         card = {'n': len(legs), 'legs': legs, 'american': am, 'payout_5': pay}
         n = len(legs)
     else:
@@ -45910,10 +45984,12 @@ def green_light_ticket():
     GET only (no CSRF needed), PRO-gated, browser-only: it makes NO draft-store or Decision Journal calls and
     persists nothing. Honest unavailable state on failure."""
     try:
-        tc = build_daily_cards(**load_card_prefs(_card_prefs_uid()))
+        tc = build_daily_cards(**load_card_prefs(_card_prefs_uid()))   # D4 kickoff gate runs inside
         if not (tc.get('cards')):
+            _ns = (tc.get('kickoff_gate') or {}).get('n_started_excluded') or 0
+            _sn = (f' {_ns} candidate leg{"s" if _ns != 1 else ""} removed &mdash; game started.' if _ns else '')
             return ('<div class="glw-note">No proposed ticket could be built from the current slate &mdash; '
-                    'the lenses above still stand on their own.</div>')
+                    f'the lenses above still stand on their own.{_sn}</div>')
         return render_template('_ticket_editor.html', **tc)
     except Exception:
         return ('<div class="glw-note">The proposed ticket is unavailable right now. The lenses above are '
