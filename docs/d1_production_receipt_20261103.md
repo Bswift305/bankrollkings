@@ -1,6 +1,9 @@
 # D1 production receipt — 2026-11-03 (weather unavailable, never indoor/calm)
 
-**Verdict: PRODUCTION ACCEPTED (D1 standalone).** No rollback required. Separate from the Linux gate receipt
+**Verdict: PRODUCTION ACCEPTED at exact `6bdb73f` (owner, 2026-11-03).** No rollback required; no further D1 work.
+The live positive-weather case was **not exercisable** because weather licensing is OFF in production (correct) and
+no current forecast exists; no data was manufactured; the positive case is covered by 32 synthetic Linux-gate
+assertions. Separate from the Linux gate receipt
 (`docs/d1_linux_gate_receipt_20261103.md`).
 
 ## Push
@@ -31,8 +34,28 @@
 | Weather licence | `BK_WEATHER_SOURCE_LICENSED` not in `.env` → code default **OFF** |
 | Weather data | `data/context/NFL_GameWeather.csv` mtime 2026-10-16T13:01:29Z, 14 rows (games of 2026-10-18) |
 
-Observation (not D1, not acted on): an additional gunicorn process, pid 527479, ppid 1, started 2026-09-11, is
-outside the current service tree. Logged for a separate read-only look; nothing was killed or changed.
+**Correction (closed observation).** The first version of this receipt called pid 527479 "an additional gunicorn
+process outside the service tree". That was wrong. The capture-flag loop used `pgrep -f gunicorn`, which matches the
+literal word `gunicorn` inside earlyoom's `--avoid` regex. Read-only audit (SSM `H`, 2026-11-03T23:28:49Z; nothing
+stopped, signalled or altered; environment values not printed):
+
+| Property | Value |
+|---|---|
+| Executable | `/usr/bin/earlyoom` (no deleted maps/fds) |
+| Command | `earlyoom -r 3600 -m 12 -s 50 --avoid (^\|/)(sshd\|systemd[^/]*\|gunicorn\|nginx)($\|/) --prefer (^\|/)python3?($\|/)` |
+| Parent / tree | ppid 1 (systemd); own session/process group; **no children** |
+| Unit / cgroup | `0::/system.slice/earlyoom.service`; it is that unit's `MainPID` (`active (running)` since 2026-09-11 06:22:30 UTC, enabled) |
+| User | `earlyoom` (uid 61876); cwd `/proc`; root `/` |
+| Sockets | no listening TCP or Unix socket (two journal/stream sockets only) |
+| Reachability | nginx's only upstream is `proxy_pass http://127.0.0.1:8000`, owned solely by gunicorn 1613022/1613027/1613028; earlyoom is not reachable by nginx or any health endpoint |
+| Resources | 0.0% CPU, RSS 2,020 kB, VSZ 2,712 kB, 1 thread |
+| Env var names | `EARLYOOM_ARGS INVOCATION_ID JOURNAL_STREAM LANG LOGNAME MEMORY_PRESSURE_WATCH MEMORY_PRESSURE_WRITE PATH SYSTEMD_EXEC_PID USER` |
+
+It is the managed OOM guard, consistent with the earlier `earlyoom` identification. **No D13; observation closed.**
+The only gunicorn processes are the `bankrollkings.service` master and its two workers. Corrected capture-flag
+statement: the live application processes (1613022/1613027/1613028) have `BK_RESEARCH_CANDIDATE*` unset; earlyoom
+was included only through the over-broad match. Future checks should use `systemctl show bankrollkings -p MainPID` +
+its children, not `pgrep -f gunicorn`.
 
 ## Signed-in browser verification (bankrollkings.com, owner session, ~23:30Z)
 
