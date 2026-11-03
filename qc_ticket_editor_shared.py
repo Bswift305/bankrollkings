@@ -31,6 +31,8 @@ LEG_RE = re.compile(r'class="dc-leg" data-game="([^"]*)" data-price="([^"]*)" da
 def _synthetic_pools():
     """A fixed slate: 6 floors + 3 swings on 9 distinct games, each with a complete, fresh quote."""
     at = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    # D4 kickoff gate: fixture games kick off in the future (qc_ticket_kickoff_gate.py owns that contract)
+    kick = (datetime.now(timezone.utc) + timedelta(hours=30)).strftime('%Y-%m-%dT%H:%M:%SZ')
 
     def leg(i, tier, price, hit):
         game, line = f"SYN{i}A @ SYN{i}H", 40.5 + i
@@ -38,6 +40,7 @@ def _synthetic_pools():
         return {'sport': 'NFL', 'kind': 'prop', 'tier': tier, 'label': label, 'player': f"Synthetic Player {i}",
                 'line': line, 'game': game, 'price': price, 'hit': hit, 'sample': 12,
                 'reason': f"synthetic fixture leg {i}", 'score': hit, 'book': 'SyntheticBook', 'quote_at': at,
+                'event_id': f"syn-evt-{i}", 'kickoff_utc': kick,
                 'quote': {'book': 'SyntheticBook', 'price': price, 'line': line, 'event': game,
                           'market': 'player_reception_yds', 'selection': f"Synthetic Player {i} Over {line:g}",
                           'updated_utc': at}}

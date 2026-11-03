@@ -31489,6 +31489,28 @@ def _nfl_floor_market_eval(sub, meta, line, cur, *, min_hit, min_games):
             'window': ref, 'clears': clears}
 
 
+def _nfl_props_event_identity(g):
+    """{'event_id', 'kickoff_utc'} for one aggregated (player, stat) group of NFL_Props.csv rows,
+    from the per-row provider identity fetch_player_props writes (EventId / EventCommenceAtUTC).
+    kickoff_utc is canonical 'YYYY-MM-DDTHH:MM:SSZ' only when EVERY row carries a tz-aware commence
+    time and they all denote ONE instant; missing column, a missing/naive/unparseable value on any
+    row, or two different instants => None (the D4 gate then fails the leg closed). event_id is
+    kept only when exactly one non-blank id is present."""
+    kick = None
+    if 'EventCommenceAtUTC' in g.columns:
+        inst = [_canonical_kickoff_utc(v) for v in g['EventCommenceAtUTC'].tolist()]
+        if inst and all(i is not None for i in inst) and len(set(inst)) == 1:
+            kick = _utc_iso(inst[0])
+    eid = None
+    if 'EventId' in g.columns:
+        ids = {str(v).strip() for v in g['EventId'].tolist()
+               if v is not None and not (isinstance(v, float) and pd.isna(v))
+               and str(v).strip() not in ('', 'nan', '<NA>', 'None')}
+        if len(ids) == 1:
+            eid = ids.pop()
+    return {'event_id': eid, 'kickoff_utc': kick}
+
+
 def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     """Scan this week's live NFL props and surface the strongest FLOORS -- players who
     clear the posted line at a high rate over an adequate sample. Ranked by hit rate,
@@ -31503,9 +31525,11 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     props_mtime = os.path.getmtime(props_path) if props_path.exists() else 0
     sig = (props_mtime, _nfl_player_log_signature())   # process-stable + picklable
     pkey = (int(limit), int(min_hit), int(min_games))
-    # 'q1' = rows carry a single-book `quote` (code-only change: the data sig alone would keep
-    # serving pre-quote disk entries for the TTL -- CLAUDE.md §4).
-    _dkey = f'nfl_floor_board::q1::{pkey[0]}::{pkey[1]}::{pkey[2]}'
+    # 'q1' = rows carry a single-book `quote`; 'k2' = rows also carry `event_id` + `kickoff_utc` for
+    # the D4 kickoff gate (code-only changes: the data sig alone would keep serving older disk entries
+    # without those fields for the TTL -- CLAUDE.md §4). The cached rows hold NO clock decision: the
+    # kickoff predicate runs per request, after this cache, at ticket construction.
+    _dkey = f'nfl_floor_board::q1k2::{pkey[0]}::{pkey[1]}::{pkey[2]}'
     if _NFL_FLOOR_BOARD_CACHE.get('sig') != sig:
         _NFL_FLOOR_BOARD_CACHE.clear()
         _NFL_FLOOR_BOARD_CACHE['sig'] = sig
@@ -31572,7 +31596,7 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
             'price': price, 'hit': hit, 'n': ev['n'], 'window': ev['window'], 'clears': clears,
             'breakeven': (round(100 * be) if be is not None else None),
             'edge': (round(100 * (ev['hit_frac'] - be), 1) if be is not None else None),
-            'game': game, 'quote': quote,
+            'game': game, 'quote': quote, **_nfl_props_event_identity(g),
         })
     rows.sort(key=lambda x: (-x['hit'], -x['clears']))
     data = {'floors': rows[:limit], 'floor_count': len(rows), 'available': bool(rows),
@@ -33181,7 +33205,8 @@ def build_nfl_featured_parlay(legs=3):
     picked, games = [], set()
     for f in board.get('floors', []):
         q = f.get('quote')
-        if not q or not _leg_is_executable({'price': q['price'], 'line': f.get('line'), 'quote': q}):
+        if not q or not _leg_is_executable({'price': q['price'], 'line': f.get('line'), 'quote': q,
+                                            'kickoff_utc': f.get('kickoff_utc')}):
             continue                                   # no verified, fresh single-book quote
         f = dict(f, price=q['price'], book=q['book'], quote_at=q['updated_utc'])
         g = f.get('game') or f.get('player')
@@ -33228,9 +33253,13 @@ def _unpriced_line_fields(source, updated_utc=None):
     src = _clean_book(source)
     if 'cfbd' in src.lower():
         src = 'CFBD consensus — no book price'
+    # event_id / kickoff_utc: the team-line sources (football live games, NFL game board, MLB odds)
+    # carry only Eastern display date/time strings -- no canonical tz-aware commence instant -- so the
+    # kickoff is unknown and the D4 gate fails closed on these legs (MISSING_KICKOFF).
     return {'price': None, 'price_status': 'UNAVAILABLE', 'price_note': UNPRICED_LEG_NOTE,
             'executable': False, 'line_source': src or UNRECORDED_SOURCE,
-            'source_updated_utc': updated_utc, 'updated_label': _updated_label(updated_utc)}
+            'source_updated_utc': updated_utc, 'updated_label': _updated_label(updated_utc),
+            'event_id': None, 'kickoff_utc': None}
 
 
 def _feed_stamp_to_utc(value):
@@ -33278,14 +33307,72 @@ def _quote_from_row(row, player, line, price, selection_side='Over'):
             'updated_utc': upd.strftime('%Y-%m-%dT%H:%M:%SZ')}
 
 
+def _now_utc():
+    """THE server clock for ticket construction (D4 kickoff gate): an aware UTC `datetime`. One
+    injectable source -- QCs freeze it by patching `app._now_utc`; never the browser's clock and never
+    a bare `datetime.now()` (CLAUDE.md §5). Builders read it ONCE per request and pass it down so
+    every leg on one ticket is judged against the same instant."""
+    return datetime.now(timezone.utc)
+
+
+def _canonical_kickoff_utc(value):
+    """A canonical event commence time -> aware UTC `datetime`, or None. Accepts an aware datetime /
+    pandas Timestamp or an ISO-8601 string WITH an explicit offset ('Z', '+00:00', '-05:00', ...);
+    offset-equivalent spellings canonicalize to the same instant. Missing, unparseable, or NAIVE
+    (zone-less) values return None -- an unknown zone is unknown, never assumed (fail closed)."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        s = str(value).strip()
+        if not s or s.lower() in ('nan', 'nat', 'none', '<na>', 'null'):
+            return None
+        try:
+            dt = datetime.fromisoformat(s[:-1] + '+00:00' if s[-1:] in ('Z', 'z') else s)
+        except ValueError:
+            return None
+    try:
+        if pd.isna(dt) or dt.tzinfo is None or dt.utcoffset() is None:
+            return None
+        return dt.astimezone(timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _kickoff_gate_failure(kickoff, now):
+    """THE kickoff predicate (D4) -- the single rule every proposed-ticket surface goes through, via
+    _leg_kickoff_failure (the kickoff half of _leg_quote_failures). A leg is eligible only
+    if its canonical kickoff is STRICTLY after the server clock `now` (aware UTC). Returns None when
+    eligible, 'STARTED' when kickoff <= now (kickoff == now is started), 'MISSING_KICKOFF' when the
+    kickoff is unknown / unparseable / naive (fail closed)."""
+    k = _canonical_kickoff_utc(kickoff)
+    if k is None:
+        return 'MISSING_KICKOFF'
+    return None if k > now else 'STARTED'
+
+
+def _leg_kickoff_failure(leg, now=None):
+    """The kickoff half of the executable-leg contract for ONE leg dict: `_kickoff_gate_failure` on
+    the leg's own `kickoff_utc` against the server clock. The ONLY caller of the predicate -- the full
+    contract (`_leg_quote_failures`) reaches it through here, and any other ticket surface must reuse
+    this rather than write a second rule."""
+    return _kickoff_gate_failure((leg or {}).get('kickoff_utc'), now or _now_utc())
+
+
 def _leg_quote_failures(leg, now=None):
     """Reason codes why `leg` is NOT executable ([] = executable). A leg is executable only with a
     complete single-book quote: real bookmaker identity, offered American odds, event / market /
     selection identity, line value, source update time, and a passing CLOCK-A freshness check
-    (services/freshness_contract.LIVE_MARKET_MAX_AGE_HOURS). Missing any field => context only."""
+    (services/freshness_contract.LIVE_MARKET_MAX_AGE_HOURS) -- AND a known kickoff strictly after
+    the server clock (`_kickoff_gate_failure`: STARTED / MISSING_KICKOFF). Missing any => context only."""
     if not isinstance(leg, dict):
         return ['NOT_A_LEG']
+    now = now or _now_utc()
     out = []
+    _kick = _leg_kickoff_failure(leg, now)
+    if _kick:
+        out.append(_kick)
     if leg.get('executable') is False:
         out.append('MARKED_NON_EXECUTABLE')
     q = leg.get('quote')
@@ -33321,7 +33408,6 @@ def _leg_quote_failures(leg, now=None):
         out.append('MISSING_UPDATE_TIME')
     else:
         from services.freshness_contract import LIVE_MARKET_MAX_AGE_HOURS
-        now = now or datetime.now(timezone.utc)
         age_h = (now - upd).total_seconds() / 3600.0
         if age_h > LIVE_MARKET_MAX_AGE_HOURS:
             out.append('STALE_QUOTE')
@@ -33476,9 +33562,11 @@ def _mlb_floor_legs(limit=12):
     return legs[:limit]
 
 
-def _card_price(legs):
-    # Payout math only over verified prices -- an unpriced leg must never be priced by default.
-    if not all(_leg_is_executable(l) for l in legs):
+def _card_price(legs, now=None):
+    # Payout math only over verified prices -- an unpriced leg must never be priced by default, and a
+    # leg whose game has started (or whose kickoff is unknown) is never priced (D4: STARTED).
+    now = now or _now_utc()
+    if not all(_leg_is_executable(l, now) for l in legs):
         raise ValueError('card contains a leg without a verified price')
     dec = 1.0
     for l in legs:
@@ -33551,7 +33639,7 @@ def _passes_timeframe(dstr, timeframe, today):
     return True
 
 
-def _card_pools(legs='all', mlb_limit=12, cfb_limit=10, nfl_line_limit=8):
+def _card_pools(legs='all', mlb_limit=12, cfb_limit=10, nfl_line_limit=8, now=None):
     """Build the raw floor + swing candidate pools (pre-timeframe, pre-dedup) shared by the
     Daily Card engine and the Menu board -- one source of truth for what legs are in play.
     `legs`: 'all' = NFL props + MLB hit floors + NFL/CFB team lines, 'props' = props only,
@@ -33578,7 +33666,9 @@ def _card_pools(legs='all', mlb_limit=12, cfb_limit=10, nfl_line_limit=8):
                    'label': f"{f['player']} {f['stat']} {f['line']:g}+",
                    'player': f['player'], 'stat_key': f.get('stat_key'), 'line': f['line'],
                    'game': f.get('game') or f['player'], 'hit': hit,
-                   'sample': f.get('n')}
+                   'sample': f.get('n'),
+                   # canonical event identity + kickoff from the props rows (D4 kickoff gate input)
+                   'event_id': f.get('event_id'), 'kickoff_utc': f.get('kickoff_utc')}
             # Membership above uses the board's median price (parity with Player Check); the
             # leg's PRICE comes only from a single-book quote. No quote -> context only.
             _q = f.get('quote')
@@ -33610,8 +33700,9 @@ def _card_pools(legs='all', mlb_limit=12, cfb_limit=10, nfl_line_limit=8):
     else:
         swings = sorted(nfl_swings + linepool, key=lambda x: -x['score'])
     floors.sort(key=lambda x: -x['score'])
+    now = now or _now_utc()
     for leg in floors + swings:
-        if not _leg_is_executable(leg):
+        if not _leg_is_executable(leg, now):
             leg['market_pct'] = None               # no verified price -> no implied probability
             continue
         implied = _american_implied_probability(leg.get('price'))
@@ -34546,7 +34637,8 @@ def daily_card_image():
                          'tier': 'floor' if srv.get('tier') == 'floor' else 'swing',
                          'sport': str(srv.get('sport') or '')[:4],
                          'game': str(srv.get('game') or '')[:40],
-                         'reason': str(srv.get('reason') or '')[:110]})
+                         'reason': str(srv.get('reason') or '')[:110],
+                         'kickoff_utc': srv.get('kickoff_utc')})
         if len(legs) < 3:
             abort(400)
         am, dec, pay = _card_price(legs)
