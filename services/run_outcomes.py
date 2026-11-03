@@ -16,6 +16,8 @@ The vocabulary (one honest state per child):
   PROVIDER_ERROR     the provider errored on one or more events              ALERTING
   STALE              artifact did not advance and nothing benign explains it ALERTING
   SKIP               deliberately not run (season gate, missing key)         benign
+  SKIPPED_BLOCKED_BY_LINES  not run: it needs fresh game lines and the lines
+                     step failed this run (honest skip, never success)       ALERTING
 
 Pure: stdlib only, no pandas, no app import -- safe to import from any refresh script.
 """
@@ -32,9 +34,10 @@ VALIDATION_FAILED = "VALIDATION_FAILED"
 PROVIDER_ERROR = "PROVIDER_ERROR"
 STALE = "STALE"
 SKIP = "SKIP"
+SKIPPED_BLOCKED_BY_LINES = "SKIPPED_BLOCKED_BY_LINES"
 
 BENIGN = frozenset({UPDATED, NO_ACTIVE_EVENTS, NO_MARKETS_POSTED, SKIP})
-ALERTING = frozenset({VALIDATION_FAILED, PROVIDER_ERROR, STALE})
+ALERTING = frozenset({VALIDATION_FAILED, PROVIDER_ERROR, STALE, SKIPPED_BLOCKED_BY_LINES})
 
 
 def is_alerting(outcome: str) -> bool:
