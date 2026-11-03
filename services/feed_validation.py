@@ -54,9 +54,17 @@ class FeedSpec:
     event_aware: bool = False                   # when True, validate_feed_event_slate() compares per EVENT
     event_id_col: str = "EventId"               # stable provider event identity
     event_time_col: str = "EventCommenceAtUTC"  # authoritative kickoff, zero-offset UTC
+    # The two collapse thresholds are INHERITED conservative values (the prior whole-file 50% ratio), not
+    # football-validated statistical constants. Tuning them needs evidence and a separate review.
     event_collapse_ratio: float = 0.5           # still-eligible event: new < ratio*prior rows is a collapse
-    event_collapse_min_prior_rows: int = 20     # below this an event is too sparsely posted to judge a drop
+    event_collapse_min_prior_rows: int = 20     # percentage-collapse is judged only at/above this prior size
     sparse_event_rows: int = 20                 # a newly posted event under this many rows is "sparse" (allowed)
+    # Market-type contract (event-aware only). LINE markets need a finite provider line. BINARY markets
+    # (Yes/No) carry no provider line; the fetcher represents them as Line 0.5 ("1+"), so for them the line
+    # must be absent or exactly 0.5. Both need a price on at least one side. A market in neither set is
+    # outside the contract and its rows are dropped + counted.
+    line_markets: tuple = ()
+    binary_markets: tuple = ()
 
 
 def _finite_series(s):
@@ -329,13 +337,16 @@ def validate_feed_event_slate(df, spec: FeedSpec, prior_df=None, path=None, spor
          (else REJECT -- identity is not guessed);
       2. events that have kicked off (kickoff <= now) are removed from BOTH sides -- completed/started
          games never count toward, or inflate, the comparison, and are never published;
-      3. for events still eligible in both the prior and the candidate, a per-event collapse below
-         event_collapse_ratio (prior >= event_collapse_min_prior_rows) REJECTS -- including an eligible
-         event that vanished entirely;
+      3. a previously published event that has not started and is absent from the new pull REJECTS at
+         any prior size (EVENT_VANISHED); for events in both, a per-event drop below event_collapse_ratio
+         REJECTS when the prior had >= event_collapse_min_prior_rows (EVENT_COLLAPSE) -- both thresholds
+         are inherited conservative values, not football-validated constants;
       4. newly posted future events are accepted however sparse;
       5. publish requires zero provider errors, structural validity, and >= 1 usable current event.
-    Malformed market rows (no finite line, or no price on either side) are dropped and counted, never
-    published. publish_df is the current-slate frame to publish when ok (None otherwise)."""
+    Kickoffs must be canonical zero-offset UTC 'YYYY-MM-DDTHH:MM:SSZ' (the fetcher's to_utc_iso output);
+    other spellings of the same instant are REJECTED, not canonicalized. kickoff == now counts as started.
+    Malformed market rows are judged by market type (spec.line_markets / spec.binary_markets), dropped
+    and counted, never published. publish_df is the current-slate frame to publish when ok (else None)."""
     now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
     if now.tzinfo is None:
         now = now.tz_localize("UTC")
@@ -382,12 +393,30 @@ def validate_feed_event_slate(df, spec: FeedSpec, prior_df=None, path=None, spor
         _reject("EVENT_IDENTITY_INVALID", f"{len(inconsistent)} event(s) carry conflicting kickoff times, "
                 f"e.g. {inconsistent[:3]}")
 
-    # malformed market rows: no finite line, or no price on either side -> dropped + counted.
-    line = pd.to_numeric(df["Line"], errors="coerce") if "Line" in df.columns else pd.Series(np.nan, index=df.index)
-    over = pd.to_numeric(df["OverOdds"], errors="coerce") if "OverOdds" in df.columns else pd.Series(np.nan, index=df.index)
-    under = pd.to_numeric(df["UnderOdds"], errors="coerce") if "UnderOdds" in df.columns else pd.Series(np.nan, index=df.index)
-    malformed = good & (~np.isfinite(line.astype(float)) | (over.isna() & under.isna()))
+    # malformed market rows, judged by MARKET TYPE (spec.line_markets / spec.binary_markets) -> dropped + counted.
+    nan = pd.Series(np.nan, index=df.index)
+    line = (pd.to_numeric(df["Line"], errors="coerce") if "Line" in df.columns else nan).astype(float)
+    over = pd.to_numeric(df["OverOdds"], errors="coerce") if "OverOdds" in df.columns else nan
+    under = pd.to_numeric(df["UnderOdds"], errors="coerce") if "UnderOdds" in df.columns else nan
+    no_price = over.isna() & under.isna()
+    if spec.line_markets or spec.binary_markets:
+        mkey = (df[spec.market_col].astype(str).str.strip() if spec.market_col in df.columns
+                else pd.Series("", index=df.index))
+        is_line, is_binary = mkey.isin(spec.line_markets), mkey.isin(spec.binary_markets)
+        bad_line_mkt = is_line & ~np.isfinite(line)
+        bad_binary = is_binary & ~(line.isna() | (line == 0.5))
+        unknown = ~is_line & ~is_binary
+    else:
+        bad_line_mkt, bad_binary = ~np.isfinite(line), pd.Series(False, index=df.index)
+        unknown = pd.Series(False, index=df.index)
+    malformed = good & (bad_line_mkt | bad_binary | unknown | no_price)
     receipt["rejected_malformed_rows"] = int(malformed.sum())
+    receipt["malformed_by_reason"] = {
+        "line_market_without_finite_line": int((good & bad_line_mkt).sum()),
+        "binary_market_with_non_binary_line": int((good & bad_binary).sum()),
+        "market_outside_contract": int((good & unknown).sum()),
+        "no_price_either_side": int((good & no_price).sum()),
+    }
 
     # (2) started/completed candidate events are not part of the current slate.
     started = good & (kick <= now)
@@ -427,10 +456,17 @@ def validate_feed_event_slate(df, spec: FeedSpec, prior_df=None, path=None, spor
     receipt["overlapping_events_retained"] = len(overlap)
     receipt["new_events_added"] = len(new_events)
     receipt["sparse_future_events"] = int(sum(1 for e in new_events if cand_counts[e] < spec.sparse_event_rows))
-    receipt["prior_active_events_absent"] = int(len(set(prior_counts.index) - set(cand_counts.index)))
+    vanished = sorted(set(prior_counts.index) - set(cand_counts.index))
+    receipt["prior_active_events_absent"] = len(vanished)
+    receipt["vanished_events"] = [{"event_id": e, "prior_rows": int(prior_counts[e])} for e in vanished]
+    if vanished:
+        # A previously published, not-yet-started event must never disappear silently -- at ANY prior size.
+        ex = receipt["vanished_events"][0]
+        _reject("EVENT_VANISHED", f"{len(vanished)} previously published, not-yet-started event(s) are absent "
+                f"from the new pull, e.g. {ex['event_id']} ({ex['prior_rows']} prior rows)")
     for e, pn in sorted(prior_counts.items()):
         cn = int(cand_counts.get(e, 0))
-        if pn >= spec.event_collapse_min_prior_rows and cn < spec.event_collapse_ratio * pn:
+        if cn and pn >= spec.event_collapse_min_prior_rows and cn < spec.event_collapse_ratio * pn:
             receipt["collapsed_events"].append({"event_id": e, "prior_rows": int(pn), "new_rows": cn})
     if receipt["collapsed_events"]:
         ex = receipt["collapsed_events"][0]
@@ -496,7 +532,10 @@ NBA_PLAYER_PROPS_SLATE_SPEC = FeedSpec(
 
 # NFL + college football props OPT IN to the event-aware model (RC 2026-11-02): the weekly slate turns
 # over every Monday, so a whole-file collapse test against Sunday's (now-played) slate rejected every
-# Monday fetch. Thresholds are the prior whole-file ratio (50%) applied per still-eligible event.
+# Monday fetch. The 50% / 20-row thresholds are INHERITED conservative values (the prior whole-file
+# ratio, applied per still-eligible event) -- not football-validated statistical constants; tuning them
+# requires evidence and a separate review. The market contract covers every configured NFL + NCAAF props
+# market (qc_props_slate_turnover asserts it against fetch_player_props.SPORT_DEFAULT_MARKETS).
 FOOTBALL_PLAYER_PROPS_EVENT_SPEC = FeedSpec(
     kind="player_props",
     required_cols=("Player", "Stat", "LastUpdated"),
@@ -512,6 +551,13 @@ FOOTBALL_PLAYER_PROPS_EVENT_SPEC = FeedSpec(
     event_collapse_ratio=0.5,
     event_collapse_min_prior_rows=20,
     sparse_event_rows=20,
+    market_col="MarketKey",
+    line_markets=(
+        "player_pass_yds", "player_pass_tds", "player_pass_completions", "player_rush_yds",
+        "player_rush_attempts", "player_receptions", "player_reception_yds", "player_tackles_assists",
+        "player_solo_tackles", "player_sacks", "player_defensive_interceptions",
+    ),
+    binary_markets=("player_anytime_td",),
 )
 
 FUTURES_SPEC = FeedSpec(

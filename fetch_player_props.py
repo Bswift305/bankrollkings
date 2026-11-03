@@ -94,6 +94,30 @@ def _write_shape_receipt(sport: str, days: int, events: list, rows_fetched: int,
     return receipt
 
 
+def _record_publish_in_receipt(sport: str, vreceipt: dict, published: bool, published_rows: int) -> None:
+    """Add the event-aware validation outcome to the shape receipt. `rows_fetched` stays the RAW provider
+    count (run_outcomes needs it); `publish` describes the FILTERED future-only file actually written, so
+    the receipt can never present the raw response as what was published."""
+    path = BASE_DIR / "data" / "tracking" / f"_last_props_fetch_{sport.replace('/', '_')}.json"
+    try:
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        receipt["publish"] = {
+            "published": bool(published),
+            "published_rows": int(published_rows) if published else 0,
+            "basis": "filtered current-slate file (not-yet-started events only)",
+            **{k: vreceipt.get(k) for k in (
+                "mode", "now_utc", "decision", "reason_code", "completed_events_removed",
+                "completed_rows_removed", "started_candidate_rows_removed", "overlapping_events_retained",
+                "new_events_added", "sparse_future_events", "rejected_malformed_rows", "malformed_by_reason",
+                "identity_invalid_rows", "vanished_events", "collapsed_events", "final_published_rows")},
+        }
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    except (OSError, ValueError) as exc:
+        print(f"[WARN] could not record the publish outcome in the shape receipt: {exc}")
+
+
 # INDEPENDENT eligible-event manifest per sport (current schedule / game-lines) -- the denominator for
 # current-slate coverage must NOT be derived from the props response itself, or a missing event would
 # drop from both numerator and denominator and falsely read as full coverage (incident 2026-10-24 #1).
@@ -802,6 +826,7 @@ def main() -> int:
         prior = pd.read_csv(output_path) if output_path.exists() else None
     except Exception:
         prior = None
+    event_receipt = None   # set only on the event-aware (NFL/NCAAF) path
 
     if NBA_PLAYER_PROPS_SLATE_SPEC.slate_aware and sport == "basketball_nba":
         # Slate-aware validation (incident 2026-10-24): a smaller CURRENT slate must not be rejected by an
@@ -844,16 +869,17 @@ def main() -> int:
         # published; a still-eligible event that collapses still fails closed. No override flag applies.
         if getattr(args, "allow_collapse", False):
             print("[INFO] --allow-collapse is ignored for event-aware football props validation.")
-        ok, errs, vreceipt, publish_df = validate_feed_event_slate(
+        ok, errs, event_receipt, publish_df = validate_feed_event_slate(
             df, FOOTBALL_PLAYER_PROPS_EVENT_SPEC, prior_df=prior, path=output_path,
             sport_tokens=_sport_tokens(sport), provider_errors=error_count)
         print("---- VALIDATION RECEIPT (event-aware) ----")
         for k in ("now_utc", "provider_errors", "prior_rows", "candidate_rows", "completed_events_removed",
                   "completed_rows_removed", "started_candidate_rows_removed", "prior_unidentified_rows",
                   "overlapping_events_retained", "new_events_added", "sparse_future_events",
-                  "prior_active_events_absent", "rejected_malformed_rows", "identity_invalid_rows",
-                  "collapsed_events", "final_published_rows", "decision", "reason_code"):
-            print(f"  {k}: {vreceipt.get(k)}")
+                  "prior_active_events_absent", "vanished_events", "rejected_malformed_rows",
+                  "malformed_by_reason", "identity_invalid_rows", "collapsed_events", "final_published_rows",
+                  "decision", "reason_code"):
+            print(f"  {k}: {event_receipt.get(k)}")
         if ok:
             df = publish_df
     else:
@@ -864,12 +890,18 @@ def main() -> int:
         print("Strong validation FAILED, preserving existing props CSV:")
         for e in errs:
             print(f"  - {e}")
+        if event_receipt is not None:
+            _record_publish_in_receipt(sport, event_receipt, published=False, published_rows=0)
         return 1
     try:
         atomic_write_csv(df, output_path, index=False, required_cols=["Player"], min_rows=1)
     except CsvValidationError as exc:
         print(f"Atomic publish failed, preserving existing props CSV: {exc}")
+        if event_receipt is not None:
+            _record_publish_in_receipt(sport, event_receipt, published=False, published_rows=0)
         return 1
+    if event_receipt is not None:
+        _record_publish_in_receipt(sport, event_receipt, published=True, published_rows=len(df))
     write_market_coverage(df, sport, markets, output_path)
 
     print(f"Saved {len(df)} props to {output_path}")

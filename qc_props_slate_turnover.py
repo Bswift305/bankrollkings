@@ -11,15 +11,21 @@ Checks:
   A. NFL Sunday full slate -> Monday early-week slate (the RC replay): ACCEPTED; the legacy whole-file
      rule still REJECTS the same frames (the fixture reproduces the incident).
   B. Monday sparse postings growing later in the week: ACCEPTED.
-  C. A still-eligible event losing more than the governed 50% (or vanishing): REJECTED.
+  C. A still-eligible event losing more than the governed 50%: REJECTED; a published future event that
+     vanishes is REJECTED at ANY prior size (123 -> 0, 19 -> 0, 1 -> 0). The 50% / 20-row values are
+     inherited conservative thresholds, not football-validated constants.
   D. Provider success but zero usable current events: REJECTED.
   E. Missing / unparseable / non-UTC event identity or kickoff, or conflicting kickoffs: REJECTED.
   F. Completed/started games are absent from the published frame.
   G. NCAAF replay (all prior events started): ACCEPTED.
   H. Provider error: REJECTED.
-  I. Malformed market rows are dropped and counted, never published.
+  I. Market-type contract: every configured NFL/NCAAF market is classified line-based or binary
+     (anytime TD); binary rows are valid without a provider line; malformed rows are dropped + counted.
+  L. Boundaries: kickoff == now is excluded, now + 1s is eligible; other spellings of a UTC instant
+     are rejected (frozen contract: canonical ...Z only).
   J. End to end through fetch_player_props.main(): a failed validation leaves the prior file
-     byte-identical with no temp leftovers; a valid turnover is published atomically for NFL and NCAAF.
+     byte-identical with no temp leftovers; --allow-collapse bypasses nothing; a valid turnover is
+     published atomically; the shape receipt keeps raw rows_fetched apart from the published file.
   K. Scope: only NFL + NCAAF opt in; NBA/WNBA/MLB paths and PLAYER_PROPS_SPEC are unchanged.
 Exit 0 = all pass.
 """
@@ -54,14 +60,16 @@ def z(ts) -> str:
     return pd.Timestamp(ts).tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def rows(eid: str, kickoff: str, n: int, *, start: int = 0, book: str = "DraftKings") -> list[dict]:
+def rows(eid: str, kickoff: str, n: int, *, start: int = 0, book: str = "DraftKings",
+         market: str = "player_receptions", line=None) -> list[dict]:
     out = []
     for i in range(start, start + n):
+        ln = (2.5 + (i % 7)) if line is None else line
         out.append({
-            "Player": f"Player {eid}-{i}", "Team": "", "Stat": "Receptions", "MarketKey": "player_receptions",
-            "Line": 2.5 + (i % 7), "Game": f"Away {eid}@Home {eid}", "Book": book,
+            "Player": f"Player {eid}-{i}", "Team": "", "Stat": market, "MarketKey": market,
+            "Line": ln, "Game": f"Away {eid}@Home {eid}", "Book": book,
             "LastUpdated": "2026-11-02 08:00", "EventId": eid, "EventCommenceAtUTC": kickoff,
-            "SourceUpdatedAtUTC": "2026-11-02T12:55:00Z", "CurrentLine": 2.5 + (i % 7),
+            "SourceUpdatedAtUTC": "2026-11-02T12:55:00Z", "CurrentLine": ln,
             "OverOdds": -115, "UnderOdds": 105,   # synthetic-fixture
         })
     return out
@@ -140,11 +148,21 @@ def check_event_collapse(monday_pub):
        f"C: the collapsed event is named with its counts ({rc['collapsed_events']})")
     vanished = [rows(f"nfl-next{i}", NEXT_SUN, n) for i, n in enumerate(NEXT_SUN_COUNTS)]
     good2, _, rc2, _ = run(frame(*vanished), monday_pub, now=tue)
-    ok(not good2 and rc2["reason_code"] == "EVENT_COLLAPSE",
-       f"C: a still-eligible event that vanishes entirely is REJECTED ({rc2['reason_code']})")
+    ok(not good2 and rc2["reason_code"] == "EVENT_VANISHED"
+       and rc2["vanished_events"] == [{"event_id": "nfl-tnf", "prior_rows": 123}],
+       f"C: a still-eligible event (123 rows) that vanishes entirely is REJECTED ({rc2['reason_code']})")
     exactly_half = [rows(*TNF, 62)] + vanished
     good3, errs3, _, _ = run(frame(*exactly_half), monday_pub, now=tue)
     ok(good3, f"C: a drop to >= 50% of the same event is within the governed threshold ({errs3})")
+    # vanishing fails closed at ANY prior size -- the 20-row minimum governs percentages only.
+    for prior_n in (1, 19):
+        prior = frame(rows(*TNF, 123), rows("nfl-tiny", NEXT_SUN, prior_n))
+        good4, _, rc4, pub4 = run(frame(rows(*TNF, 123)), prior, now=tue)
+        ok(not good4 and rc4["reason_code"] == "EVENT_VANISHED" and pub4 is None,
+           f"C: a published future event going {prior_n} -> 0 rows is REJECTED ({rc4['reason_code']})")
+        shrink = frame(rows(*TNF, 123), rows("nfl-tiny", NEXT_SUN, 1))
+        good5, errs5, _, _ = run(shrink, prior, now=tue)
+        ok(good5, f"C: the same sparse event going {prior_n} -> 1 row is below the percentage floor ({errs5})")
 
 
 def check_no_usable_event():
@@ -213,7 +231,8 @@ def check_ncaaf():
     good, errs, rc, pub = run(cand, prior, path="NCAAF_Props.csv", tokens=("NCAAF",))
     ok(good and rc["completed_events_removed"] == 46 and rc["final_published_rows"] == 87,
        f"G: NCAAF turnover ACCEPTED, 46 played events removed, 87 published ({errs})")
-    collapse = frame(rows("cfb-a", "2026-11-04T00:00:00Z", 5), rows("cfb-b", "2026-11-05T00:30:00Z", 32))
+    collapse = frame(rows("cfb-a", "2026-11-04T00:00:00Z", 5), rows("cfb-b", "2026-11-05T00:30:00Z", 32),
+                     rows("cfb-c", "2026-11-07T17:00:00Z", 22))
     good2, _, rc2, _ = run(collapse, cand, now=pd.Timestamp("2026-11-03T13:00:00Z"),
                            path="NCAAF_Props.csv", tokens=("NCAAF",))
     ok(not good2 and rc2["reason_code"] == "EVENT_COLLAPSE",
@@ -233,11 +252,67 @@ def check_malformed():
     cand.loc[cand.index[1], ["OverOdds", "UnderOdds"]] = [float("nan"), float("nan")]
     good, errs, rc, pub = run(cand, nfl_sunday_prior())
     ok(good and rc["rejected_malformed_rows"] == 2 and rc["final_published_rows"] == 378 and len(pub) == 378,
-       f"I: 2 malformed market rows dropped + counted, 378 published ({rc['rejected_malformed_rows']}; {errs})")
+       f"I: 2 malformed market rows dropped + counted, 378 published ({rc['malformed_by_reason']}; {errs})")
     one_sided = nfl_monday_candidate()
     one_sided["UnderOdds"] = float("nan")
     good2, _, rc2, _ = run(one_sided, nfl_sunday_prior())
-    ok(good2 and rc2["rejected_malformed_rows"] == 0, "I: one-sided (YES-only) markets are valid rows, not malformed")
+    ok(good2 and rc2["rejected_malformed_rows"] == 0, "I: a price on one side only is a valid row, not malformed")
+
+
+def check_market_contract():
+    """The line-vs-binary contract must cover every configured NFL + NCAAF props market exactly once, and
+    a binary market is validated as binary -- never discarded for lacking a provider line."""
+    import fetch_player_props as fp
+
+    line_set, bin_set = set(SPEC.line_markets), set(SPEC.binary_markets)
+    ok(not (line_set & bin_set), "I: no market is both line-based and binary")
+    for sport in ("americanfootball_nfl", "americanfootball_ncaaf"):
+        cfg = set(fp.SPORT_DEFAULT_MARKETS[sport])
+        ok(cfg <= (line_set | bin_set), f"I: every configured {sport} market is classified "
+           f"(unclassified: {sorted(cfg - line_set - bin_set)})")
+    ok(bin_set == {"player_anytime_td"}, f"I: the binary set is exactly anytime TD ({sorted(bin_set)})")
+    # the parser's binary representation: YES/NO without a provider point -> Line 0.5
+    ev = {"id": "e1", "away_team": "A", "home_team": "H", "commence_time": "2026-11-08T18:00:00Z"}
+    bk = {"key": "draftkings", "title": "DraftKings", "last_update": "2026-11-02T12:00:00Z",
+          "markets": [{"key": "player_anytime_td", "last_update": "2026-11-02T12:00:00Z",
+                       "outcomes": [{"name": "Yes", "description": "Some Player", "price": 150}]}]}  # synthetic-fixture
+    parsed = fp.parse_market_rows(ev, bk, ["player_anytime_td"])
+    ok(len(parsed) == 1 and parsed[0]["Line"] == 0.5,
+       f"I: the parser represents a line-less Yes/No market as Line 0.5 ({[r['Line'] for r in parsed]})")
+
+    td = lambda eid, n, line: rows(eid, NEXT_SUN, n, market="player_anytime_td", line=line)
+    base = [rows(*MNF, 221), rows(*TNF, 123)]
+    g1, e1, r1, _ = run(frame(*base, td("td-a", 10, float("nan")), td("td-b", 10, 0.5)), nfl_sunday_prior())
+    ok(g1 and r1["rejected_malformed_rows"] == 0 and r1["final_published_rows"] == 364,
+       f"I: binary rows with no line or Line 0.5 are VALID and published ({r1['malformed_by_reason']}; {e1})")
+    g2, _, r2, _ = run(frame(*base, td("td-c", 4, 1.5)), nfl_sunday_prior())
+    ok(g2 and r2["malformed_by_reason"]["binary_market_with_non_binary_line"] == 4,
+       f"I: a binary market carrying a non-binary line is dropped + counted ({r2['malformed_by_reason']})")
+    g3, _, r3, _ = run(frame(*base, rows("odd", NEXT_SUN, 3, market="player_kicking_points")), nfl_sunday_prior())
+    ok(g3 and r3["malformed_by_reason"]["market_outside_contract"] == 3,
+       f"I: a market outside the contract is dropped + counted ({r3['malformed_by_reason']})")
+    nl = frame(*base)
+    nl.loc[nl.index[0], "Line"] = float("nan")
+    g4, _, r4, _ = run(nl, nfl_sunday_prior())
+    ok(g4 and r4["malformed_by_reason"]["line_market_without_finite_line"] == 1,
+       f"I: a line market without a finite line is dropped + counted ({r4['malformed_by_reason']})")
+
+
+def check_boundaries():
+    t = pd.Timestamp("2026-11-05T18:00:00Z")   # before TNF, so only the boundary events are in question
+    prior = frame(rows(*TNF, 123))
+    cand = frame(rows(*TNF, 123), rows("kick-now", z(t), 30), rows("kick-1s", z(t + pd.Timedelta(seconds=1)), 30))
+    good, errs, rc, pub = run(cand, prior, now=t)
+    ids = set(pub["EventId"]) if pub is not None else set()
+    ok(good and "kick-now" not in ids and rc["started_candidate_rows_removed"] == 30,
+       f"L: kickoff exactly equal to validation time is EXCLUDED ({rc['started_candidate_rows_removed']}; {errs})")
+    ok(good and "kick-1s" in ids, "L: kickoff one second in the future remains ELIGIBLE")
+    for spelling in ("2026-11-08T18:00:00+00:00", "2026-11-08T18:00:00.000Z", "2026-11-08t18:00:00z",
+                     "2026-11-08 18:00:00Z", "2026-11-08T13:00:00-05:00"):
+        alt = frame(rows(*TNF, 123), rows("alt", spelling, 30))
+        g, _, r, _ = run(alt, prior, now=pd.Timestamp("2026-11-03T13:00:00Z"))
+        ok(not g and r["reason_code"] == "EVENT_IDENTITY_INVALID",
+           f"L: equivalent-instant spelling {spelling!r} is REJECTED (frozen contract: canonical ...Z only)")
 
 
 # --- J. end to end through fetch_player_props.main() ----------------------------------------------------
@@ -245,29 +320,38 @@ def _sha(p: Path) -> str:
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
-def _drive_main(fp, sport, out: Path, events: list[dict], per_event: dict, errors_for: set = frozenset()):
-    """Run fetch_player_props.main() with the provider + every repo-data side effect stubbed."""
+def _drive_main(fp, sport, root: Path, out: Path, events: list[dict], per_event: dict,
+                errors_for: set = frozenset(), extra_args: tuple = ()):
+    """Run fetch_player_props.main() offline: the provider is stubbed, the quota ledger is stubbed, and
+    BASE_DIR points at a temp root so the real shape-receipt writer runs without touching repo data."""
     class _Q:
         def print_receipt(self, **kw):
             return True, {}
 
-    saved = (fp.fetch_events, fp.fetch_event_props, fp._write_shape_receipt, fp._QUOTA, sys.argv[:])
+    saved = (fp.fetch_events, fp.fetch_event_props, fp._QUOTA, fp.BASE_DIR, sys.argv[:])
 
     def fake_event_props(api_key, sport_, event, bookmakers, markets, regions):
         if event["id"] in errors_for:
             raise RuntimeError("synthetic provider error")
-        return [dict(r) for r in per_event.get(event["id"], [])]
+        got = [dict(r) for r in per_event.get(event["id"], [])]
+        fp._record_event_shape(event, {r["MarketKey"] for r in got}, markets, 1, len(got))
+        return got
 
     fp.fetch_events = lambda api_key, sport_, days: events
     fp.fetch_event_props = fake_event_props
-    fp._write_shape_receipt = lambda *a, **k: {}
     fp._QUOTA = _Q()
+    fp.BASE_DIR = root
     sys.argv = ["fetch_player_props.py", "--api-key", "qc-offline-dummy", "--sport", sport,
-                "--output", str(out), "--days", "7"]
+                "--output", str(out), "--days", "7", *extra_args]
     try:
         return fp.main()
     finally:
-        fp.fetch_events, fp.fetch_event_props, fp._write_shape_receipt, fp._QUOTA, sys.argv = saved
+        fp.fetch_events, fp.fetch_event_props, fp._QUOTA, fp.BASE_DIR, sys.argv = saved
+
+
+def _shape(root: Path, sport: str) -> dict:
+    import json
+    return json.loads((root / "data" / "tracking" / f"_last_props_fetch_{sport}.json").read_text(encoding="utf-8"))
 
 
 def check_end_to_end():
@@ -277,34 +361,55 @@ def check_end_to_end():
     past, soon, later = (z(now - timedelta(hours=20)), z(now + timedelta(hours=12)), z(now + timedelta(days=3)))
     for sport, token in (("americanfootball_nfl", "NFL"), ("americanfootball_ncaaf", "NCAAF")):
         with tempfile.TemporaryDirectory() as td:
-            out = Path(td) / "props" / f"{token}_Props.csv"
+            root = Path(td)
+            out = root / "props" / f"{token}_Props.csv"
             out.parent.mkdir(parents=True)
-            prior = frame(*[rows(f"old{i}", past, 200) for i in range(10)], rows("live", soon, 120))
+            prior = frame(*[rows(f"old{i}", past, 200) for i in range(10)], rows("live", soon, 120),
+                          rows("tiny", later, 3))
             prior.to_csv(out, index=False)
             before = _sha(out)
+            ev = [{"id": "live", "home_team": "Home live", "away_team": "Away live", "commence_time": soon},
+                  {"id": "tiny", "home_team": "Home tiny", "away_team": "Away tiny", "commence_time": later},
+                  {"id": "nx", "home_team": "Home nx", "away_team": "Away nx", "commence_time": later},
+                  {"id": "kicked", "home_team": "Home k", "away_team": "Away k", "commence_time": past}]
+            healthy = {"live": rows("live", soon, 130), "tiny": rows("tiny", later, 3),
+                       "nx": rows("nx", later, 5), "kicked": rows("kicked", past, 15)}
+
+            def preserved(label, rc_, rc_expect=1):
+                leftovers = [p.name for p in out.parent.iterdir() if p.name != out.name]
+                ok(rc_ == rc_expect and _sha(out) == before and not leftovers,
+                   f"J[{token}]: {label} -> exit 1, prior file byte-identical, no temp files "
+                   f"(rc={rc_}, leftovers={leftovers})")
 
             # 1) a still-eligible event collapses -> rejected, prior file byte-identical, no temp files.
-            ev = [{"id": "live", "home_team": "Home live", "away_team": "Away live", "commence_time": soon},
-                  {"id": "nx", "home_team": "Home nx", "away_team": "Away nx", "commence_time": later}]
-            rc = _drive_main(fp, sport, out, ev, {"live": rows("live", soon, 10), "nx": rows("nx", later, 5)})
-            leftovers = [p.name for p in out.parent.iterdir() if p.name != out.name]
-            ok(rc == 1 and _sha(out) == before and not leftovers,
-               f"J[{token}]: failed validation exits 1 and preserves the prior file byte-identical "
-               f"(rc={rc}, leftovers={leftovers})")
-
+            preserved("collapse", _drive_main(fp, sport, root, out, ev, {**healthy, "live": rows("live", soon, 10)}))
+            rec = _shape(root, sport).get("publish", {})
+            ok(rec.get("published") is False and rec.get("published_rows") == 0 and rec.get("reason_code") == "EVENT_COLLAPSE",
+               f"J[{token}]: the shape receipt records the rejected publish ({rec.get('reason_code')}, rows={rec.get('published_rows')})")
             # 2) provider error on one event -> rejected, prior preserved.
-            rc_e = _drive_main(fp, sport, out, ev, {"live": rows("live", soon, 130), "nx": rows("nx", later, 5)},
-                               errors_for={"nx"})
-            ok(rc_e == 1 and _sha(out) == before, f"J[{token}]: a provider error preserves the prior file (rc={rc_e})")
+            preserved("provider error", _drive_main(fp, sport, root, out, ev, healthy, errors_for={"nx"}))
+            # 3) --allow-collapse cannot bypass any event-aware protection.
+            for label, feed in (("collapse", {**healthy, "live": rows("live", soon, 10)}),
+                                ("3 -> 0 vanish", {k: v for k, v in healthy.items() if k != "tiny"}),
+                                ("bad kickoff", {**healthy, "nx": rows("nx", "Sunday", 5)})):
+                preserved(f"--allow-collapse + {label}",
+                          _drive_main(fp, sport, root, out, ev, feed, extra_args=("--allow-collapse",)))
 
-            # 3) the normal turnover -> published atomically; played events gone; nothing retained to pad rows.
-            rc_ok = _drive_main(fp, sport, out, ev, {"live": rows("live", soon, 130), "nx": rows("nx", later, 5)})
+            # 4) the normal turnover -> published atomically; played events gone; nothing retained to pad rows.
+            rc_ok = _drive_main(fp, sport, root, out, ev, healthy)
             pub = pd.read_csv(out)
-            ok(rc_ok == 0 and _sha(out) != before and len(pub) == 135,
-               f"J[{token}]: the slate turnover publishes the 135 current rows (rc={rc_ok}, rows={len(pub)})")
-            ok(not pub["EventId"].astype(str).str.startswith("old").any()
+            ok(rc_ok == 0 and _sha(out) != before and len(pub) == 138,
+               f"J[{token}]: the slate turnover publishes the 138 current rows (rc={rc_ok}, rows={len(pub)})")
+            ok(not pub["EventId"].astype(str).str.match(r"^(old|kicked)").any()
                and (pd.to_datetime(pub["EventCommenceAtUTC"], utc=True) > pd.Timestamp(now)).all(),
-               f"J[{token}]: played events are absent after publication (never retained to inflate the count)")
+               f"J[{token}]: played/started events are absent after publication (never retained to inflate the count)")
+            shape = _shape(root, sport)
+            pubrec = shape.get("publish", {})
+            ok(shape.get("rows_fetched") == 153 and pubrec.get("published") is True
+               and pubrec.get("published_rows") == len(pub) == pubrec.get("final_published_rows")
+               and pubrec.get("started_candidate_rows_removed") == 15,
+               f"J[{token}]: receipt keeps raw rows_fetched=153 apart from the published filtered file "
+               f"({pubrec.get('published_rows')} rows; 15 started rows removed)")
             leftovers = [p.name for p in out.parent.iterdir() if p.name != out.name]
             ok(not leftovers, f"J[{token}]: no temp files left after the atomic publish ({leftovers})")
 
@@ -333,6 +438,8 @@ def main() -> int:
     check_ncaaf()
     check_provider_error()
     check_malformed()
+    check_market_contract()
+    check_boundaries()
     check_end_to_end()
     check_scope()
 
