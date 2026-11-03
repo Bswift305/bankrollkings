@@ -66,14 +66,6 @@ def _fixture(sport):
     return pd.DataFrame([r1, r2])
 
 
-def _owner_client():
-    c = app.app.test_client()
-    with c.session_transaction() as s:
-        s['user_id'] = 'qc-owner'
-        s['user_email'] = next(iter(app.OWNER_EMAILS))
-    return c
-
-
 def run_qc():
     issues, notes = [], []
     os.environ.pop('BK_NBA_STATS_ENABLED', None)  # gate OFF
@@ -119,9 +111,11 @@ def run_qc():
         issues.append('an NBA runtime snapshot served while gated (bypass)')
 
     import re
-    c = _owner_client()
+    from services.qc_auth import isolated_owner_client
+    with isolated_owner_client() as c:   # portable owner principal (was a 'qc-owner' id that exists nowhere)
+        pages = {path: c.get(path) for path in ('/sports/nba/props', '/sports/wnba/props')}
     for path, label in (('/sports/nba/props', 'NBA'), ('/sports/wnba/props', 'WNBA')):  # (6) independent
-        r = c.get(path)
+        r = pages[path]
         h = r.get_data(as_text=True)
         if r.status_code != 200:
             issues.append(f'{path} returned {r.status_code}')

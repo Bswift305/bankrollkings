@@ -41,6 +41,27 @@ def isolated_owner_client(user_id: str = "qc-portable-owner"):
         app.load_users = orig
 
 
+@contextlib.contextmanager
+def isolated_user_client(plan: str = "all_access", user_id: str = "qc-portable-member"):
+    """Like isolated_owner_client, but a NON-owner member on `plan` (active) -- for QCs that must prove a
+    paid (or free) customer's view, not the owner bypass. Same data-boundary swap; nothing persisted."""
+    row = {
+        "UserId": user_id, "Email": "qc-portable-member@bankrollkings.local", "DisplayName": "QC Portable Member",
+        "Plan": plan, "BillingCycle": "monthly", "PlanStatus": "active", "Role": "",
+        "IsAdmin": "0", "IsFounder": "0", "Bankroll": 0,
+    }
+    orig = app.load_users
+    app.load_users = lambda: pd.DataFrame([row])
+    try:
+        client = app.app.test_client()
+        with client.session_transaction() as sess:
+            sess["user_id"] = row["UserId"]
+            sess["user_email"] = row["Email"]
+        yield client
+    finally:
+        app.load_users = orig
+
+
 def unauth_client():
     """A test client with NO session -> get_current_user() returns None -> protected routes 401."""
     return app.app.test_client()
