@@ -202,6 +202,45 @@ Open review points for the owner:
   production — untouched here, recorded in the F5 migration section.
 - `qc_odds_feed.py` exit-3 refusal lives on the Integrity branch, not `a5de400`; not run here.
 
+#### 2d. Owner decisions on 2c (2026-11-03) + read-only cadence/quota audit (production side)
+
+Decisions: (1) NBA props stay `SKIPPED_BLOCKED_BY_LINES` when lines are unavailable (lines are their event-identity
+source); follow-up design item: an **independent NBA props event adapter** that establishes identity + kickoff from
+authoritative props/provider data, with its own contract. (2) Keep the 6h executable-price rule; never loosen it to
+fill the board. (3) Once-daily refresh is **not** the final operating model; cadence/quota audit before the Linux
+gate; no timer change until audit + schedule are reviewed. (4) Other sports = governed migration track (matrix in the
+contract doc), not blocking NBA. (5) Fix `qc_nba_market_only` with the existing `services.qc_auth` helper, no waiver.
+(6) Rebuild on current master `6bdb73f` (branch `fix/nba-game-lines-event-aware-v2`); `c9bc374` is never gated or
+deployed from its old base.
+
+Production evidence (SSM `I`/`J`, 2026-11-03 ~23:40Z, read-only; no key values printed):
+
+| Fact | Evidence |
+|---|---|
+| Cost of one NBA lines refresh | **3 credits** (11-03 log l.771–789: `game_lines`, `basketball_nba`, regions `us`, markets h2h/spreads/totals, books draftkings/caesars/fanduel/betmgm, `x-requests-last (sum = fetch cost): 3`). `/events` is free; an empty slate costs **0** (WNBA 20:00Z: `responses 1`, `x-requests-last 0`) |
+| Plan size / remaining | `x-requests-used 1429` + `x-requests-remaining 98571` = **100,000 / month** |
+| Reset contract | monthly on the 1st: remaining 94,341 (10-31) → 99,759 (11-01) |
+| Current burn | Nov 1→2: 735; Nov 2→3: 453; late Oct ≈ 480–740/day. Month projection ≈ 15–22k of 100k |
+| Existing calls | `bk-daily` 13:00Z daily (`run_daily.py --sports nba,wnba,mlb --continue-on-error`; runs ≈ 20–25 min, ends 13:20–13:25Z; **exits 1 every day since 10-27** — known standing failure); `bk-linemove` 00/04/08/12/16/20Z, `refresh_line_movement_snapshots.py` = **MLB + WNBA game lines only (no NBA)**; `bk-nfl-postweek` Tue/Wed 11–23Z ×5; `bk-live-scores` every 1 min (self-gated) |
+| Line-movement "OK" bug — live | 11-03 20:00Z: WNBA `Strong validation FAILED … 0 rows < min 1`, then the job printed `[WNBA game lines] OK` and "All line-movement snapshots captured." Confirms the defect the branch fixes |
+| Overlap protection | **none**: no `flock`/`Conflicts=` in `bk-daily.service` or `bk-linemove.service`. Observed windows do not overlap (12:00Z linemove finishes in seconds; bk-daily 13:00–13:25Z) but nothing enforces it |
+| Quota state files | only `cfbd_quota_state.json` (CFBD, unrelated); no Odds API budget/state file |
+
+Projection for NBA lines only (3 credits/run; off-days cost 0 because an empty slate is free):
+
+| Cadence | Runs/day | Credits/day | ≈ Credits/month | Keeps quotes ≤ 6h? |
+|---|---|---|---|---|
+| Today (daily) | 1 | 3 | 90 | **no** (prices withheld ~18h/day under the 6h rule) |
+| Every 6h | 4 | 12 | 360 | **no margin** — age reaches 6h + run time at every boundary |
+| Every 4h (aligned with `bk-linemove`) | 6 | 18 | 540 | yes, ≤ ~4h + run time |
+| Slate-aware: hourly 15:00–04:00Z on game days + 1 overnight | ≈ 14 | ≈ 42 | ≈ 1,100 (fewer on off-days) | yes, ≤ ~1h before/through tip |
+
+All options are < 1.2% of the 100k monthly plan. Proposal (not enacted — needs review): 4-hourly NBA lines via the
+governed event-aware fetch, optionally slate-aware tightening later; serialize with `bk-daily` (shared `flock` or
+skip the 12:00Z tick) so two writers never validate against the same prior concurrently. Whether `bk-linemove` can
+carry NBA depends on the code-side facts (pending from the rebuild): today it fetches MLB/WNBA only and its exit-code
+semantics are what this branch fixes.
+
 ## 3. Read-only audits (code at exact `a5de400`)
 
 ### NFL props cadence and quota
