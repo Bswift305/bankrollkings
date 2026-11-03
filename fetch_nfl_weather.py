@@ -20,12 +20,13 @@ from __future__ import annotations
 import json
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
 
 from services.nfl_stadiums import NFL_STADIUMS
+from services.timeutils import to_eastern_date_str, to_eastern_datetime_str
 
 BASE_DIR = Path(__file__).resolve().parent
 SCHEDULE_PATHS = [
@@ -54,6 +55,16 @@ def _load_home_games() -> pd.DataFrame:
     if not frames:
         return pd.DataFrame(columns=["Date", "Home"])
     return pd.concat(frames, ignore_index=True, sort=False).dropna().drop_duplicates()
+
+
+def _eastern_today() -> date:
+    """'Today' on the league clock (US Eastern), never the process's ambient zone: on the UTC prod
+    box a bare datetime.now() rolls to tomorrow at ~8pm ET and would drop that evening's game."""
+    return date.fromisoformat(to_eastern_date_str(datetime.now(timezone.utc).isoformat()))
+
+
+def _eastern_now_str() -> str:
+    return to_eastern_datetime_str(datetime.now(timezone.utc).isoformat())
 
 
 def _fetch_stadium(lat: float, lon: float) -> dict:
@@ -88,7 +99,7 @@ def main() -> int:
         print("No NFL schedule rows found; nothing to fetch.")
         return 0
 
-    today = datetime.now().date()
+    today = _eastern_today()
     horizon = today + timedelta(days=FORECAST_DAYS - 1)
     forecast_cache: dict[str, dict] = {}
     rows = []
@@ -117,7 +128,7 @@ def main() -> int:
             "PrecipMm": forecast.get("precip"),
             "TempF": round(float(forecast["temp"]), 0) if forecast.get("temp") is not None else "",
             "Roof": info[2],
-            "Updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "Updated": _eastern_now_str(),
         })
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
