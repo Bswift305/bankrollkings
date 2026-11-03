@@ -174,6 +174,34 @@ Four root causes, not seven. None is dismissed.
 6. **No paid recovery fetch or override today.** After code review + Linux gate, the next ordinary refresh is the
    production test. Branch stays separate from D1, D4 and the Integrity group.
 
+#### 2c. NBA branch built — `fix/nba-game-lines-event-aware` @ `c9bc3746ca7955ec22caa6b8ff4fcaa459dc865f` (branch-only; IN REVIEW; no Linux gate)
+
+Six commits on exact `a5de400`; 15 files, +1862/−74: shared contract `game_lines_event_v1`
+(`services/feed_validation.py`), NBA wiring + atomic 3-file publish + receipt (`fetch_game_lines.py`,
+`services/atomic_csv.py`), dependency-mapped isolation (`refresh_nba_daily.py`, `services/run_outcomes.py`),
+line-movement job never reports a failed fetch as OK, customer containment + tz-aware ages (`app.py`,
+`services/timeutils.py`, `templates/_nba_lines_status.html` new, `dashboard.html`, `game_lines.html`), QCs
+`qc_game_lines_event_slate.py` (59) + `qc_odds_age_timezone.py` (19), contract doc `docs/game_lines_event_contract.md`
+(frozen malformed-row rule R1–R9 / M1–M3 / D1–D3; no per-event minimum; `COVERAGE_DEGRADED`, `NEW_EVENT_SPARSE`;
+coverage audit required before any stronger rule; F5 migration path).
+
+Independent re-run by the coordinator (Windows, Python-socket block, 0 attempted connections): compile 0 on all 10
+changed `.py`; `qc_game_lines_event_slate` 59/59; `qc_odds_age_timezone` 19/19; `qc_slate_validation`,
+`qc_props_slate_turnover` (77/77), `qc_odds_recovery_preflight`, `qc_game_lines_freshness`, `qc_run_outcomes`,
+`qc_atomic_csv`, `qc_freshness_contract`, `qc_nba_gated_market_facts` all rc 0. **`qc_nba_market_only` rc 1**
+(`/sports/nba/props`, `/sports/wnba/props` → 401) — **identical on clean `a5de400`**; not caused by this branch but
+**not waived**: it renders NBA surfaces this branch touches, so it must be made self-contained (in-memory auth, the
+D1 pattern) or excluded with proof before any Linux gate.
+
+Open review points for the owner:
+- Props classified **dependent** on lines (`SPORT_EVENT_MANIFESTS["basketball_nba"]` = `NBA_Odds.csv` is the props
+  coverage denominator) → `SKIPPED_BLOCKED_BY_LINES` on a lines reject.
+- Enforcing the existing 6h `LIVE_LINES_MAX_AGE_HOURS` for NBA (once-daily lines refresh) withholds NBA prices
+  outside ~6h after each refresh — a cadence/credit decision.
+- The shared odds formatter drops `LastUpdated` for WNBA/MLB/NFL/NCAAF, so their stale gate never fires in
+  production — untouched here, recorded in the F5 migration section.
+- `qc_odds_feed.py` exit-3 refusal lives on the Integrity branch, not `a5de400`; not run here.
+
 ## 3. Read-only audits (code at exact `a5de400`)
 
 ### NFL props cadence and quota
