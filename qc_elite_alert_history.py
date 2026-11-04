@@ -94,7 +94,7 @@ def _sandbox():
     with tempfile.TemporaryDirectory(prefix="qc_elite_alerts_") as td:
         data = Path(td) / "data"
         (data / "tracking").mkdir(parents=True)
-        pd.DataFrame(ROWS).reindex(columns=app.ELITE_ALERT_COLUMNS).to_csv(data / "tracking" / "Elite_LineMove_Alerts.csv", index=False)
+        pd.DataFrame(ROWS).to_csv(data / "tracking" / "Elite_LineMove_Alerts.csv", index=False)  # pre-D14 archive shape
         saved = {n: getattr(app, n) for n in ("DATA_DIR", "load_runtime_snapshot", "write_runtime_snapshot",
                                               "build_elite_cross_sport_candidates", "build_streak_heat_chart_service",
                                               "grade_manual_bet_logs")}
@@ -145,7 +145,7 @@ def qc_route_and_export():
     good = by_player.get("Qcalert Provenanced", {})
     check(good.get("Book") == "QCBOOKPROV" and float(good.get("CurrentLine") or 0) == 31.5
           and good.get("ProvenanceStatus") == "RECORDED", "(3) provenance row keeps recorded book + line in the export")
-    quote_cols = ("Book", "OpenLine", "CurrentLine", "LineMove", "OverMove", "UnderMove")
+    quote_cols = tuple(app.ELITE_ALERT_QUOTE_COLUMNS)   # D14 final: implied-point columns retired
     blank = all(all(by_player[r["Player"]][c] == "" for c in quote_cols)
                 and by_player[r["Player"]]["ProvenanceStatus"].startswith("UNAVAILABLE") for r in WITHHELD)
     check(blank, "(3) export blanks book + line(-move) columns for every row without provenance")
@@ -163,7 +163,7 @@ def qc_persist_and_scanner():
         "UnderOdds": -110}])  # synthetic-fixture
     app.load_wnba_props = app.load_mlb_props = lambda *a, **k: pd.DataFrame()
     try:
-        scans = app.build_elite_sharp_money_scanner([])
+        scans = app.build_elite_line_move_scanner([])
     finally:
         app.load_props, app.load_wnba_props, app.load_mlb_props = saved
     check(scans and scans[0].get("source_provenance") == "props_feed:NBA:data/props/NBA_Props.csv",
@@ -188,9 +188,10 @@ def qc_persist_and_scanner():
 def qc_snapshot_key():
     src = (HERE / "app.py").read_text(encoding="utf-8")
     # v5 (D14 live labels) supersedes v4; neither pre-rule v3 nor pre-D14 v4 payloads may be served.
-    check('snapshot_key = f"elite_dashboard_v5_' in src and 'snapshot_key = f"elite_dashboard_v3_' not in src
-          and 'snapshot_key = f"elite_dashboard_v4_' not in src,
-          "(5) Elite snapshot key bumped past v4 (pre-rule v3 and pre-D14 v4 payloads are never served)")
+    check('snapshot_key = f"elite_dashboard_v6_' in src and 'snapshot_key = f"elite_dashboard_v3_' not in src
+          and 'snapshot_key = f"elite_dashboard_v4_' not in src
+          and 'snapshot_key = f"elite_dashboard_v5_' not in src,
+          "(5) Elite snapshot key bumped to v6 (v3/v4/v5 payloads -- pre-rule, pre-D14, pre-migration -- never served)")
     tpl = (HERE / "templates" / "elite_dashboard.html").read_text(encoding="utf-8")
     hist = tpl[tpl.find("Recent Alerts"):tpl.find("Best-Book Shopping Board")]
     check("row.Book" not in hist and "row.CurrentLine" not in hist and "entity_anchor" not in hist

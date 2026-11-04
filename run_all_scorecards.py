@@ -141,6 +141,10 @@ SCORECARDS = [
     # quote time + recorded source + executable price, each input suppressing it alone; render-time (never
     # frozen in the snapshot); UTC-after-8pm-ET edge; historical rows never live. Offline synthetic.
     ("Elite Live Labels QC", "qc_elite_live_labels.py", 300),
+    # D14 final static scan: retired fields/phrases (WINDOW CLOSING, the retired side field, sharp money, ACT label,
+    # Start-with guidance / ANCHOR-WATCH-AVOID badges / score on D14 surfaces, mixed-unit ordering) can never
+    # reappear on rendered surfaces; archive schema migrated; mutation self-test. Static, offline.
+    ("Elite D14 Retired-Field Scan QC", "qc_elite_d14_retired_scan.py", 180),
     # Run Status DEGRADED (Oct 24 monitoring-truth fix): overall must read DEGRADED -- never GREEN -- when
     # a current-market Odds family is stale (a sport whose game lines are fresh but props are stale), a
     # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages

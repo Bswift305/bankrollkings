@@ -1,6 +1,6 @@
 # Elite live line-movement labels — D14 / P1 audit and contract
 
-Status: implemented on branch `fix/nba-game-lines-event-aware-v5` (branch only, not deployed).
+Status: implemented on branch `fix/nba-market-v6-on-17b5e69` (branch only, not deployed). D14 final: no open questions (section 5).
 Module: `services/elite_live_labels.py`. QC: `qc_elite_live_labels.py`. History rule (unchanged, owner-approved):
 `docs/game_lines_event_contract.md` "Elite alert history" + `qc_elite_alert_history.py`.
 
@@ -184,21 +184,53 @@ snapshot v5; fixture reindexed to the extended column list), `run_all_scorecards
 - The game-lines `EventCommenceAtUTC` (only NBA game lines are event-aware) is not used; the props row's own
   provider kickoff is the verified start.
 
-## 5. Open owner decisions
+## 5. D14 final — owner decisions applied (2026-11-04); no open questions
 
-1. **Price threshold value** — 10 American-odds cents is this branch's choice (the old rule was 2.0
-   implied-probability points). Line stays 0.5 points. Confirm or set.
-2. **Adjacent directives / tiers on the same page** (Action Queue `HOLD`/`AVOID`/`BUILD`, BankrollIQ Kelly `PASS` +
-   recommended stake, market-gate "Hold means…", timing-watch "before pushing stake", candidate-pool composite
-   `score` and `ANCHOR`/`WATCH` badges, matchup-builder candidate list, parlay-EV "Tier 1/2" from `ANCHOR`) — the
-   same rule would remove or relabel them; not changed here (outside D14).
-3. **"Sharp" branding** — "Sharp University", "Weekly Sharp Report", and `templates/info.html:378` ("Sharp money
-   came in") are not line-move-side wording; rename or keep?
-4. **Countdown horizon** — currently shown for any upcoming verified start (minutes / hours / days). Limit to,
-   e.g., the next 24 h?
-5. **Legacy kickoff** — rows lacking provider `EventCommenceAtUTC` could use the Eastern `Date`/`Time` legacy
-   bridge (`eastern_wall_to_utc_strict`), but that is DERIVED, not provider-verified; currently NOT used.
-6. **Started events** stay in the scanner with "event start time has passed" (their pregame quote is not
-   current). Drop them from the live scanner instead?
-7. **Internal identifiers** `build_elite_sharp_money_scanner`, context key `sharp_money`, storage column
-   `SharpSide` remain (never rendered); rename in a later schema migration?
+Status: all seven previously open questions are resolved below. Where the owner's decision did not name an
+exact rule, the most conservative factual option was applied and is marked *(conservative default)*.
+
+| # | Question | Resolved answer (implemented) |
+|---|---|---|
+| 1 | Price threshold value | Kept as **documented factual qualifiers, not authority**: a move is listed when the line moved ≥ 0.5 points OR either side's price moved ≥ 10 American-odds cents. The two units are never combined (no shared threshold, score or sort). `LINE_MOVE_MIN_POINTS` / `PRICE_MOVE_MIN_CENTS` in `services/elite_live_labels.py:99-100`; stated in the card subtitle. |
+| 2 | Adjacent Elite directives outside D14 | **Listed for a later governed pass; none appears on a D14 surface** (proven by `qc_elite_d14_retired_scan.py` R3). Not changed: Action Queue `HOLD`/`AVOID`/`BUILD`/`WATCH`/`LEAK`/`EDGE` cards (`app.py` `build_elite_action_queue`), BankrollIQ Kelly `PASS` + recommended stake (`calculate_bankroll_iq`), market-gate glossary "Hold means…" (`explain_profile_stack`), market-timing watch "before pushing stake" (`build_elite_market_timing_watch`), candidate-pool composite `score` + ANCHOR badges (`templates/elite_dashboard.html` candidate pool), matchup-builder candidate list ANCHOR/WATCH sorting, parlay-EV "Tier 1/2" from ANCHOR, MLB Lab learning module "start with ANCHOR suppression rows" (`build_elite_learning_modules`, slug `mlb-lab`). |
+| 3 | "Sharp" branding | **Separate follow-up, not on the D14 surfaces**: "Sharp University" (`templates/elite_learn.html`, Elite hero button), "Weekly Sharp Report" (`templates/elite_dashboard.html` weekly card). The one user-facing *claim* "Sharp money came in. Be cautious." (`templates/info.html:378`) was rewritten now to a fact ("That is a fact about the market; it does not say who bet or predict the result.") because the D14 scan bans the phrase on every rendered surface. |
+| 4 | Countdown horizon | *(conservative default)* A countdown ("Starts in N minutes / H h M min") appears **only for a verified provider kickoff whose Eastern calendar date is today's Eastern date** (the current slate) and in the future, plus fresh quote time, recorded source and an executable price. A later slate shows its start time in ET with "No countdown: start is outside today's Eastern slate". No urgency wording anywhere. `start_facts` (`services/elite_live_labels.py:193`, reason `OUTSIDE_SLATE`). |
+| 5 | ET-date-only (derived) starts | **No countdown.** Only the provider's explicit-UTC `EventCommenceAtUTC` counts as verified; an Eastern `Date`/`Time` (legacy bridge) is never used → `START_UNVERIFIED`, no label. |
+| 6 | Started events | **Shown as historical / non-executable, never live**: the row carries `historical=True`, the label "Historical -- event started; not a current executable quote (started <ET>)", the line column reads "Last captured" instead of "Now", no countdown, sorted after upcoming and unverified rows. |
+| 7 | Internal storage names | **Migrated now on these surfaces**: scanner `build_elite_line_move_scanner` (old name removed, no alias); context key `line_moves` (dashboard + matchup builder + templates); archive column `LineMoveSide`. The ONE remaining legacy literal is the read-only migration input `ELITE_ALERT_LEGACY_SIDE_COLUMN` (`app.py:15614`, marked `# legacy-column-migration`). Snapshot key bumped `elite_dashboard_v5_*` → `elite_dashboard_v6_*`. |
+
+### Saved history migration (alert archive `data/tracking/Elite_LineMove_Alerts.csv`)
+
+`ELITE_ALERT_COLUMNS` (`app.py:15601`) is now: AlertId, FirstSeen, LastSeen, Sport, Player, Stat, Book, Game,
+OpenLine, CurrentLine, **LineMoveSide**, ModelSide, Alignment, LineMove (points), OutcomeState, ActualValue,
+GameDate, ResolvedAt, CapturedAtUTC, SourceProvenance, MoveState, OverPriceDeltaCents, UnderPriceDeltaCents.
+Retired (`ELITE_ALERT_RETIRED_COLUMNS`, `app.py:15615`): Urgency, Score, Reliability, TrueProb, OverMove,
+UnderMove (implied-probability points — a third, unlabelled unit) and the legacy side column.
+`migrate_elite_alert_frame` (`app.py:15694`) is applied by `load_elite_line_move_alerts` (`:15738`): the legacy
+side column becomes `LineMoveSide`, retired columns are dropped, missing columns are blank; the next persist /
+grade rewrites the file in the current schema. Old rows remain history: `elite_alert_history_row` (`:15666`) keeps
+only the label "Historical alert — not a current executable quote" and the provenance gate.
+
+### Final surface / export / API / history inventory (file:line at the D14-final commit)
+
+| Surface | Where | What it shows now |
+|---|---|---|
+| Scanner (builder) | `app.py:15480` `build_elite_line_move_scanner` | move_state + line_delta (pts) + per-side price deltas (¢) + open/current prices, line-move side, model side, alignment, start/quote/source facts; no urgency, score, tier or model probability |
+| Render-time labels | `app.py:15579` `annotate_elite_line_moves` → `services/elite_live_labels.py:246` `annotate` | countdown (current slate only) or a neutral reason note; historical label for started events; quote update time (ET); open-capture disclosure; default order kickoff → update time; explicit line / price sorts |
+| `/elite` scanner card | `templates/elite_dashboard.html:301-370` (`data-live-line-moves`) | columns Prop / Book / Line (open, now or last captured, "as of" time, open-capture note) / Move (state + deltas) / Line-move side / Model side / Model vs move / Start; order + filter links (`moves_sort`, `moves_state`) |
+| `/elite` route | `app.py:44534` | snapshot `elite_dashboard_v6_*`; labels computed per request |
+| `/elite/matchup-builder` card + route | `templates/elite_matchup_builder.html:120-140`, `app.py:44571`, context `app.py:15969` | same facts in compact form; notes "line move(s) point the same / opposite way as the model side" (`app.py:16033`) |
+| Alert history block | `templates/elite_dashboard.html:521` ("Recent Alerts") | historical label + provenance-gated book/line; side from `LineMoveSide`; no live label |
+| CSV export | `app.py:44660` `/elite/alerts/export` → `elite_alert_export_frame` `app.py:15712` | HistoryLabel, ProvenanceStatus + current schema; retired columns never exported, even from legacy rows |
+| Persist / grade / summary | `app.py:15748`, `:15804`, `:15920` | current schema only; grading reads `LineMoveSide` |
+| Learning module | `app.py:16827` (slug `line-movement`) | factual, no "start with" |
+| Elite preview copy | `app.py:23363` (`GLOBAL_FEATURE_PREVIEWS['elite']` steps) | "Read the line movement …" — factual, no "start with" |
+| APIs / JSON | — | none: no `/elite*` JSON route exists; the only machine payload is the runtime snapshot (`line_moves`, facts only) |
+| Static assets | `static/**` | no Elite line-movement code; scanned (R1/R2) |
+
+### Static scan
+
+`qc_elite_d14_retired_scan.py` (22 checks): R1/R2 across 293 rendered files (`app.py`, `services/**`,
+`templates/**`, `static/**`; code strings only, Jinja comments and Python docstrings excluded); R3/R4 on the D14
+surfaces listed above; R5 archive schema; 16 mutation self-tests (each retired token injected into a scanned file
+is flagged; an explicit negation disclaimer is not). `docs/` is not scanned: no route renders a docs file.
