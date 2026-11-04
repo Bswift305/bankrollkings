@@ -449,9 +449,27 @@ def qc_nba_daily():
               f"({'benign' if benign else 'alerting, run DEGRADED'}; rc={rc})")
 
 
+def qc_props_units():
+    """Proposed props units: 30 min after each lines tick, five-day window, never reuse, blocker text."""
+    timer_p, service_p = HERE / "ops" / "bk-nba-props.timer", HERE / "ops" / "bk-nba-props.service"
+    if not timer_p.exists():
+        NOTES.append("props units not present on this revision -- skipped")
+        return
+    timer, service = timer_p.read_text(encoding="utf-8"), service_p.read_text(encoding="utf-8")
+    cal = [l.strip() for l in timer.splitlines() if l.strip().startswith("OnCalendar=")]
+    check(cal == ["OnCalendar=*-*-* 00/4:45:00"], f"props timer fires 30 min after each lines tick ({cal})")
+    exec_line = next((l for l in service.splitlines() if l.startswith("ExecStart=")), "")
+    check("fetch_player_props.py" in exec_line and "--sport basketball_nba" in exec_line and "--days 5" in exec_line
+          and "--allow-reuse" not in exec_line and "nba_props_4h" in exec_line,
+          "props service: the publisher entry, full five-day window, never reuses")
+    for name, text in (("timer", timer), ("service", service)):
+        check("TIMER-ENABLEMENT BLOCKER" in text and "NO_GAMES_SCHEDULED" in text and "NOT installed" in text,
+              f"props {name} is a proposal carrying the TIMER-ENABLEMENT BLOCKER")
+
+
 def main() -> int:
     for fn in (qc_in_process, qc_nba_daily, qc_lines_prerequisite, qc_contention_reuse_crash, qc_failed_holder,
-               qc_location_and_separation):
+               qc_location_and_separation, qc_props_units):
         try:
             fn()
         except Exception as exc:  # a crash is a failure, never a pass
