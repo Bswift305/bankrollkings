@@ -32,6 +32,41 @@ LEDGER_REL = "data/tracking/odds_quota_ledger.jsonl"
 ATTRIBUTION_ENV = "BK_ODDS_ATTRIBUTION_ID"
 
 
+# Concurrent appends (several fetch processes, the other caller, a manual run) must never interleave inside a
+# line: on Windows an append-mode write is seek-to-end + write and two processes can tear each other's rows
+# (seen as a flaky torn line in qc_nba_credit_attribution, 2026-11-04). Every append is therefore made under a
+# short exclusive kernel lock (services/process_lock) on a lock file in a dedicated subdir of the ledger dir.
+LEDGER_LOCK_REL = "data/tracking/.locks/odds_quota_ledger.lock"
+LEDGER_LOCK_WAIT_SECONDS = 10.0
+
+
+def append_ledger_lines(base_dir, text: str, wait_seconds: float = LEDGER_LOCK_WAIT_SECONDS) -> bool:
+    """Append `text` (whole JSONL lines) to the ledger under the ledger lock. Best-effort like the ledger itself:
+    if the lock cannot be taken in time the append still happens (evidence is kept) with a WARN -- a reader that
+    finds a torn line carrying its own attribution token reports UNAVAILABLE, never a guessed sum."""
+    path = Path(base_dir) / LEDGER_REL
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock = None
+    try:
+        from services.process_lock import ExclusiveLock
+        lock = ExclusiveLock(Path(base_dir) / LEDGER_LOCK_REL, label="odds_quota_ledger",
+                             root=Path(base_dir) / "data" / "tracking")
+        if not lock.acquire(wait_seconds=wait_seconds, poll_seconds=0.01):
+            print("[WARN] odds quota ledger lock not acquired in time; appending without it", flush=True)
+            lock = None
+    except Exception as exc:   # lock location refused / unavailable: keep the evidence, say so
+        print(f"[WARN] odds quota ledger lock unavailable ({exc}); appending without it", flush=True)
+        lock = None
+    try:
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+        return True
+    finally:
+        if lock is not None:
+            lock.release()
+
+
 def current_attribution_id():
     """The validated attribution token from the environment, or None."""
     raw = os.environ.get(ATTRIBUTION_ENV, "")
@@ -155,11 +190,7 @@ class QuotaRecorder:
                 row["attribution_id"] = token
             lines.append(json.dumps(row) + "\n")
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            # The batch is joined and handed to ONE write() on an append-mode handle, which narrows the window
-            # in which a concurrent writer could interleave with it (attribution does not depend on order).
-            with path.open("a", encoding="utf-8") as fh:
-                fh.write("".join(lines))
+            append_ledger_lines(base_dir, "".join(lines))   # whole batch under the ledger lock
             return len(self.calls)
         except OSError:
             return 0

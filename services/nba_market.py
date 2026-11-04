@@ -176,12 +176,15 @@ def _ledger_credits(base_dir, attribution_id: str) -> dict:
     x-requests-last makes the sum UNAVAILABLE. Remaining quota is reported SEPARATELY as an account-global
     snapshot and is never added to the credits."""
     rows = []
+    torn_own = 0   # unparseable lines that carry THIS operation's token: the sum can no longer be proven
     try:
         with open(Path(base_dir) / LEDGER_REL, "r", encoding="utf-8") as fh:
             for line in fh:
                 try:
                     row = json.loads(line)
                 except ValueError:
+                    if attribution_id and attribution_id in line:
+                        torn_own += 1
                     continue
                 if isinstance(row, dict) and attribution_id and row.get("attribution_id") == attribution_id:
                     rows.append(row)
@@ -193,6 +196,11 @@ def _ledger_credits(base_dir, attribution_id: str) -> dict:
         return {**base, "x_requests_last_sum": 0, "account_remaining_snapshot": _account_remaining(None),
                 "status": "NO_ATTRIBUTED_ENTRIES (no ledger row carries this operation's attribution id: "
                           "no provider response was recorded for it)"}
+    if torn_own:
+        return {**base, "sports": sorted({str(r.get("sport")) for r in rows}), "x_requests_last_sum": None,
+                "account_remaining_snapshot": _account_remaining(None), "torn_attributed_lines": torn_own,
+                "status": f"UNAVAILABLE ({torn_own} ledger line(s) carrying this operation's token are torn/"
+                          "unparseable; cost is never guessed)"}
     lasts = [r.get("last") for r in rows]
     known = all(isinstance(v, int) and not isinstance(v, bool) for v in lasts)
     sports = sorted({str(r.get("sport")) for r in rows})
