@@ -55,9 +55,7 @@ from services.qc_no_network import NetworkBlocked, child_env  # noqa: E402
 
 # Files whose fabricated -110 is removed by another, not-yet-merged branch. An entry that no
 # longer matches FAILS (stale allowlist would hide a re-introduction) -- delete it at merge time.
-KNOWN_PENDING = {
-    'fetch_ncaaf_slate_cfbd.py': 'removed by fix/f7-cfbd-no-fabricated-prices (bdc06c4)',
-}
+KNOWN_PENDING: dict = {}   # emptied at integration: F7 removed fetch_ncaaf_slate_cfbd.py's -110
 
 results: list[tuple[bool, str]] = []
 
