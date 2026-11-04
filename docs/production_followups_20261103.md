@@ -362,6 +362,72 @@ enable the 4-hour timer. **D12 and the remaining daily failures stay open.**
 - Cosmetic: the four merge commits carry no `Co-Authored-By` trailer (as the originals) and two carry a
   `# Conflicts: app.py` note; rewriting would change all ten SHAs.
 
+#### 2j. NBA v3 review package — `fix/nba-game-lines-event-aware-v3` @ `9ac078f27bd88aae85b0524e28ac55462480e316` (pushed; IN REVIEW; no Linux gate)
+
+On `f06e568` (→ exact `6bdb73f`). Commits: `394c12f` governed no-game result, `5a5af43` single publisher + kernel lock,
+`c5b8663` 4-hourly entrypoint `refresh_nba_lines.py`, `65b791c` `ops/bk-nba-lines.{service,timer}` (not installed),
+`8f2b274` central 6h stale-props gate, `9ac078f` QC registration. `f06e568..HEAD` 22 files +2246/−98;
+`6bdb73f..HEAD` 31 files +4344/−165. New files: `services/{process_lock,nba_lines_publisher,nba_schedule_authority}.py`,
+`refresh_nba_lines.py`, `templates/_props_feed_status.html`, `qc_nba_{lines_lock,no_game_governance,wnba_props_stale}.py`.
+
+- **Schedule-source audit: no independent authoritative NBA schedule exists.** `data/schedules/NBA_Schedule.csv` is
+  written from the same `/odds` response (`fetch_game_lines.py:587-591`); `app.load_schedule` (`:20934-20968`) derives
+  from `NBA_Odds` while the stats gate is off; `fetch_schedule.py` (nba_api) is gated off, dev-only (`batch/*.bat`),
+  falls back to `NBA_Odds`, uses naive `datetime.now()`; playoff results are backward-looking; `/events` is the same
+  provider. Therefore `AUTHORITATIVE_SOURCES` is empty and the verdict is always `SCHEDULE_UNAVAILABLE` (checked before
+  the paid call, recorded in the receipt); a zero-event NBA provider answer → `SCHEDULE_UNAVAILABLE`, exit 1, files
+  untouched; **`NO_GAMES_SCHEDULED` can never be emitted** until a licensed, non-odds-provider schedule (game ids, UTC
+  tip, fetched-at + source, explicit Eastern service date, freshness bound, own QC, wired in `run_daily.py`) is chosen.
+  Outcomes: `NO_GAMES_SCHEDULED`/`REUSED_FRESH` benign; `SCHEDULE_UNAVAILABLE`/`SKIPPED_LOCKED` alerting; unknown
+  outcome strings now alert (fail closed). Classification binds to this run's receipt only.
+- **Central stale-props gate:** `load_props`, `load_wnba_props` and both live-feed loaders return only executable rows
+  (tz-aware UTC `LastUpdated` ≤ 6h, not > 5 min future); callers can tighten, never loosen; `props_feed_status()` gives
+  real update time/age/reason; `_build_file_token` folds an executable-state token for NBA/WNBA props inputs (cache
+  invalidation at the 6h flip). Route inventory — stale exposed at `f06e568` → now withheld/gated:
+  `/sports/nba/props`, `/sports/wnba/props` (market-only, `require_fresh=False`); NBA props board / `/sports/nba` /
+  `/parlay` + saved-ticket payout / market-edge (12h runtime cache); `/sports/wnba`, `/parlay?sport=wnba`, WNBA
+  method/matchup (`build_wnba_prop_board` cache); NBA/WNBA/Elite runtime snapshots (servable to 72h); `/`, `/dashboard`,
+  `/free`, `/home/*` (direct CSV reads, even with the data gate off); `/derivatives`; `/elite` scanner + best-book;
+  `/tools/nba-player`, `/tools/wnba-player` ("data through" was file mtime); `/tools/best-lines` (labelled STALE but
+  priced); `/tools/risk-radar`, `/tools/slate-pulse`. Already strict: `/player`, `/series`, `/matchup`, `/raw-data`,
+  trend board. No NBA/WNBA props input: Green Light, King's Tickets, Daily Card (+png), Menu (static proof in QC).
+  **Contradiction resolved:** v2's QC exercised the loader with `require_fresh=True` and stubbed the board with 2099
+  fixtures, while the board called the loader with `require_fresh=False`; now the board passes `True`, the loader
+  ignores loosening, the board re-checks, and the QC renders board + page through the real loader. One stale fixture
+  + fresh control per route in `qc_nba_wnba_props_stale.py` (`services.qc_auth`, temp data dir, no user-store writes).
+- **Lock design:** `services/process_lock.py` — Linux `fcntl.flock(LOCK_EX|LOCK_NB)` (contract), Windows
+  `msvcrt.locking` for local QC; fd-based, kernel-released on exit/crash, file never unlinked; creates its parent
+  directory. Path: `BK_NBA_LINES_LOCK_PATH` (QC only) → `$BK_RUNTIME_DIR/locks/nba_game_lines.lock` →
+  `/opt/bankrollkings-runtime/locks/nba_game_lines.lock`. Every NBA publish goes through
+  `services/nba_lines_publisher.publish`; `run_fetch` refuses an NBA fetch without the lock. Contention →
+  `SKIPPED_LOCKED` exit 75 (no request, receipt or write; never OK/PASS); unopenable → `LOCK_UNAVAILABLE` exit 76.
+  bk-daily: `--allow-reuse --lock-wait-seconds 120`, reuses a receipt that is `UPDATED`, exit 0, contract
+  `game_lines_event_v1`, ≤ 90 min, every file sha256 matching → `REUSED_FRESH`. Two-process QC: loser 0 calls/0 writes,
+  winner publishes once, waiter reuses, lock free after exit and after kill. `odds_quota` cost-receipt no longer prints
+  OK on a failed fetch.
+- **Production check (coordinator, SSM `K`, 2026-11-04 01:36Z, names only):** `.env` sets `BK_RUNTIME_DIR` =
+  `/opt/bankrollkings-runtime` (exists, `ubuntu`-owned); `bankrollkings`, `bk-daily`, `bk-linemove` all load
+  `/opt/bankrollkings/.env` and run as `ubuntu`; the live app process has `BK_RUNTIME_DIR`. `locks/` does not exist yet
+  — `process_lock` creates it (`mkdir(parents=True)`), so both jobs resolve the same path.
+- **Cadence:** `OnCalendar=*-*-* 00/4:45:00` (00:45, 04:45, 08:45, 12:45, 16:45, 20:45 UTC) — ≤ 4h + run time, ~2h
+  headroom under 6h, clear of bk-daily 13:00Z; 18 credits/day. Install steps in the unit header. **Not installed.**
+- **Gate (builder):** 32 QCs, worktree + clean export, 0 network attempts, all rc 0 except `qc_quick_tools`
+  (`/tools/real-vs-luck` MLB data absent locally) — coordinator confirmed it fails identically at `f06e568`; D1 275/275;
+  D1 files identical to `6bdb73f`; clean tree. **Coordinator re-run (rc 0, 0 network):** `qc_nba_lines_lock` 34/34,
+  `qc_nba_no_game_governance` 36/36, `qc_nba_wnba_props_stale` 34/34, `qc_nba_market_only`,
+  `qc_game_lines_event_slate` 59/59, `qc_odds_age_timezone` 19/19, `qc_run_outcomes`, D1 275/275; compile 0.
+- **Builder choices to review:** NBA lines step timeout 180→240 s (lock wait); lock contention in bk-daily counts as a
+  failure (props `SKIPPED_BLOCKED_BY_LINES`); the 4h unit does not mask 75/76; `archive_daily_candidates` archives only
+  executable props; `APP_CACHE_VERSION` not bumped (the new token invalidates NBA/WNBA caches only); props with no
+  readable timestamp or > 5 min future are withheld (fixtures moved to relative times).
+- **Builder open items, coordinator disposition:** `/elite/alerts/export` "missing auth" — **not a defect**: it is in
+  `SHARP_ENDPOINTS` (`app.py:946`) behind the central plan gate. Remaining untouched: sidebar raw row counts (no prices);
+  player-link identity cached from a fresh feed stays linkable after staleness (destination shows withheld state).
+  Reuse window 90 min / lock wait 120 s are engineering estimates.
+- **Blast radius to note for review:** the central gate changes what `/`, `/dashboard`, `/free`, `/home/*`, `/elite`,
+  `/derivatives` and the player/tool pages show whenever the NBA/WNBA props file is > 6h old — with today's once-daily
+  refresh that is most of the day until the 4h cadence (which covers lines, not props) and a props cadence exist.
+
 ## 3. Read-only audits (code at exact `a5de400`)
 
 ### NFL props cadence and quota
