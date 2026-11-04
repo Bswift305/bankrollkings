@@ -8,9 +8,127 @@ only trips if a per-row full rebuild returns. Exits 0 when the guards hold, 1 ot
 """
 from __future__ import annotations
 
+import os
 import time
 
+os.environ.setdefault('SECRET_KEY', 'qc-perf-guards-not-a-secret')  # app import needs one; offline QC
+
 import app
+
+_MILESTONE_PATCHED = ('_nfl_player_week_data', '_nfl_player_log_signature', '_nfl_injury_source_state',
+                      '_nfl_expected_completed_week', '_nfl_player_log_sources',
+                      '_nfl_disk_cache_load', '_nfl_disk_cache_store')
+
+
+def _milestone_fixture():
+    """Synthetic player-week log: one receiver with 3 straight 100+ games vs JAX (a matchup
+    milestone) so the builder takes its full, cached path."""
+    import pandas as pd
+    cols = ['_key', '_full', '_name', '__season', 'week', 'opponent_team', 'recent_team',
+            'receiving_yards', 'receptions', 'rushing_yards', 'passing_yards']
+    rows = [('f.guard', 'Fixture Guard', 'Fixture Guard', season, week, 'JAX', 'HOU', ry, 6, 0, 0)
+            for season, week, ry in ((2023, 3, 110), (2024, 5, 120), (2025, 7, 130))]
+    return pd.DataFrame(rows, columns=cols)
+
+
+def _guard_milestone_cache(issues, notes):
+    """Guard 3 body. Data-independent: the week-data loader (with a call counter), the cache-key
+    inputs (log signature, injury-source mtime, expected week) and the disk cache are all patched, so
+    no real data is read and nothing is written to disk. Asserts the real invariant -- the loader runs
+    ONCE across a cold+warm pair and the warm call returns the SAME object -- plus invalidation on a
+    signature change. The unavailable (no logs) fail-closed return is checked separately: it is
+    deliberately NOT cached, so it is never reported as a cache failure. Unexpected exceptions FAIL."""
+    import pandas as pd
+
+    tag = 'milestone cache guard'
+    state = {'sig': ('qc-fixture-log', 1), 'frame': _milestone_fixture(), 'reads': 0}
+    disk_stores = []
+    saved = {k: getattr(app, k) for k in _MILESTONE_PATCHED}
+    saved_cache = dict(app._NFL_MILESTONE_CACHE)
+
+    def _week_data():
+        state['reads'] += 1
+        return state['frame']
+
+    try:
+        app._nfl_player_week_data = _week_data
+        app._nfl_player_log_signature = lambda: state['sig']
+        app._nfl_injury_source_state = lambda: {'lookup': {}, 'updated': '', 'mtime': 1.0,
+                                                'fresh': True, 'gated': False}
+        app._nfl_expected_completed_week = lambda today=None: (6, 2026)
+        app._nfl_player_log_sources = lambda: []
+        app._nfl_disk_cache_load = lambda *a, **k: None                       # never read disk
+        app._nfl_disk_cache_store = lambda key, version, value, ttl_seconds=86400: \
+            disk_stores.append(key)                                            # never write disk
+
+        # (a) available path: cold build, then a warm call must be the SAME object, loader run once.
+        app._NFL_MILESTONE_CACHE.clear()
+        m1 = app.build_nfl_milestone_streaks()
+        t0 = time.perf_counter()
+        m2 = app.build_nfl_milestone_streaks()
+        warm_ms = (time.perf_counter() - t0) * 1000.0
+        ok = True
+        if not (isinstance(m1, dict) and m1.get('available') is True and m1.get('total_matchup', 0) >= 1):
+            issues.append(f"{tag}: fixture build not available (available={m1.get('available') if isinstance(m1, dict) else m1!r}, "
+                          f"reason={m1.get('unavailable_reason') if isinstance(m1, dict) else ''!r}) -- "
+                          "builder failed on a valid log")
+            ok = False
+        if m1 is not m2:
+            issues.append("build_nfl_milestone_streaks not returning its cached object on a warm call "
+                          "(fixture data available; m1 is not m2)")
+            ok = False
+        if state['reads'] != 1:
+            issues.append(f"{tag}: player-week loader called {state['reads']}x across cold+warm (want 1 "
+                          "-> warm call rebuilt)")
+            ok = False
+        if warm_ms > 200.0:
+            issues.append(f"milestone warm call {warm_ms:.0f}ms (>200ms -> cache not serving)")
+            ok = False
+
+        # (b) invalidation: a log-signature change must rebuild (loader +1, new object), then re-cache.
+        state['sig'] = ('qc-fixture-log', 2)
+        m3 = app.build_nfl_milestone_streaks()
+        m4 = app.build_nfl_milestone_streaks()
+        if m3 is m2 or state['reads'] != 2:
+            issues.append(f"{tag}: signature change did not invalidate (new object={m3 is not m2}, "
+                          f"loader calls={state['reads']}, want 2)")
+            ok = False
+        elif m4 is not m3 or state['reads'] != 2:
+            issues.append(f"{tag}: rebuilt result not re-cached under the new signature "
+                          f"(m4 is m3={m4 is m3}, loader calls={state['reads']}, want 2)")
+            ok = False
+
+        # (c) unavailable path (no logs): fail-closed result, deliberately NOT cached -> recomputes.
+        state['sig'] = ('qc-fixture-log', 'empty')
+        state['frame'] = pd.DataFrame()
+        app._NFL_MILESTONE_CACHE.clear()
+        reads0, stores0 = state['reads'], len(disk_stores)
+        u1 = app.build_nfl_milestone_streaks()
+        u2 = app.build_nfl_milestone_streaks()
+        if u1.get('available') is not False or u1.get('unavailable_reason') != 'no_game_stat_logs':
+            issues.append(f"{tag}: empty log gave available={u1.get('available')!r} "
+                          f"reason={u1.get('unavailable_reason')!r} (want False / 'no_game_stat_logs')")
+            ok = False
+        elif u1 is u2 or 'data' in app._NFL_MILESTONE_CACHE or len(disk_stores) != stores0:
+            issues.append(f"{tag}: unavailable result was cached (u1 is u2={u1 is u2}, disk stores="
+                          f"{len(disk_stores) - stores0}) -- fail-closed return is meant to recompute")
+            ok = False
+        elif state['reads'] - reads0 != 2:
+            issues.append(f"{tag}: unavailable path loader called {state['reads'] - reads0}x for 2 "
+                          "calls (want 2: one recompute per call)")
+            ok = False
+
+        if ok:
+            notes.append(f"milestone builder (fixture) warm call {warm_ms:.1f}ms: same object, loader 1x "
+                         "cold+warm; signature change rebuilds; unavailable (no_game_stat_logs) recomputes "
+                         "by design, not cached")
+    except Exception as exc:
+        issues.append(f"{tag} ERROR ({type(exc).__name__}: {exc})")
+    finally:
+        for k, v in saved.items():
+            setattr(app, k, v)
+        app._NFL_MILESTONE_CACHE.clear()
+        app._NFL_MILESTONE_CACHE.update(saved_cache)
 
 
 def run_qc():
@@ -43,21 +161,9 @@ def run_qc():
         notes.append(f"_entity_player_known ~{per_call_ms:.3f}ms/call (cheap; no per-row rebuild)")
 
     # Guard 3: the milestone builder result is cached (sig-keyed) -- a 2nd call returns the SAME object
-    # without re-running the multi-second matchup pass.
-    try:
-        app._NFL_MILESTONE_CACHE.clear()
-        m1 = app.build_nfl_milestone_streaks()
-        t0 = time.perf_counter()
-        m2 = app.build_nfl_milestone_streaks()
-        warm_ms = (time.perf_counter() - t0) * 1000.0
-        if m1 is not m2:
-            issues.append("build_nfl_milestone_streaks not returning its cached object on a warm call")
-        elif warm_ms > 200.0:
-            issues.append(f"milestone warm call {warm_ms:.0f}ms (>200ms -> cache not serving)")
-        else:
-            notes.append(f"milestone builder warm call {warm_ms:.1f}ms (cached, no rebuild)")
-    except Exception as exc:
-        notes.append(f"milestone guard skipped ({type(exc).__name__}: {exc})")
+    # without re-running the multi-second matchup pass. Fixture-driven (see _guard_milestone_cache) so
+    # it does not depend on the gitignored NFL player logs being present in this checkout.
+    _guard_milestone_cache(issues, notes)
 
     # Guard 4: Riding-the-Wave N+1. The participation index must be built ONCE and reused across many
     # per-player return-status lookups -- the old path re-scanned + .copy()'d the ~103k-row weekly log
