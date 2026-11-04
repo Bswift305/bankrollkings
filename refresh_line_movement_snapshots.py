@@ -16,11 +16,13 @@ single-worker box.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-from services.run_outcomes import BENIGN_LINES_NONPUBLISH
+from services import run_receipts
+from services.run_outcomes import BENIGN_LINES_NONPUBLISH, RUN_RECEIPT_MISMATCH, RUN_RECEIPT_MISSING
 
 BASE_DIR = Path(__file__).parent.resolve()
 
@@ -42,23 +44,25 @@ def _receipt_path(sport: str) -> Path:
     return BASE_DIR / "data" / "tracking" / f"_last_game_lines_fetch_{sport}.json"
 
 
-def _mtime(path: Path) -> float:
-    try:
-        return path.stat().st_mtime
-    except OSError:
-        return 0.0
+def classify_step(returncode: int, sport: str, run_token: str) -> tuple[str, str]:
+    """Return (status, detail) with status in {OK, SKIPPED_<benign outcome>, FAILED, RUN_RECEIPT_MISSING,
+    RUN_RECEIPT_MISMATCH}.
 
-
-def classify_step(returncode: int, sport: str, receipt_mtime_before: float) -> tuple[str, str]:
-    """Return (status, detail) with status in {OK, SKIPPED_<benign outcome>, FAILED}."""
+    Receipt-identity contract (2026-11-04, extended to this runner): the receipt counts as THIS invocation's
+    only when it carries THIS invocation's run token (passed to the child in run_receipts.STAGE_RUN_ENV and
+    stamped by fetch_game_lines). File mtime is never consulted -- on a coarse-timestamp filesystem two
+    successive writes can share an mtime, and a newer file can be another writer's. Missing / unreadable ->
+    RUN_RECEIPT_MISSING; another (or no) token -> RUN_RECEIPT_MISMATCH. Both are failures, never OK."""
     path = _receipt_path(sport)
-    fresh = _mtime(path) > receipt_mtime_before
-    receipt = None
-    if fresh:
-        try:
-            receipt = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            receipt = None
+    try:
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return RUN_RECEIPT_MISSING, f"exit {returncode}, no readable receipt for this invocation ({path.name})"
+    if not isinstance(receipt, dict):
+        return RUN_RECEIPT_MISSING, f"exit {returncode}, receipt is not an object"
+    if not run_token or receipt.get("stage_run_id") != run_token:
+        return RUN_RECEIPT_MISMATCH, (f"exit {returncode}, the receipt carries token "
+                                      f"{str(receipt.get('stage_run_id'))[:8]!r}, not this invocation's")
     if returncode == 0:
         if receipt is not None and receipt.get("outcome") not in (None, "UPDATED"):
             return "FAILED", f"exit 0 but this run's receipt says outcome={receipt.get('outcome')}"
@@ -68,7 +72,7 @@ def classify_step(returncode: int, sport: str, receipt_mtime_before: float) -> t
         return f"SKIPPED_{receipt.get('outcome')}", (f"{receipt.get('outcome')} (proven by this run's receipt)")
     if receipt:
         return "FAILED", f"exit {returncode}, outcome={receipt.get('outcome')}"
-    return "FAILED", f"exit {returncode}, no fresh receipt proving a benign cause"
+    return "FAILED", f"exit {returncode}, this invocation's receipt proves no benign cause"
 
 
 def main() -> int:
@@ -78,9 +82,11 @@ def main() -> int:
     print("=" * 60)
     for label, command, timeout, sport in STEPS:
         print(f"\n[{label}]")
-        receipt_before = _mtime(_receipt_path(sport))
+        run_token = run_receipts.new_token()          # identifies THIS invocation's receipt (never mtime)
+        child_env = dict(os.environ)
+        child_env[run_receipts.STAGE_RUN_ENV] = run_token
         try:
-            result = subprocess.run(command, cwd=BASE_DIR, timeout=timeout)
+            result = subprocess.run(command, cwd=BASE_DIR, timeout=timeout, env=child_env)
         except subprocess.TimeoutExpired:
             failures.append((label, "timeout"))
             print("FAILED: timeout")
@@ -91,10 +97,10 @@ def main() -> int:
             continue
         # fetch_game_lines returns 1 for EVERY non-publish (provider error, validation reject, cost receipt,
         # publish failure, or a genuine zero-event window). Only this run's receipt can prove the benign one.
-        status, detail = classify_step(result.returncode, sport, receipt_before)
-        if status == "FAILED":
-            failures.append((label, detail))
-            print(f"FAILED: {detail}")
+        status, detail = classify_step(result.returncode, sport, run_token)
+        if status != "OK" and not status.startswith("SKIPPED_"):
+            failures.append((label, f"{status}: {detail}" if status != "FAILED" else detail))
+            print(f"FAILED ({status}): {detail}")
         elif status.startswith("SKIPPED_"):
             print(f"SKIPPED (benign): {detail}")
         else:

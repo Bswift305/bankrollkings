@@ -278,13 +278,16 @@ def qc_line_movement():
         saved = (lm.BASE_DIR, lm.subprocess.run)
 
         def drive(plan):
-            def fake_run(command, cwd=None, timeout=None, **kw):
+            def fake_run(command, cwd=None, timeout=None, env=None, **kw):
                 joined = " ".join(map(str, command))
                 sport = "baseball_mlb" if "mlb" in joined else "basketball_wnba"
                 rc, outcome = plan[sport]
                 if outcome:
                     (base / "data/tracking" / f"_last_game_lines_fetch_{sport}.json").write_text(
-                        json.dumps({"outcome": outcome, "exit_code": rc}), encoding="utf-8")
+                        json.dumps({"outcome": outcome, "exit_code": rc,
+                                    # the child stamps the runner's run token (identity, never mtime)
+                                    "stage_run_id": (env or {}).get("BK_NBA_STAGE_RUN_ID")}),
+                        encoding="utf-8")
                 return _Fake(rc)
             lm.BASE_DIR, lm.subprocess.run = base, fake_run
             try:
