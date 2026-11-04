@@ -424,6 +424,26 @@ On `f06e568` (→ exact `6bdb73f`). Commits: `394c12f` governed no-game result, 
   `SHARP_ENDPOINTS` (`app.py:946`) behind the central plan gate. Remaining untouched: sidebar raw row counts (no prices);
   player-link identity cached from a fresh feed stays linkable after staleness (destination shows withheld state).
   Reuse window 90 min / lock wait 120 s are engineering estimates.
+- **Owner decisions on 2j (2026-11-04):** 240 s step timeout and 120 s lock wait accepted (receipt re-check after
+  wait/acquire); contention in bk-daily → `REUSED_FRESH_AFTER_LOCK` only for a newly published, hash-valid file inside
+  the 90-min **duplicate-suppression** window (not a freshness boundary — executable boundary stays 6h), else explicit
+  failure/degraded, never `OK`; 5-min future tolerance accepted as a labelled clock-skew allowance; timer moved to
+  `:15` past every 4th UTC hour (12:15 run leaves 45 min before bk-daily). **Timer-enablement blocker:** the 4h timer
+  cannot be enabled until an independent, legally approved schedule source or another reviewed no-game contract
+  exists — never a fabricated `NO_GAMES_SCHEDULED`. NBA v4 required before any NBA Linux gate (lock re-check, path
+  containment / no symlink escape / 0700 dir + 0600 file, no paid request before ownership, crash release; every
+  stale route fixtured; `qc_quick_tools` self-contained, no MLB-data waiver). **The central stale gate is not to be
+  deployed while props availability is unresolved without presenting that product impact for approval.**
+- **NBA/WNBA props cadence — production evidence (SSM `L`, 2026-11-04 ~01:50Z, read-only):** NBA props are fetched
+  only inside `bk-daily` 13:00Z (`player_props` step, after lines); no props timer exists (`bk-linemove` = MLB/WNBA
+  lines only). Window = next 5 days. Cost per refresh (`x-requests-last`): 11-02 15 events → **74**; 11-01 4 → **22**;
+  10-31 7 → **32**; 10-30 10 → **57**; 10-28 1 → **16**; 10-27 1 → **16** (≈ 4–5 credits/event + a small fixed part);
+  11-03 and 10-29: not run (blocked by lines). Current `NBA_Props.csv`: 1,727 rows, 15 events, markets
+  3PM/AST/BLK/PTS/REB/STL, 3 books, `LastUpdated` max 2026-11-02 13:05 (file mode 0600). `WNBA_Props.csv`: 72 rows, 1
+  event, 2026-10-31 (off-season). Projection at the observed 16–74/refresh: 4-hourly ≈ 6 × ~45 ≈ 270/day ≈ **8k/month**
+  (~8% of the 100k plan, on top of ~15–22k current); restricting intra-day refreshes to the current Eastern slate
+  (instead of 5 days) should cut that roughly by the share of events beyond today (code-side confirmation pending from
+  v4). No-game day: the props step is skipped when lines report no events; cost then 0 (provider `/events` is free).
 - **Blast radius to note for review:** the central gate changes what `/`, `/dashboard`, `/free`, `/home/*`, `/elite`,
   `/derivatives` and the player/tool pages show whenever the NBA/WNBA props file is > 6h old — with today's once-daily
   refresh that is most of the day until the 4h cadence (which covers lines, not props) and a props cadence exist.
