@@ -22,6 +22,8 @@ from urllib.request import urlopen
 
 import pandas as pd
 from services.env_loader import load_local_env
+from services.fetch_sport_guard import UnconfiguredSportError, report_unconfigured, require_configured_sport
+from services.odds_quota import LEDGER_REL
 from services.timeutils import to_eastern_datetime_str
 
 
@@ -78,8 +80,7 @@ def _write_shape_receipt(sport: str, days: int, events: list, rows_fetched: int,
         "shape_proves_no_markets_posted": shape_proves_no_markets,
         "events": _SHAPE_EVENTS,
     }
-    slug = sport.replace("/", "_")
-    path = BASE_DIR / "data" / "tracking" / f"_last_props_fetch_{slug}.json"
+    path = resolve_sport_paths(sport)["receipt"]   # the sport's OWN receipt; unconfigured sport raises
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
@@ -98,7 +99,7 @@ def _record_publish_in_receipt(sport: str, vreceipt: dict, published: bool, publ
     """Add the event-aware validation outcome to the shape receipt. `rows_fetched` stays the RAW provider
     count (run_outcomes needs it); `publish` describes the FILTERED future-only file actually written, so
     the receipt can never present the raw response as what was published."""
-    path = BASE_DIR / "data" / "tracking" / f"_last_props_fetch_{sport.replace('/', '_')}.json"
+    path = resolve_sport_paths(sport)["receipt"]   # the sport's OWN receipt; unconfigured sport raises
     try:
         receipt = json.loads(path.read_text(encoding="utf-8"))
         receipt["publish"] = {
@@ -153,13 +154,67 @@ def _eligible_event_keys(sport: str):
     return set(), None
 
 
-SPORT_OUTPUTS = {
-    "basketball_nba": BASE_DIR / "data" / "props" / "NBA_Props.csv",
-    "basketball_wnba": BASE_DIR / "data" / "props" / "WNBA_Props.csv",
-    "americanfootball_nfl": BASE_DIR / "data" / "props" / "NFL_Props.csv",
-    "americanfootball_ncaaf": BASE_DIR / "data" / "props" / "NCAAF_Props.csv",
-    "baseball_mlb": BASE_DIR / "data" / "props" / "MLB_Props.csv",
+# THE one table: every sport this fetcher may write for, with every output / receipt / coverage / cache
+# path spelled out explicitly (repo-relative; resolved against BASE_DIR at call time). A sport absent from
+# this table -- including basketball_ncaab, deliberately UNCONFIGURED until an NCAAB pipeline exists --
+# fails closed before any provider request or file write. There is NO default entry and NO fallback.
+#   receipt  = the sport's own response-shape receipt (read by services.run_outcomes)
+#   ledger   = the shared APPEND-ONLY, sport-tagged quota ledger (services.odds_quota.LEDGER_REL)
+#   coverage = the sport's own market-coverage CSV
+#   cache    = None: this fetcher writes no runtime cache.
+SPORT_PATHS = {
+    "basketball_nba": {
+        "props": "data/props/NBA_Props.csv",
+        "receipt": "data/tracking/_last_props_fetch_basketball_nba.json",
+        "ledger": LEDGER_REL,
+        "coverage": "data/tracking/NBA_Props_MarketCoverage.csv",
+        "cache": None,
+    },
+    "basketball_wnba": {
+        "props": "data/props/WNBA_Props.csv",
+        "receipt": "data/tracking/_last_props_fetch_basketball_wnba.json",
+        "ledger": LEDGER_REL,
+        "coverage": "data/tracking/WNBA_Props_MarketCoverage.csv",
+        "cache": None,
+    },
+    "americanfootball_nfl": {
+        "props": "data/props/NFL_Props.csv",
+        "receipt": "data/tracking/_last_props_fetch_americanfootball_nfl.json",
+        "ledger": LEDGER_REL,
+        "coverage": "data/tracking/NFL_Props_MarketCoverage.csv",
+        "cache": None,
+    },
+    "americanfootball_ncaaf": {
+        "props": "data/props/NCAAF_Props.csv",
+        "receipt": "data/tracking/_last_props_fetch_americanfootball_ncaaf.json",
+        "ledger": LEDGER_REL,
+        "coverage": "data/tracking/NCAAF_Props_MarketCoverage.csv",
+        "cache": None,
+    },
+    "baseball_mlb": {
+        "props": "data/props/MLB_Props.csv",
+        "receipt": "data/tracking/_last_props_fetch_baseball_mlb.json",
+        "ledger": LEDGER_REL,
+        "coverage": "data/tracking/MLB_Props_MarketCoverage.csv",
+        "cache": None,
+    },
 }
+PATH_KEYS = ("props", "receipt", "ledger", "coverage", "cache")
+
+
+def resolve_sport_paths(sport: str) -> dict:
+    """Absolute paths for a CONFIGURED sport. Raises UnconfiguredSportError otherwise (never falls back)."""
+    key = require_configured_sport("fetch_player_props", sport, SPORT_PATHS)
+    entry = SPORT_PATHS[key]
+    if any(k not in entry for k in PATH_KEYS):
+        raise UnconfiguredSportError("fetch_player_props", key, SPORT_PATHS.keys())
+    resolved = {"sport": key}
+    for k in PATH_KEYS:
+        resolved[k] = (BASE_DIR / entry[k]).resolve() if entry[k] else None
+    return resolved
+
+
+# CLI default only (the bare `py fetch_player_props.py` in batch/ means NBA). It is never a path fallback.
 DEFAULT_SPORT = "basketball_nba"
 DEFAULT_BOOKMAKERS = "draftkings"
 DEFAULT_REGIONS = "us"
@@ -320,11 +375,13 @@ _QUOTA = QuotaRecorder()
 
 
 def _sport_tokens(sport: str):
-    s = (sport or "").lower()
+    """League token the output filename must contain. An unconfigured sport raises (it used to return ()
+    -- which silently SKIPPED the path guard)."""
+    s = require_configured_sport("fetch_player_props", sport, SPORT_PATHS)
     for needle, token in (("ncaaf", "NCAAF"), ("nfl", "NFL"), ("wnba", "WNBA"), ("nba", "NBA"), ("mlb", "MLB")):
         if needle in s:
             return (token,)
-    return ()
+    raise UnconfiguredSportError("fetch_player_props", s, SPORT_PATHS.keys())
 
 
 def get_json(url: str) -> list | dict:
@@ -592,7 +649,8 @@ def build_dataframe(rows: list[dict]) -> pd.DataFrame:
     return df.sort_values(["Game", "Book", "Player", "Stat", "Line"]).reset_index(drop=True)
 
 
-def write_market_coverage(df: pd.DataFrame, sport: str, requested_markets: list[str], output_path: Path) -> None:
+def write_market_coverage(df: pd.DataFrame, sport: str, requested_markets: list[str], output_path: Path,
+                          coverage_path: Path | None = None) -> None:
     required = SPORT_REQUIRED_MARKETS.get(sport, requested_markets)
     rows = []
     if df is not None and not df.empty and "MarketKey" in df.columns:
@@ -637,7 +695,8 @@ def write_market_coverage(df: pd.DataFrame, sport: str, requested_markets: list[
             "MissingReason": missing_reason,
             "LastChecked": fetched_at,
         })
-    coverage_path = output_path.parent.parent / "tracking" / f"{output_path.stem}_MarketCoverage.csv"
+    if coverage_path is None:   # --output override: coverage sits beside it, as before
+        coverage_path = output_path.parent.parent / "tracking" / f"{output_path.stem}_MarketCoverage.csv"
     coverage_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(coverage_path, index=False)
     missing = [row["Stat"] for row in rows if row["Status"] == "MISSING"]
@@ -754,11 +813,18 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    # Fail closed FIRST: an unconfigured sport (e.g. basketball_ncaab) is refused before the API key is
+    # read, before any provider request, and before any file write (props, receipt, coverage, ledger).
+    try:
+        sport_paths = resolve_sport_paths(args.sport)
+    except UnconfiguredSportError as exc:
+        return report_unconfigured(exc)
+    sport = sport_paths["sport"]
     api_key = get_api_key(args.api_key)
-    sport = str(args.sport or DEFAULT_SPORT).strip().lower()
-    default_output = SPORT_OUTPUTS.get(sport, SPORT_OUTPUTS[DEFAULT_SPORT])
-    output_path = Path(args.output).expanduser().resolve() if args.output else default_output.resolve()
-    default_markets = SPORT_DEFAULT_MARKETS.get(sport, SPORT_DEFAULT_MARKETS[DEFAULT_SPORT])
+    output_path = Path(args.output).expanduser().resolve() if args.output else sport_paths["props"]
+    # Default output -> the table's declared coverage path; an explicit --output keeps coverage beside it.
+    coverage_path = None if args.output else sport_paths["coverage"]
+    default_markets = SPORT_DEFAULT_MARKETS[sport]
     markets_arg = args.markets if args.markets is not None else ",".join(default_markets)
     markets = [market.strip() for market in markets_arg.split(",") if market.strip()]
 
@@ -902,7 +968,7 @@ def main() -> int:
         return 1
     if event_receipt is not None:
         _record_publish_in_receipt(sport, event_receipt, published=True, published_rows=len(df))
-    write_market_coverage(df, sport, markets, output_path)
+    write_market_coverage(df, sport, markets, output_path, coverage_path=coverage_path)
 
     print(f"Saved {len(df)} props to {output_path}")
     return 0

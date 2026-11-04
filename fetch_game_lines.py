@@ -25,38 +25,106 @@ from services.timeutils import to_eastern_datetime_str
 
 BASE_DIR = Path(__file__).parent.resolve()
 load_local_env(BASE_DIR)
-SPORT_OUTPUTS = {
+
+from services.fetch_sport_guard import UnconfiguredSportError, report_unconfigured, require_configured_sport
+from services.odds_quota import LEDGER_REL
+
+
+# THE one table: every sport this fetcher may write for, with every output / receipt / coverage / cache
+# path spelled out explicitly (repo-relative; resolved against BASE_DIR at call time). A sport absent from
+# this table -- including basketball_ncaab, deliberately UNCONFIGURED until an NCAAB pipeline exists --
+# fails closed before any provider request or file write. There is NO default entry and NO fallback.
+#   receipt  = the shared APPEND-ONLY, sport-tagged quota ledger (services.odds_quota.LEDGER_REL); every
+#              row carries its own `sport`, so no sport's receipt can overwrite another's.
+#   coverage = None, cache = None: this fetcher writes no market-coverage artifact and no runtime cache.
+SPORT_PATHS = {
     "basketball_nba": {
-        "odds": BASE_DIR / "data" / "odds" / "NBA_Odds.csv",
-        "schedules": BASE_DIR / "data" / "schedules" / "NBA_Odds.csv",
-        "schedule_alias": BASE_DIR / "data" / "schedules" / "NBA_Schedule.csv",
+        "tracking_prefix": "NBA",
+        "odds": "data/odds/NBA_Odds.csv",
+        "schedules": "data/schedules/NBA_Odds.csv",
+        "schedule_alias": "data/schedules/NBA_Schedule.csv",
+        "line_movement_history": "data/tracking/NBA_LineMovementHistory.csv",
+        "line_movement_current": "data/tracking/NBA_LineMovementCurrent.csv",
+        "receipt": LEDGER_REL,
+        "coverage": None,
+        "cache": None,
     },
     "basketball_wnba": {
-        "odds": BASE_DIR / "data" / "odds" / "WNBA_Odds.csv",
-        "schedules": BASE_DIR / "data" / "schedules" / "WNBA_Odds.csv",
-        "schedule_alias": BASE_DIR / "data" / "schedules" / "WNBA_Schedule.csv",
+        "tracking_prefix": "WNBA",
+        "odds": "data/odds/WNBA_Odds.csv",
+        "schedules": "data/schedules/WNBA_Odds.csv",
+        "schedule_alias": "data/schedules/WNBA_Schedule.csv",
+        "line_movement_history": "data/tracking/WNBA_LineMovementHistory.csv",
+        "line_movement_current": "data/tracking/WNBA_LineMovementCurrent.csv",
+        "receipt": LEDGER_REL,
+        "coverage": None,
+        "cache": None,
     },
     "americanfootball_nfl": {
-        "odds": BASE_DIR / "data" / "odds" / "NFL_Odds.csv",
-        "schedules": BASE_DIR / "data" / "schedules" / "NFL_Odds.csv",
-        "schedule_alias": BASE_DIR / "data" / "schedules" / "NFL_Schedule.csv",
+        "tracking_prefix": "NFL",
+        "odds": "data/odds/NFL_Odds.csv",
+        "schedules": "data/schedules/NFL_Odds.csv",
+        "schedule_alias": "data/schedules/NFL_Schedule.csv",
+        "line_movement_history": "data/tracking/NFL_LineMovementHistory.csv",
+        "line_movement_current": "data/tracking/NFL_LineMovementCurrent.csv",
+        "receipt": LEDGER_REL,
+        "coverage": None,
+        "cache": None,
     },
     "americanfootball_ncaaf": {
-        "odds": BASE_DIR / "data" / "odds" / "NCAAF_Odds.csv",
-        "schedules": BASE_DIR / "data" / "schedules" / "NCAAF_Odds.csv",
-        "schedule_alias": BASE_DIR / "data" / "schedules" / "NCAAF_Schedule.csv",
+        "tracking_prefix": "NCAAF",
+        "odds": "data/odds/NCAAF_Odds.csv",
+        "schedules": "data/schedules/NCAAF_Odds.csv",
+        "schedule_alias": "data/schedules/NCAAF_Schedule.csv",
+        "line_movement_history": "data/tracking/NCAAF_LineMovementHistory.csv",
+        "line_movement_current": "data/tracking/NCAAF_LineMovementCurrent.csv",
+        "receipt": LEDGER_REL,
+        "coverage": None,
+        "cache": None,
     },
     "americanfootball_nfl_preseason": {
-        "odds": BASE_DIR / "data" / "odds" / "NFL_Preseason_Odds.csv",
-        "schedules": BASE_DIR / "data" / "schedules" / "NFL_Preseason_Odds.csv",
-        "schedule_alias": BASE_DIR / "data" / "schedules" / "NFL_Preseason_Schedule.csv",
+        "tracking_prefix": "NFL_Preseason",
+        "odds": "data/odds/NFL_Preseason_Odds.csv",
+        "schedules": "data/schedules/NFL_Preseason_Odds.csv",
+        "schedule_alias": "data/schedules/NFL_Preseason_Schedule.csv",
+        "line_movement_history": "data/tracking/NFL_Preseason_LineMovementHistory.csv",
+        "line_movement_current": "data/tracking/NFL_Preseason_LineMovementCurrent.csv",
+        "receipt": LEDGER_REL,
+        "coverage": None,
+        "cache": None,
     },
     "baseball_mlb": {
-        "odds": BASE_DIR / "data" / "odds" / "MLB_Odds.csv",
-        "schedules": BASE_DIR / "data" / "schedules" / "MLB_Odds.csv",
-        "schedule_alias": BASE_DIR / "data" / "schedules" / "MLB_Schedule.csv",
+        "tracking_prefix": "MLB",
+        "odds": "data/odds/MLB_Odds.csv",
+        "schedules": "data/schedules/MLB_Odds.csv",
+        "schedule_alias": "data/schedules/MLB_Schedule.csv",
+        "line_movement_history": "data/tracking/MLB_LineMovementHistory.csv",
+        "line_movement_current": "data/tracking/MLB_LineMovementCurrent.csv",
+        "receipt": LEDGER_REL,
+        "coverage": None,
+        "cache": None,
     },
 }
+REQUIRED_PATH_KEYS = ("tracking_prefix", "odds", "schedules", "schedule_alias", "line_movement_history",
+                      "line_movement_current", "receipt", "coverage", "cache")
+FILE_PATH_KEYS = ("odds", "schedules", "schedule_alias", "line_movement_history", "line_movement_current",
+                  "receipt", "coverage", "cache")
+
+
+def resolve_sport_paths(sport: str) -> dict:
+    """Absolute paths for a CONFIGURED sport. Raises UnconfiguredSportError otherwise (never falls back)."""
+    key = require_configured_sport("fetch_game_lines", sport, SPORT_PATHS)
+    entry = SPORT_PATHS[key]
+    missing = [k for k in REQUIRED_PATH_KEYS if k not in entry]
+    if missing:
+        raise UnconfiguredSportError("fetch_game_lines", key, SPORT_PATHS.keys())
+    resolved = {"sport": key, "tracking_prefix": entry["tracking_prefix"]}
+    for k in FILE_PATH_KEYS:
+        resolved[k] = (BASE_DIR / entry[k]).resolve() if entry[k] else None
+    return resolved
+
+
+# CLI default only (the bare `py fetch_game_lines.py` in batch/ means NBA). It is never a path fallback.
 DEFAULT_SPORT = "basketball_nba"
 DEFAULT_BOOKMAKERS = "draftkings"
 DEFAULT_REGIONS = "us"
@@ -68,15 +136,6 @@ SPORT_DEFAULT_MARKETS = {
     "americanfootball_ncaaf": ["h2h", "spreads", "totals"],
     "baseball_mlb": ["h2h", "spreads", "totals"],
 }
-SPORT_TRACKING_PREFIX = {
-    "basketball_nba": "NBA",
-    "basketball_wnba": "WNBA",
-    "americanfootball_nfl": "NFL",
-    "americanfootball_nfl_preseason": "NFL_Preseason",
-    "americanfootball_ncaaf": "NCAAF",
-    "baseball_mlb": "MLB",
-}
-
 BOOKMAKER_TITLES = {
     "draftkings": "DraftKings",
     "fanduel": "FanDuel",
@@ -98,12 +157,13 @@ _QUOTA = QuotaRecorder()   # per-run quota accounting; get_json records each pai
 
 
 def _sport_tokens(sport: str):
-    """League token(s) the output filename must contain, so e.g. an NFL fetch cannot overwrite the NBA file."""
-    s = (sport or "").lower()
+    """League token(s) the output filename must contain, so e.g. an NFL fetch cannot overwrite the NBA file.
+    An unconfigured sport raises (it used to return () -- which silently SKIPPED the path guard)."""
+    s = require_configured_sport("fetch_game_lines", sport, SPORT_PATHS)
     for needle, token in (("ncaaf", "NCAAF"), ("nfl", "NFL"), ("wnba", "WNBA"), ("nba", "NBA"), ("mlb", "MLB")):
         if needle in s:
             return (token,)
-    return ()
+    raise UnconfiguredSportError("fetch_game_lines", s, SPORT_PATHS.keys())
 
 
 def get_json(url: str) -> list | dict:
@@ -302,14 +362,17 @@ def build_schedule_alias(df: pd.DataFrame) -> pd.DataFrame:
     return alias_df
 
 
-def append_line_movement_snapshot(df: pd.DataFrame, sport: str) -> None:
+def append_line_movement_snapshot(df: pd.DataFrame, sport: str, sport_paths: dict) -> None:
+    """Append to the sport's OWN line-movement files. `sport_paths` is resolve_sport_paths(sport) from
+    main -- there is no prefix derivation and no fallback here (an unconfigured sport never reaches it)."""
     if df is None or df.empty:
         return
-    sport_prefix = SPORT_TRACKING_PREFIX.get(sport, sport.upper().replace("-", "_"))
-    tracking_dir = BASE_DIR / "data" / "tracking"
-    tracking_dir.mkdir(parents=True, exist_ok=True)
-    history_path = tracking_dir / f"{sport_prefix}_LineMovementHistory.csv"
-    current_path = tracking_dir / f"{sport_prefix}_LineMovementCurrent.csv"
+    if sport_paths.get("sport") != sport:
+        raise UnconfiguredSportError("fetch_game_lines", sport, SPORT_PATHS.keys())
+    sport_prefix = sport_paths["tracking_prefix"]
+    history_path = sport_paths["line_movement_history"]
+    current_path = sport_paths["line_movement_current"]
+    history_path.parent.mkdir(parents=True, exist_ok=True)
 
     snapshot_at = datetime.now().astimezone().isoformat(timespec="seconds")
     snapshot = df.copy()
@@ -390,12 +453,17 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    # Fail closed FIRST: an unconfigured sport (e.g. basketball_ncaab) is refused before the API key is
+    # read, before any provider request, and before any file write. No NBA (or any) fallback.
+    try:
+        sport_paths = resolve_sport_paths(args.sport)
+    except UnconfiguredSportError as exc:
+        return report_unconfigured(exc)
+    sport = sport_paths["sport"]
     api_key = get_api_key(args.api_key)
-    sport = str(args.sport or DEFAULT_SPORT).strip().lower()
-    defaults = SPORT_OUTPUTS.get(sport, SPORT_OUTPUTS[DEFAULT_SPORT])
-    output_path = Path(args.output).expanduser().resolve() if args.output else defaults["odds"].resolve()
-    schedules_output_path = Path(args.schedules_output).expanduser().resolve() if args.schedules_output else defaults["schedules"].resolve()
-    schedule_alias_output_path = Path(args.schedule_alias_output).expanduser().resolve() if args.schedule_alias_output else defaults["schedule_alias"].resolve()
+    output_path = Path(args.output).expanduser().resolve() if args.output else sport_paths["odds"]
+    schedules_output_path = Path(args.schedules_output).expanduser().resolve() if args.schedules_output else sport_paths["schedules"]
+    schedule_alias_output_path = Path(args.schedule_alias_output).expanduser().resolve() if args.schedule_alias_output else sport_paths["schedule_alias"]
 
     print("=" * 60)
     print("BANKROLL KINGS - Fetch Game Lines")
@@ -403,7 +471,7 @@ def main() -> int:
     print(f"Sport: {sport}")
     print(f"Bookmakers: {args.bookmakers}")
     print(f"Regions: {args.regions}")
-    markets = SPORT_DEFAULT_MARKETS.get(sport, SPORT_DEFAULT_MARKETS[DEFAULT_SPORT])
+    markets = SPORT_DEFAULT_MARKETS[sport]
     print(f"Markets: {', '.join(markets)}")
     print(f"Days ahead: {args.days}")
     print()
@@ -458,7 +526,7 @@ def main() -> int:
         print(f"Atomic publish failed, preserving existing files: {exc}")
         return 1
     if not args.skip_line_movement:
-        append_line_movement_snapshot(df, sport)
+        append_line_movement_snapshot(df, sport, sport_paths)
 
     print()
     print(f"Saved {len(df)} rows to {output_path}")
