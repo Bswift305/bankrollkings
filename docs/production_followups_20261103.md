@@ -299,6 +299,42 @@ both **HTTP 401 Unauthorized** (key rejected → no credit could be charged; the
 two rows appended to the gitignored local `d4-v2/data/tracking/QC_Run_Log.csv` (left in place as evidence). No
 production or tracked file touched. Through the runner it is refused correctly (`NOT RUN … REQUIRES_NETWORK`, exit
 3). Side observation: the local dev Odds API key is rejected (prod key unaffected — prod receipts show HTTP 200).
+**Owner classification: execution mistake; no production impact.** Local log evidence preserved; the key will not be
+"tested" again; `qc_odds_feed.py` is run only through `qc_offline.py`.
+
+#### 2h. Owner decisions (2026-11-03, after 2e/2f) — NBA v3 and Integrity+D4 rebuild
+
+**Cadence decision:** the intended operating cadence for NBA lines is **every 4 hours**, keeping the 6h executable-
+price boundary (~540 credits/month). Code and systemd/timer change are separate reversible commits; the timer is
+**not installed or enabled** until separately authorized after the code deploys and its ordinary daily path is
+accepted.
+
+**NBA v3** (branch `fix/nba-game-lines-event-aware-v3` from `f06e568`, still on `6bdb73f`) must close three gaps before
+any Linux gate:
+1. *Governed no-game result* — an empty provider response is not proof. Audit the authoritative NBA schedule source:
+   fresh schedule says zero games for the governed service date → `NO_GAMES_SCHEDULED` (checked before the provider
+   call, zero credits, no stale executable board); schedule expects games but provider returns zero → fail closed;
+   schedule missing/stale/ambiguous → `SCHEDULE_UNAVAILABLE`, fail closed; no authoritative source → never invent a
+   no-game result.
+2. *Central stale-props enforcement* — the 6h rule in the central NBA/WNBA props loader; full route inventory; stale
+   data yields no executable rows, shows the real update time + an honest unavailable state, cannot enter Green Light,
+   tickets, images or payouts; tz-aware UTC age; resolve the v2 contradiction (QC tested the loader, the market-only
+   board used `require_fresh=False`); one fixture per affected route.
+3. *Single publisher + shared lock* — one NBA-lines publisher for `bk-daily` and the 4-hour job; kernel-backed lock
+   at one runtime path outside the checkout, taken before any paid request; contention → `SKIPPED_LOCKED`, zero
+   credits, no write, never `OK`; auto-release on exit; same validation + atomic publish; `bk-daily` may reuse a fresh
+   file; a failed fetch never prints `OK`/"all snapshots captured"; real two-process concurrency QC.
+
+**Integrity + D4:** rebuild exact D4 v2 (`a086764`) + the Integrity group onto `6bdb73f` (branch
+`integration/integrity-d4-6bdb73f`), preserving D1. Workbench behaviour approved as built. NFL team-line legs stay
+`Kickoff unavailable — context only`; **new item: governed NFL team-line identity/kickoff mapping (`GameID`↔`EventId`)
+— design only, do not infer the mapping now.** Full offline gate (34 Integrity QCs, kickoff 119/119, SGP kickoff 53/53,
+D1 weather, slate turnover, `qc_odds_feed` exit 3, clean tree, no network); return SHA + exact diff before any Linux
+gate.
+
+**Rollout order:** (1) finish + review NBA v3; (2) finish + review rebuilt Integrity+D4; (3) Linux-gate each
+separately; (4) deploy code before changing cadence; (5) validate the ordinary daily path; (6) separately authorize and
+enable the 4-hour timer. **D12 and the remaining daily failures stay open.**
 
 ## 3. Read-only audits (code at exact `a5de400`)
 
