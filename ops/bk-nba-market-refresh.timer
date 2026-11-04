@@ -1,0 +1,28 @@
+[Unit]
+Description=Bankroll Kings - fire the NBA market refresh (lines then props) every 4 hours
+
+# PROPOSAL ONLY -- NOT installed or enabled by the repo.
+#
+# TIMER-ENABLEMENT BLOCKER: must NOT be enabled until an independent, legally approved NBA schedule source
+# (or another reviewed no-game contract) exists and production activation is separately authorized. Today every
+# provider-empty answer is SCHEDULE_UNAVAILABLE (fail closed, alerting); that must NEVER be "fixed" by
+# fabricating NO_GAMES_SCHEDULED. See bk-nba-market-refresh.service and docs/game_lines_event_contract.md.
+
+[Timer]
+# Times are UTC (prod's clock): 00:15, 04:15, 08:15, 12:15, 16:15, 20:15.
+#  * Every 4h keeps published lines and props inside the 6h executable-price rule (LIVE_LINES_MAX_AGE_HOURS)
+#    with ~2h headroom. The 12:15 run finishes well before bk-daily's 13:00 UTC start, so bk-daily's NBA
+#    steps reuse it (REUSED_FRESH, zero credits) while it is <= 90 min old.
+#  * Missed runs STAY MISSED (Persistent=false): after a reboot or downtime there is NO catch-up run, so the
+#    box never fires a burst of catch-up jobs (and never one alongside a bk-daily catch-up). Until the next
+#    calendar tick the data simply ages, and the 6h CLOCK-A gate on customer surfaces withholds stale prices
+#    honestly -- stale data is withheld, never served as current.
+#  * systemd runs at most one instance of the service: a tick while the previous run is still active does
+#    not start a second one.
+# Cost: 6 runs/day x (3 lines credits + props per-event credits); a run that reuses spends zero.
+OnCalendar=*-*-* 00/4:15:00
+AccuracySec=1min
+Persistent=false
+
+[Install]
+WantedBy=timers.target
