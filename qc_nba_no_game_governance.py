@@ -288,8 +288,23 @@ def qc_line_movement():
               "line-movement: exit 0 with a fresh VALIDATION_FAILED receipt -> FAILED, never OK")
 
 
+def qc_timer_blocker():
+    """The proposed 4h timer stays a proposal: :15 past every fourth UTC hour, and the TIMER-ENABLEMENT
+    BLOCKER (no independent schedule source -> SCHEDULE_UNAVAILABLE, never a fabricated NO_GAMES_SCHEDULED)
+    is written into both unit headers and the contract doc."""
+    here = Path(__file__).resolve().parent
+    timer = (here / "ops" / "bk-nba-lines.timer").read_text(encoding="utf-8")
+    service = (here / "ops" / "bk-nba-lines.service").read_text(encoding="utf-8")
+    doc = (here / "docs" / "game_lines_event_contract.md").read_text(encoding="utf-8")
+    cal = [l.strip() for l in timer.splitlines() if l.strip().startswith("OnCalendar=")]
+    check(cal == ["OnCalendar=*-*-* 00/4:15:00"], f"timer fires at :15 past every fourth UTC hour ({cal})")
+    for name, text in (("timer", timer), ("service", service), ("contract doc", doc)):
+        check("TIMER-ENABLEMENT BLOCKER" in text and "SCHEDULE_UNAVAILABLE" in text and "NO_GAMES_SCHEDULED" in text,
+              f"{name} carries the TIMER-ENABLEMENT BLOCKER (fail closed, never a fabricated no-game result)")
+
+
 def main() -> int:
-    for fn in (qc_vocabulary, qc_authority, qc_fetcher, qc_nba_daily, qc_line_movement):
+    for fn in (qc_vocabulary, qc_authority, qc_fetcher, qc_nba_daily, qc_line_movement, qc_timer_blocker):
         try:
             fn()
         except Exception as exc:  # a crash is a failure, never a pass

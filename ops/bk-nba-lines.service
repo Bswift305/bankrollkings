@@ -3,8 +3,16 @@ Description=Bankroll Kings - NBA game lines every 4h (shared publisher + lock; 1
 After=network-online.target
 Wants=network-online.target
 
-# NOT installed or enabled by the repo. Install (source of record: ops/), via SSM as root, AFTER the
-# branch is merged and deployed to /opt/bankrollkings:
+# NOT installed or enabled by the repo. Schedule: bk-nba-lines.timer, 00/4:15 UTC (00:15, 04:15, ...,
+# 12:15 = 45 min before bk-daily's 13:00 UTC start, 16:15, 20:15).
+#
+# TIMER-ENABLEMENT BLOCKER: do NOT enable bk-nba-lines.timer until an independent, legally approved NBA
+# schedule source (or another reviewed no-game contract) exists. Without one, every provider-empty answer
+# is SCHEDULE_UNAVAILABLE (fail closed, alerting) -- accepted in code, and never to be replaced by a
+# fabricated NO_GAMES_SCHEDULED. See docs/game_lines_event_contract.md "Timer-enablement blocker".
+#
+# Install (source of record: ops/), via SSM as root, AFTER the blocker is cleared and the branch is merged
+# and deployed to /opt/bankrollkings:
 #   sudo install -d -o ubuntu -g ubuntu -m 700 /opt/bankrollkings-runtime/locks
 #     (the shared lock dir, 0700; the lock file is created 0600. If BK_RUNTIME_DIR is set in
 #      /opt/bankrollkings/.env the lock lives at $BK_RUNTIME_DIR/locks/ instead -- create that one, owned by
