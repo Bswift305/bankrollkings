@@ -13,6 +13,7 @@ Never logs the URL, key, Authorization, or any response identifier. Pure stdlib.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +22,23 @@ from pathlib import Path
 # x-requests-used / -remaining advance by the real cost even when x-requests-last is absent or 0 (as it
 # was for the NBA probe), so reconciliation works off cumulative DELTAS, never the per-request sum.
 LEDGER_REL = "data/tracking/odds_quota_ledger.jsonl"
+
+# Per-OPERATION attribution (NBA v5 credit precision, 2026-11). A caller that needs the exact cost of ONE
+# operation (services/nba_market.ensure_stage) passes an unguessable token to its fetch child in this env var;
+# write_ledger stamps it on every row that child appends ("attribution_id", additive field). The caller then
+# sums x-requests-last over ITS token's rows only -- never a positional slice or a global before/after delta
+# that another writer (a manual fetch, the other caller, a future process) could inflate. Only a 32-char
+# lowercase hex token (uuid4().hex) is accepted; anything else is ignored (row written without the field).
+ATTRIBUTION_ENV = "BK_ODDS_ATTRIBUTION_ID"
+
+
+def current_attribution_id():
+    """The validated attribution token from the environment, or None."""
+    raw = os.environ.get(ATTRIBUTION_ENV, "")
+    tok = str(raw).strip()
+    if len(tok) == 32 and all(ch in "0123456789abcdef" for ch in tok):
+        return tok
+    return None
 
 
 def odds_credit_cost(n_markets, n_regions, n_paid_calls=1):
@@ -115,24 +133,33 @@ class QuotaRecorder:
     def write_ledger(self, endpoint_family, sport, base_dir, markets=None) -> int:
         """Append one JSONL line per recorded call (cumulative headers + attribution) to the shared
         ledger. Append-only and best-effort: a write failure never breaks a fetch. Returns the number
-        of lines appended. Records NO url/key/response id."""
+        of lines appended. Records NO url/key/response id. When ATTRIBUTION_ENV holds a valid token, each row
+        also carries "attribution_id" (additive; readers that do not know the field are unaffected)."""
         path = Path(base_dir) / LEDGER_REL
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         mk = ",".join(markets) if markets else ""
+        token = current_attribution_id()
+        lines = []
+        for seq, c in enumerate(self.calls):
+            row = {
+                "ts": now,
+                "sport": sport,
+                "endpoint_family": endpoint_family,
+                "markets": mk,
+                "seq": seq,
+                "last": c["last"],
+                "used": c["used"],
+                "remaining": c["remaining"],
+            }
+            if token:
+                row["attribution_id"] = token
+            lines.append(json.dumps(row) + "\n")
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
+            # The batch is joined and handed to ONE write() on an append-mode handle, which narrows the window
+            # in which a concurrent writer could interleave with it (attribution does not depend on order).
             with path.open("a", encoding="utf-8") as fh:
-                for seq, c in enumerate(self.calls):
-                    fh.write(json.dumps({
-                        "ts": now,
-                        "sport": sport,
-                        "endpoint_family": endpoint_family,
-                        "markets": mk,
-                        "seq": seq,
-                        "last": c["last"],
-                        "used": c["used"],
-                        "remaining": c["remaining"],
-                    }) + "\n")
+                fh.write("".join(lines))
             return len(self.calls)
         except OSError:
             return 0

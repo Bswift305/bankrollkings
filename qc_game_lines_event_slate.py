@@ -358,7 +358,7 @@ def qc_orchestration():
             saved = (nba.BASE_DIR, nba.PROPS_ARTIFACT, nba.subprocess.run)
             ran = []
 
-            def fake_run(command, timeout=None):
+            def fake_run(command, timeout=None, env=None):   # env: per-stage credit-attribution token
                 joined = " ".join(map(str, command))
                 label = next(l for l, c, _ in nba.STEPS
                              if next(x for x in c if str(x).endswith(".py")) in joined)

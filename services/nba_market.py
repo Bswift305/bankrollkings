@@ -198,40 +198,54 @@ def classify_props_publisher(base_dir, returncode, timed_out: bool, publish_mtim
 
 
 # ------------------------------------------------------------------------------------------------ credits
-def _ledger_count(base_dir) -> int:
-    try:
-        with open(Path(base_dir) / LEDGER_REL, "r", encoding="utf-8") as fh:
-            return sum(1 for _ in fh)
-    except OSError:
-        return 0
+ACCOUNT_REMAINING_LABEL = ("ACCOUNT-GLOBAL snapshot: x-requests-remaining on this operation's last attributed "
+                           "response. It is the whole account's balance at that moment (other processes spend "
+                           "from it too) and is NOT this operation's cost.")
 
 
-def _ledger_credits(base_dir, lines_before: int) -> dict:
-    """Credits evidenced by the Odds API quota ledger lines THIS stage appended (services/odds_quota writes one
-    JSONL line per recorded provider response with x-requests-last / -remaining). Never guessed: a response
-    without x-requests-last makes the sum unavailable."""
-    try:
-        with open(Path(base_dir) / LEDGER_REL, "r", encoding="utf-8") as fh:
-            new = fh.read().splitlines()[lines_before:]
-    except OSError:
-        new = []
+def _new_attribution_id() -> str:
+    return uuid.uuid4().hex
+
+
+def _account_remaining(value) -> dict:
+    return {"value": value if isinstance(value, int) and not isinstance(value, bool) else None,
+            "scope": "ACCOUNT_GLOBAL", "label": ACCOUNT_REMAINING_LABEL}
+
+
+def _ledger_credits(base_dir, attribution_id: str) -> dict:
+    """Credits THIS operation cost: the sum of x-requests-last over the quota-ledger rows stamped with THIS
+    stage's attribution token (services/odds_quota.write_ledger stamps BK_ODDS_ATTRIBUTION_ID). The whole ledger
+    is scanned and only token-matching rows count, so rows from any other writer (other sports, a manual NBA
+    fetch, the other caller, rows written before/after, rows with no token) can never inflate it, and a rotated
+    or truncated ledger cannot shift a positional slice. Never guessed: an attributed row without an integer
+    x-requests-last makes the sum UNAVAILABLE. Remaining quota is reported SEPARATELY as an account-global
+    snapshot and is never added to the credits."""
     rows = []
-    for line in new:
-        try:
-            row = json.loads(line)
-        except ValueError:
-            continue
-        if row.get("sport") == SPORT:
-            rows.append(row)
+    try:
+        with open(Path(base_dir) / LEDGER_REL, "r", encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict) and attribution_id and row.get("attribution_id") == attribution_id:
+                    rows.append(row)
+    except OSError:
+        pass
+    base = {"source": "odds_quota_ledger", "attribution": "per_operation_token",
+            "attribution_id": attribution_id, "ledger_entries": len(rows)}
     if not rows:
-        return {"source": "odds_quota_ledger", "ledger_entries": 0, "x_requests_last_sum": 0,
-                "x_requests_remaining": None, "status": "NO_LEDGER_ENTRIES (no provider response recorded)"}
+        return {**base, "x_requests_last_sum": 0, "account_remaining_snapshot": _account_remaining(None),
+                "status": "NO_ATTRIBUTED_ENTRIES (no ledger row carries this operation's attribution id: "
+                          "no provider response was recorded for it)"}
     lasts = [r.get("last") for r in rows]
-    known = all(isinstance(v, int) for v in lasts)
-    return {"source": "odds_quota_ledger", "ledger_entries": len(rows),
+    known = all(isinstance(v, int) and not isinstance(v, bool) for v in lasts)
+    sports = sorted({str(r.get("sport")) for r in rows})
+    return {**base, "sports": sports,
             "x_requests_last_sum": sum(lasts) if known else None,
-            "x_requests_remaining": rows[-1].get("remaining"),
-            "status": "RECORDED" if known else "UNAVAILABLE (a response lacked x-requests-last)"}
+            "account_remaining_snapshot": _account_remaining(rows[-1].get("remaining")),
+            "status": "RECORDED" if known else
+                      "UNAVAILABLE (an attributed response lacked x-requests-last; cost is never guessed)"}
 
 
 # ------------------------------------------------------------------------------------------------ ensure
@@ -260,10 +274,13 @@ def ensure_stage(stage: str, caller: str, *, base_dir, command=None, timeout=Non
     artifact = Path(props_artifact) if props_artifact is not None else props_artifact_path(base_dir)
     fetch_before, pub_before = _mtime(fetch_path), _mtime(pub_path)
     artifact_before = _mtime(artifact) if stage == "props" else 0.0
-    ledger_before = _ledger_count(base_dir)
+    from services.odds_quota import ATTRIBUTION_ENV
+    attribution_id = _new_attribution_id()
+    child_env = dict(os.environ)
+    child_env[ATTRIBUTION_ENV] = attribution_id   # child only; the parent's environment is never modified
     started, t0 = _utc_now(), time.monotonic()
     try:
-        result = subprocess.run(command, timeout=timeout)
+        result = subprocess.run(command, timeout=timeout, env=child_env)
         rc, timed_out = result.returncode, False
     except subprocess.TimeoutExpired:
         rc, timed_out = None, True
@@ -286,7 +303,7 @@ def ensure_stage(stage: str, caller: str, *, base_dir, command=None, timeout=Non
         "started_at_utc": started.isoformat(timespec="seconds"),
         "ended_at_utc": _utc_now().isoformat(timespec="seconds"), "seconds": seconds,
         "timeout_seconds": timeout, "lock_wait_seconds": budget.LOCK_WAIT_SECONDS,
-        "credits": _ledger_credits(base_dir, ledger_before),
+        "credits": _ledger_credits(base_dir, attribution_id),
         "publisher_receipt": _receipt_ref(pub_path, pub_before, base_dir),
         "fetch_receipt": _receipt_ref(fetch_path, fetch_before, base_dir),
     }
@@ -310,8 +327,9 @@ def props_not_attempted(lines: dict) -> dict:
             "ok": False, "alerting": True, "exit_code": None, "timed_out": False, "started_at_utc": None,
             "ended_at_utc": None, "seconds": 0.0, "timeout_seconds": budget.stage_timeout("props"),
             "lock_wait_seconds": budget.LOCK_WAIT_SECONDS,
-            "credits": {"source": "not_run", "ledger_entries": 0, "x_requests_last_sum": 0,
-                        "x_requests_remaining": None, "status": "NOT_RUN"},
+            "credits": {"source": "not_run", "attribution": "per_operation_token", "attribution_id": None,
+                        "ledger_entries": 0, "x_requests_last_sum": 0,
+                        "account_remaining_snapshot": _account_remaining(None), "status": "NOT_RUN"},
             "publisher_receipt": None, "fetch_receipt": None}
 
 

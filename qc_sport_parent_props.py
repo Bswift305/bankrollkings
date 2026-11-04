@@ -35,7 +35,7 @@ def _drive(parent_mod, slug, plan, env_key=False):
         steps_after = {"count": 0}
         props_seen = {"v": False}
 
-        def fake_run(command, timeout=None):
+        def fake_run(command, timeout=None, env=None):   # env: per-stage credit-attribution token
             joined = " ".join(map(str, command))
             is_props = "player_props" in command_label(command)
             if is_props:
