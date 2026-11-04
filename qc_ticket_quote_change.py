@@ -126,6 +126,16 @@ class Fixture:
         self.saved = {n: getattr(app, n) for n in names}
         self.saved_render = _wc.render_daily_card
         self.saved_env = os.environ.get('BK_RUNTIME_DIR')
+        # Isolate Jinja's bytecode cache. app.py points it at the REPO data/cache/jinja (a shared path this QC
+        # snapshots). On a cold cache -- a fresh worktree/clone, or any run before another QC has compiled the
+        # SGP Workbench templates -- the first render wrote N new *.cache files there, so "SGP files: no file
+        # created / changed" failed (113/114) for a reason that has nothing to do with the code under test,
+        # and passed on any rerun. A per-run cache dir OUTSIDE every snapshotted directory removes the shared
+        # state; the repo cache stays in the snapshot, so a real write by the code under test is still caught.
+        from jinja2 import FileSystemBytecodeCache as _BCC
+        self.saved_bcc = app.app.jinja_env.bytecode_cache
+        self.jinja_dir = Path(tempfile.mkdtemp(prefix='bk-qc-quote-jinja-'))
+        app.app.jinja_env.bytecode_cache = _BCC(str(self.jinja_dir), '%s.cache')
         (self.td / 'data').mkdir()
         (self.td / 'prefs').mkdir()
         (self.td / 'runtime').mkdir()
@@ -152,6 +162,9 @@ class Fixture:
         for n, v in self.saved.items():
             setattr(app, n, v)
         self._wc.render_daily_card = self.saved_render
+        app.app.jinja_env.bytecode_cache = self.saved_bcc
+        import shutil as _sh
+        _sh.rmtree(self.jinja_dir, ignore_errors=True)
         if self.saved_env is None:
             os.environ.pop('BK_RUNTIME_DIR', None)
         else:
