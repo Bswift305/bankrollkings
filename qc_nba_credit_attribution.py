@@ -169,8 +169,8 @@ def t_synthetic(tmp):
     _append_raw(base, [_row(NBA, 4, 98922, me), _row(NBA, 11, 98911, other)])
     p = _ledger(base)
     with p.open("a", encoding="utf-8") as fh:
-        fh.write('{"sport": "basketball_nba", "last": 999, "attribution_id": "' + me + '"\n')   # torn line
-        fh.write("not json at all\n")
+        fh.write("not json at all\n")                                     # garbage without this token: ignored
+        fh.write('{"sport": "basketball_nba", "last": 999, "attribution_id": "' + other + '"\n')  # other's torn
     _append_raw(base, [_row(NBA, 5, 98906, me), _row(NBA, 60, 98846)])
     c = nm._ledger_credits(base, me)
     sport_only = sum(r["last"] for r in _read_rows(base) if r.get("sport") == NBA and isinstance(r.get("last"), int))
@@ -188,8 +188,9 @@ def t_synthetic(tmp):
     check(c["x_requests_last_sum"] != snap.get("value") and c["x_requests_last_sum"] == 12,
           "(5) remaining snapshot never added to/merged with the credit sum")
     o = nm._ledger_credits(base, other)
-    check(o["x_requests_last_sum"] == 18 and o["ledger_entries"] == 2,
-          "(2) the other writer's token attributes only its own rows (7+11)")
+    check(o["x_requests_last_sum"] is None and o["status"].startswith("UNAVAILABLE") and o.get("torn_attributed_lines") == 1,
+          "(3) a TORN ledger line carrying an operation's token makes that operation's sum UNAVAILABLE (never "
+          "silently dropped from the sum)")
     # (3) missing / non-int header on an attributed row
     base3 = Path(tmp) / "missing"
     _append_raw(base3, [_row(NBA, 3, 100, me), _row(NBA, None, 97, me), _row(NBA, 2, 95, me)])
@@ -226,7 +227,8 @@ def _foreign_thread(base, stop: threading.Event, counter: list):
     i = 0
     while not stop.is_set() and i < 4000:
         sport = NBA if i % 2 == 0 else "baseball_mlb"
-        _append_raw(base, [_row(sport, 25, 50000 - i)])           # legacy/untokened writer
+        from services.odds_quota import append_ledger_lines   # every real writer appends under the ledger lock
+        append_ledger_lines(base, json.dumps(_row(sport, 25, 50000 - i)) + "\n")   # untokened writer
         counter[0] += 1
         i += 1
         time.sleep(0.015)
