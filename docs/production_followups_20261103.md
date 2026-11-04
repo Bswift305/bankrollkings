@@ -475,6 +475,26 @@ On `f06e568` (→ exact `6bdb73f`). Commits: `394c12f` governed no-game result, 
   `Persistent=true` catch-up can run both timers together (props then `SKIPPED_BLOCKED_BY_LINES` until lines finish);
   WNBA props still have no lock. Builder incident: a stray empty file was briefly created in the `nba-lines-v2`
   worktree and removed (coordinator confirmed v2 clean).
+- **Owner decisions on NBA v4 (2026-11-04) → NBA v5 (`fix/nba-game-lines-event-aware-v5`, from `29acc81`,
+  review-only, rebuilt after Integrity deploys):** replace the two timers (lines `:15`, props `:45` — the 12:45 props
+  run could overlap bk-daily 13:00, and separate persistent timers can catch up together) with **one sequential
+  `bk-nba-market-refresh` orchestrator** at `:15` past every 4th UTC hour: lines (execute or reuse validated) → only
+  then props → one structured receipt for both stages → never two concurrent catch-ups; bk-daily calls the same
+  ensure/publisher functions and reuses fresh validated receipts; missed runs stay missed (stale data withheld) rather
+  than simultaneous catch-up; timer uninstalled and blocked on the no-game schedule contract. **Timeouts derived from
+  observed production durations, not estimates.** **Elite alert history** may keep player/line/recorded book only with
+  a trustworthy capture time and source provenance and the label `Historical alert — not a current executable quote`,
+  with no current-price styling, action, payout or ticket path; missing provenance → book and line withheld.
+  **WNBA:** props locking/cadence mandatory before the next active WNBA season; no WNBA timer without it; not blocking
+  NBA-only code while bk-daily is the sole WNBA writer. POSIX lock tests must execute on Linux (no skip) in the gate.
+- **NBA duration audit (production, read-only, 2026-11-04; every `daily_operator_2026*.log`, NBA section, step
+  `seconds=`):** `game_lines` n=40 — min 0.7, p50 0.9, p90 1.5, p95 1.7, **max 1.8 s**; `player_props` n=38 — min
+  0.7, p50 0.9, p90 1.8, p95 2.0, **max 2.8 s** (15-event five-day refresh on 11-02: 2.0 s). Samples include fast
+  validation-reject runs. Coordinator-derived contract sent to v5 (awaiting owner review): `LINES_EXEC_TIMEOUT` 30 s
+  (~16× max), `PROPS_EXEC_TIMEOUT` 60 s (~20× max; covers the per-market fallback on a full slate), `LOCK_WAIT_BUDGET`
+  30 s (holder's critical section ≈ one lines+props cycle, ~5 s observed), daily lines step 60 s, daily props step 90 s,
+  orchestrator `TimeoutStartSec` 180 s; invariant `step_timeout ≥ lock_wait + exec_budget` asserted in QC. Replaces
+  v4's 120 s wait / 240 s steps.
 - **Blast radius to note for review:** the central gate changes what `/`, `/dashboard`, `/free`, `/home/*`, `/elite`,
   `/derivatives` and the player/tool pages show whenever the NBA/WNBA props file is > 6h old — with today's once-daily
   refresh that is most of the day until the 4h cadence (which covers lines, not props) and a props cadence exist.
