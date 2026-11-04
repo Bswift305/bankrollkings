@@ -108,6 +108,13 @@ SCORECARDS = [
     ("Game-Lines Event Slate QC", "qc_game_lines_event_slate.py", 300),
     # Props/lines AGE between timezone-aware UTC instants (naive LastUpdated = Eastern), DST-correct.
     ("Odds Age Timezone QC", "qc_odds_age_timezone.py", 180),
+    # NBA lines v3 (2026-11): governed no-game result (provider-empty -> SCHEDULE_UNAVAILABLE; no
+    # authoritative schedule exists, so never NO_GAMES_SCHEDULED); single publisher + shared kernel lock with
+    # a REAL two-process contention/crash test; central 6h stale-props gate with one fixture per NBA/WNBA
+    # surface. Offline (stub providers, temp dirs, temp lock path).
+    ("NBA No-Game Governance QC", "qc_nba_no_game_governance.py", 180),
+    ("NBA Lines Lock QC", "qc_nba_lines_lock.py", 300),
+    ("NBA/WNBA Stale Props QC", "qc_nba_wnba_props_stale.py", 300),
     # Run Status DEGRADED (Oct 24 monitoring-truth fix): overall must read DEGRADED -- never GREEN -- when
     # a current-market Odds family is stale (a sport whose game lines are fresh but props are stale), a
     # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages
