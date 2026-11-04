@@ -159,8 +159,8 @@ def qc_persist_and_scanner():
     saved = (app.load_props, app.load_wnba_props, app.load_mlb_props)
     app.load_props = lambda *a, **k: pd.DataFrame([{
         "Player": "Qcscan Mover", "Stat": "PTS", "Book": "QCBOOKSCAN", "Game": "A @ H", "OpenLine": 20.5,
-        "CurrentLine": 22.5, "Line": 22.5, "OpenOverOdds": -110, "OverOdds": -110, "OpenUnderOdds": -110,
-        "UnderOdds": -110}])
+        "CurrentLine": 22.5, "Line": 22.5, "OpenOverOdds": -110, "OverOdds": -110, "OpenUnderOdds": -110,  # synthetic-fixture
+        "UnderOdds": -110}])  # synthetic-fixture
     app.load_wnba_props = app.load_mlb_props = lambda *a, **k: pd.DataFrame()
     try:
         scans = app.build_elite_sharp_money_scanner([])

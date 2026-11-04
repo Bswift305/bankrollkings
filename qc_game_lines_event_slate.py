@@ -48,8 +48,8 @@ def check(cond, msg):
 
 def row(gid, kick, book, date="2026-11-03", time="19:30", lu="2026-11-03 09:00", **kw):
     r = dict(Date=date, Time=time, Away=f"Away {gid}", Home=f"Home {gid}", AwayFull=f"Away {gid}",
-             HomeFull=f"Home {gid}", AwayML=120.0, HomeML=-140.0, Spread=-3.5, SpreadOdds=-110.0, Total=220.5,
-             OverOdds=-110.0, UnderOdds=-110.0, Book=book, GameID=gid, EventCommenceAtUTC=kick, LastUpdated=lu)
+             HomeFull=f"Home {gid}", AwayML=120.0, HomeML=-140.0, Spread=-3.5, SpreadOdds=-110.0, Total=220.5,  # synthetic-fixture
+             OverOdds=-110.0, UnderOdds=-110.0, Book=book, GameID=gid, EventCommenceAtUTC=kick, LastUpdated=lu)  # synthetic-fixture
     r.update(kw)
     return r
 
@@ -198,10 +198,10 @@ def _event(eid, commence, books=("draftkings", "fanduel", "caesars"), lu=None):
     return {"id": eid, "commence_time": commence, "home_team": home, "away_team": away, "bookmakers": [
         {"key": b, "title": titles[b], "last_update": lu, "markets": [
             {"key": "h2h", "outcomes": [{"name": home, "price": -140}, {"name": away, "price": 120}]},
-            {"key": "spreads", "outcomes": [{"name": home, "point": -3.5, "price": -110},
-                                            {"name": away, "point": 3.5, "price": -110}]},
-            {"key": "totals", "outcomes": [{"name": "Over", "point": 220.5, "price": -110},
-                                           {"name": "Under", "point": 220.5, "price": -110}]}]}
+            {"key": "spreads", "outcomes": [{"name": home, "point": -3.5, "price": -110},  # synthetic-fixture
+                                            {"name": away, "point": 3.5, "price": -110}]},  # synthetic-fixture
+            {"key": "totals", "outcomes": [{"name": "Over", "point": 220.5, "price": -110},  # synthetic-fixture
+                                           {"name": "Under", "point": 220.5, "price": -110}]}]}  # synthetic-fixture
         for b in books]}
 
 
@@ -458,7 +458,7 @@ def qc_containment():
                                       ("f2", "Denver Nuggets", "Phoenix Suns", now + timedelta(days=1))):
             d, t = et(kick).split(" ")
             rows.append(dict(Date=d, Time=t, Away=away, Home=home, AwayFull=away, HomeFull=home, AwayML=120,
-                             HomeML=-140, Spread=-3.5, SpreadOdds=-110, Total=220.5, OverOdds=-110, UnderOdds=-110,
+                             HomeML=-140, Spread=-3.5, SpreadOdds=-110, Total=220.5, OverOdds=-110, UnderOdds=-110,  # synthetic-fixture
                              Book="DraftKings", GameID=gid, LastUpdated=lu))
         return pd.DataFrame(rows)   # legacy layout (no EventCommenceAtUTC) == what prod serves until a new publish
 
