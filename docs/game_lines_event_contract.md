@@ -229,6 +229,24 @@ zero requests (never OK, no immediate re-spend; v4's bk-daily fetched again here
 -> `SKIPPED_LOCKED`. Props are only attempted after verified lines, and the props publisher re-verifies the
 lines receipt + sha under its own lock regardless.
 
+**Stage-run receipt attribution (2026-11-04 race fix).** Root cause of the intermittent
+`qc_nba_market_orchestrator` (5) failure (lines `PROVIDER_ERROR` instead of `NO_FRESH_AFTER_LOCK`): the
+publisher receipt `_last_nba_lines_publish.json` is a single shared slot, and `classify_lines` attributed it
+to a stage by mtime alone. When a lock holder exits, its parent (`ensure_stage` -> `classify_lines`) reads that
+file at the same moment the released waiter replaces it with its own receipt. On Windows `os.replace` onto a
+file another process has open fails (`PermissionError`); the publisher swallowed it as a `[WARN]`, so the waiter's
+parent read the HOLDER's `PROVIDER_ERROR` as its own. The same single slot also let a later writer replace a
+receipt before the earlier stage classified it (any platform). Fix: (1) the replace retries a sharing violation
+only, bounded (`services/receipt_io.replace_with_retry`, 5 s), then raises; (2) `ensure_stage` passes a per-stage
+token (`BK_NBA_STAGE_RUN_ID`, same value as the credit token); both publishers stamp `stage_run_id` on every
+publisher receipt and ALSO write a per-run copy `data/tracking/nba_stage_runs/<token>.<lines|props>.json`
+(never written by anyone else; pruned after 7 days); the classifiers read the per-run copy first and never
+adopt a shared receipt carrying another run's token (fail closed, `VALIDATION_FAILED`). A token-less receipt
+(manual/legacy caller) keeps the legacy mtime rule. The per-stage `env=` added for credit attribution does not
+take part in the race. The lock QCs and the orchestrator QC now synchronize contention with file barriers (the
+waiter signals when its first lock attempt finds the lock held; the holder keeps the lock until that signal or
+a parent release file), never fixed sleeps, and add a holder-killed-while-waiting case.
+
 **Reboot / missed runs.** `Persistent=false`: a tick missed while the box was down or rebooting is **not**
 caught up; the next run is the next calendar tick. Data simply ages meanwhile and the 6h CLOCK-A gate
 withholds stale prices honestly (never served as current). No catch-up burst, and never a catch-up run
