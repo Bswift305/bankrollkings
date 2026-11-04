@@ -75,6 +75,21 @@ provider game ids, UTC tip times, `fetched_at` + source provenance and an explic
 refreshed on prod through `run_daily.py`, with a freshness bound and its own QC. QC:
 `qc_nba_no_game_governance.py`.
 
+## Single publisher + shared lock
+
+Every NBA lines publish goes through `services/nba_lines_publisher.publish` (entered from
+`fetch_game_lines.main` for `basketball_nba`; `run_fetch` refuses an NBA fetch when the lock is not held).
+
+| | |
+|---|---|
+| Lock | `services/process_lock.ExclusiveLock`: `fcntl.flock(LOCK_EX\|LOCK_NB)` on Linux (the contract); `msvcrt.locking` on Windows for local QC. fd-based, released by the kernel on exit or crash; the file is never unlinked and its content is informational only. |
+| Path | `$BK_NBA_LINES_LOCK_PATH` (QC override) > `$BK_RUNTIME_DIR/locks/nba_game_lines.lock` > `/opt/bankrollkings-runtime/locks/nba_game_lines.lock` (POSIX default, outside the checkout). Windows dev falls back to the gitignored `.runtime/generated/locks/`. |
+| Order | lock **before** any paid request -> optional reuse -> the one validation + atomic 3-file publish -> publisher receipt `data/tracking/_last_nba_lines_publish.json` (written only by the holder). |
+| Contention | `SKIPPED_LOCKED`, exit 75: no paid request, no receipt, no write, never `OK`/`PASS`. Unopenable lock path: `LOCK_UNAVAILABLE`, exit 76, same guarantees. |
+| Reuse | bk-daily (`--allow-reuse --lock-wait-seconds 120`) reuses a publish from the last **90 minutes** (`REUSE_WINDOW_MINUTES`) when the fetch receipt is `UPDATED` / exit 0 / `game_lines_event_v1`, its UTC time is valid and not in the future, and every output's sha256 on disk equals the receipt's `sha256_after`. Outcome `REUSED_FRESH`, zero credits. 90 min is far inside the 6h executable rule. |
+
+QC: `qc_nba_lines_lock.py` (real two-process contention, crash release, reuse rules).
+
 ## Required before any stronger coverage rule
 
 A per-event book minimum or a book-retention ratio must **not** be added from intuition. A read-only

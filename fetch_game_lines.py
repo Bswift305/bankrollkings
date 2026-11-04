@@ -433,7 +433,7 @@ def append_line_movement_snapshot(df: pd.DataFrame, sport: str) -> None:
     print(f"Updated current movement summary at {current_path}")
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fetch game lines from The Odds API")
     parser.add_argument("--api-key", help="The Odds API key. Prefer ODDS_API_KEY env var.")
     parser.add_argument("--sport", default=DEFAULT_SPORT, help="Odds API sport key, e.g. basketball_nba or basketball_wnba")
@@ -448,17 +448,54 @@ def parse_args() -> argparse.Namespace:
                         help="Documented expected credit cost; the fetch fails if the actual cost exceeds it (recovery safety).")
     parser.add_argument("--allow-collapse", action="store_true",
                         help="Explicit override to allow an unusually small row count vs the last valid artifact.")
-    return parser.parse_args()
+    # Single NBA publisher (services/nba_lines_publisher.py). Ignored for sports that are not event-aware.
+    parser.add_argument("--caller", default="fetch_game_lines_cli",
+                        help="NBA only: who is publishing (recorded in the publisher receipt).")
+    parser.add_argument("--allow-reuse", action="store_true",
+                        help="NBA only: reuse a receipt-verified publish from the last "
+                             "REUSE_WINDOW_MINUTES instead of paying for another fetch.")
+    parser.add_argument("--lock-wait-seconds", type=float, default=0.0,
+                        help="NBA only: bounded wait for the shared publisher lock before SKIPPED_LOCKED.")
+    return parser.parse_args(argv)
 
 
-def main() -> int:
-    args = parse_args()
-    api_key = get_api_key(args.api_key)
-    sport = str(args.sport or DEFAULT_SPORT).strip().lower()
+def _output_paths(args, sport: str) -> dict:
     defaults = SPORT_OUTPUTS.get(sport, SPORT_OUTPUTS[DEFAULT_SPORT])
-    output_path = Path(args.output).expanduser().resolve() if args.output else defaults["odds"].resolve()
-    schedules_output_path = Path(args.schedules_output).expanduser().resolve() if args.schedules_output else defaults["schedules"].resolve()
-    schedule_alias_output_path = Path(args.schedule_alias_output).expanduser().resolve() if args.schedule_alias_output else defaults["schedule_alias"].resolve()
+    return {
+        "odds": Path(args.output).expanduser().resolve() if args.output else defaults["odds"].resolve(),
+        "schedules": Path(args.schedules_output).expanduser().resolve() if args.schedules_output else defaults["schedules"].resolve(),
+        "schedule_alias": Path(args.schedule_alias_output).expanduser().resolve() if args.schedule_alias_output else defaults["schedule_alias"].resolve(),
+    }
+
+
+def main(argv=None) -> int:
+    args = parse_args(argv)
+    sport = str(args.sport or DEFAULT_SPORT).strip().lower()
+    if sport in EVENT_AWARE_GAME_LINES_SPORTS:
+        # Every NBA publish goes through the ONE publisher: shared lock before any paid request, optional
+        # receipt-verified reuse, then the same validation + atomic publish (run_fetch).
+        from services import nba_lines_publisher
+        return nba_lines_publisher.publish(
+            args, run_fetch=run_fetch, base_dir=BASE_DIR, outputs=_output_paths(args, sport),
+            caller=str(args.caller or "fetch_game_lines_cli"), allow_reuse=bool(args.allow_reuse),
+            lock_wait_seconds=float(args.lock_wait_seconds or 0.0))
+    return run_fetch(args)
+
+
+def run_fetch(args) -> int:
+    sport = str(args.sport or DEFAULT_SPORT).strip().lower()
+    if sport in EVENT_AWARE_GAME_LINES_SPORTS:
+        from services import nba_lines_publisher
+        if not nba_lines_publisher.lock_is_held():
+            # Defense in depth: an event-aware fetch outside the publisher would be a second, unlocked
+            # publish path. Refuse before any paid request or write.
+            print("REFUSED: NBA game lines must be fetched through services.nba_lines_publisher "
+                  "(shared lock not held). No request made, nothing written.")
+            return 1
+    api_key = get_api_key(args.api_key)
+    paths = _output_paths(args, sport)
+    output_path, schedules_output_path, schedule_alias_output_path = (
+        paths["odds"], paths["schedules"], paths["schedule_alias"])
 
     print("=" * 60)
     print("BANKROLL KINGS - Fetch Game Lines")
