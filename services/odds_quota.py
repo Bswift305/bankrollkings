@@ -154,7 +154,11 @@ class QuotaRecorder:
         print(f"  x-requests-remaining              : {r['x_requests_remaining']}")
         if r["expected_cost"] is not None:
             print(f"  expected cost  : {r['expected_cost']}")
-        print(f"  COST RECEIPT   : {'OK' if ok else 'FAILED'}")
+        # A failed fetch must never print "OK" (2026-11): the cost line then says the accounting held, not
+        # that anything succeeded.
+        label = 'FAILED' if not ok else ('OK' if str(status).startswith('HTTP 2') else
+                                         'ACCOUNTED (fetch failed -- not a success)')
+        print(f"  COST RECEIPT   : {label}")
         for reason in r["reasons"]:
             print(f"    - {reason}")
         return ok, r

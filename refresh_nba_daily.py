@@ -6,10 +6,15 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from services.nba_lines_publisher import EXIT_LOCK_UNAVAILABLE, EXIT_LOCKED, LOCK_UNAVAILABLE
 from services.run_outcomes import (
-    NO_ACTIVE_EVENTS, PROVIDER_ERROR, SCHEDULE_UNAVAILABLE, SKIPPED_BLOCKED_BY_LINES, UPDATED,
-    VALIDATION_FAILED, props_step_outcome, record_child_outcomes,
+    NO_ACTIVE_EVENTS, PROVIDER_ERROR, REUSED_FRESH, SCHEDULE_UNAVAILABLE, SKIPPED_BLOCKED_BY_LINES,
+    SKIPPED_LOCKED, UPDATED, VALIDATION_FAILED, props_step_outcome, record_child_outcomes,
 )
+
+# bk-daily reuses a receipt-verified NBA lines publish from the 4-hourly job (REUSE_WINDOW_MINUTES in
+# services/nba_lines_publisher.py) and waits up to this long for that job's lock instead of racing it.
+LINES_LOCK_WAIT_SECONDS = 120
 
 BASE_DIR = Path(__file__).resolve().parent
 NON_BLOCKING_STEPS = {"runtime_snapshots"}
@@ -78,14 +83,38 @@ def _lines_receipt_detail() -> str:
 _LINES_FAILURE_OUTCOMES = frozenset({PROVIDER_ERROR, VALIDATION_FAILED, SCHEDULE_UNAVAILABLE})
 
 
-def classify_lines_step(returncode: int | None, timed_out: bool, receipt_mtime_before: float) -> tuple[str, str]:
-    """(outcome, detail) for the game-lines step, from the exit code AND the receipt THIS run wrote.
+def _publish_receipt_path() -> Path:
+    return Path(BASE_DIR) / "data" / "tracking" / "_last_nba_lines_publish.json"
+
+
+def classify_lines_step(returncode: int | None, timed_out: bool, receipt_mtime_before: float,
+                        publish_receipt_mtime_before: float | None = None) -> tuple[str, str]:
+    """(outcome, detail) for the game-lines step, from the exit code AND the receipts THIS run wrote.
 
     An exit code alone never proves a benign non-publish, and an old receipt can never excuse a new
     failure (only a receipt whose mtime advanced during the step is read). Never VALIDATION_FAILED for a
-    provider-empty answer: that is SCHEDULE_UNAVAILABLE (no authoritative schedule) per the receipt."""
+    provider-empty answer: that is SCHEDULE_UNAVAILABLE (no authoritative schedule) per the receipt.
+    Publisher exits: 75 = SKIPPED_LOCKED (another job held the lock; no paid request, nothing written),
+    76 = LOCK_UNAVAILABLE. REUSED_FRESH is read from the publisher receipt written this run."""
     if timed_out:
         return PROVIDER_ERROR, "game-lines step timed out"
+    if returncode == EXIT_LOCKED:
+        return SKIPPED_LOCKED, "another NBA lines publisher held the shared lock; no paid request, nothing written"
+    if returncode == EXIT_LOCK_UNAVAILABLE:
+        return LOCK_UNAVAILABLE, "the shared NBA lines lock could not be opened; no paid request, nothing written"
+    if publish_receipt_mtime_before is not None and _mtime(_publish_receipt_path()) > publish_receipt_mtime_before:
+        try:
+            pub = json.loads(_publish_receipt_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pub = None
+        if pub:
+            got = str(pub.get("outcome") or "")
+            if returncode == 0 and got in (UPDATED, REUSED_FRESH):
+                return got, str(pub.get("detail") or ("published" if got == UPDATED else "reused"))
+            if returncode == 0:
+                return VALIDATION_FAILED, f"exit 0 but this run's publisher receipt says outcome={got}"
+            if got in _LINES_FAILURE_OUTCOMES:
+                return got, f"exit {returncode}, publisher receipt outcome={got}"
     receipt = None
     path = _lines_receipt_path()
     if _mtime(path) > receipt_mtime_before:
@@ -112,7 +141,11 @@ def classify_lines_step(returncode: int | None, timed_out: bool, receipt_mtime_b
 STEPS = [
     ("playoff_results", [sys.executable, "-X", "utf8", "refresh_playoff_results.py"], 240),
     ("playoff_player_logs", [sys.executable, "-X", "utf8", "refresh_playoff_player_logs.py"], 480),
-    ("game_lines", [sys.executable, "fetch_game_lines.py", "--bookmakers", "draftkings,caesars,fanduel,betmgm", "--days", "5"], 180),
+    # The shared NBA publisher (fetch_game_lines -> services.nba_lines_publisher): lock first, reuse a fresh
+    # publish by the 4-hourly job, else the one validated atomic publish. Timeout covers the lock wait.
+    ("game_lines", [sys.executable, "fetch_game_lines.py", "--bookmakers", "draftkings,caesars,fanduel,betmgm",
+                    "--days", "5", "--caller", "nba_daily", "--allow-reuse",
+                    "--lock-wait-seconds", str(LINES_LOCK_WAIT_SECONDS)], 240),
     ("player_props", [sys.executable, "fetch_player_props.py", "--bookmakers", "draftkings,caesars,fanduel,betmgm", "--days", "5"], 240),
     ("injuries", [sys.executable, "-X", "utf8", "fetch_injuries.py"], 180),
     ("basketball_officiating", [sys.executable, "fetch_basketball_officiating_assignments.py"], 120),
@@ -159,6 +192,7 @@ def main() -> int:
         print(f"[STEP] {label} timeout={timeout}s", flush=True)
         props_mtime_before = _mtime(PROPS_ARTIFACT) if label == PROPS_STEP else 0.0
         lines_receipt_before = _mtime(_lines_receipt_path()) if label == LINES_STEP else 0.0
+        publish_receipt_before = _mtime(_publish_receipt_path()) if label == LINES_STEP else 0.0
         try:
             result = subprocess.run(command, timeout=timeout)
             timed_out = False
@@ -188,11 +222,11 @@ def main() -> int:
         if label == LINES_STEP:
             # Isolated: a failed lines publish never aborts independent work; dependents skip honestly.
             outcome, detail = classify_lines_step(None if timed_out else result.returncode, timed_out,
-                                                  lines_receipt_before)
+                                                  lines_receipt_before, publish_receipt_before)
             child_outcomes["game_lines"] = outcome
             step_results[label] = outcome
             record_child_outcomes(BASE_DIR, "nba_daily", child_outcomes)
-            if outcome != UPDATED:
+            if outcome not in (UPDATED, REUSED_FRESH):
                 lines_ok = False
                 lines_exit = 124 if timed_out else (int(result.returncode) or 1)
                 degraded = True
