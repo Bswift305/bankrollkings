@@ -206,29 +206,28 @@
     </div>
   </div>
 
-  {# ---- Men's College Basketball ---- #}
+  {# ---- Men's College Basketball ---- no data pipeline: no count, no live/coverage label
+       (qc_ncaab_shell_honesty.py) #}
   <div class="bk-sport-group" data-sport="ncaamb">
     <button type="button" class="bk-sport-toggle">
       <span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('ncaamb') }}" alt=""></span>
       <span class="si-name">Men's CBB</span>
-      <span class="si-count">{{ ncaamb_count | default(0) }}</span>
       <span class="bk-caret"></span>
     </button>
     <div class="bk-sport-links">
-      <a href="{{ sport_home_href('ncaamb') }}" class="bk-sidebar-item {% if active_sport == 'ncaamb' %}active{% endif %}"><span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('ncaamb') }}" alt=""></span><span class="si-name">Live Board &amp; Lines</span></a>
+      <a href="{{ sport_home_href('ncaamb') }}" class="bk-sidebar-item {% if active_sport == 'ncaamb' %}active{% endif %}"><span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('ncaamb') }}" alt=""></span><span class="si-name">Data Pipeline Status</span></a>
     </div>
   </div>
 
-  {# ---- Women's College Basketball ---- #}
+  {# ---- Women's College Basketball ---- same honest state as men's #}
   <div class="bk-sport-group" data-sport="ncaawb">
     <button type="button" class="bk-sport-toggle">
       <span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('ncaawb') }}" alt=""></span>
       <span class="si-name">Women's CBB</span>
-      <span class="si-count">{{ ncaawb_count | default(0) }}</span>
       <span class="bk-caret"></span>
     </button>
     <div class="bk-sport-links">
-      <a href="{{ sport_home_href('ncaawb') }}" class="bk-sidebar-item {% if active_sport == 'ncaawb' %}active{% endif %}"><span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('ncaawb') }}" alt=""></span><span class="si-name">Live Board &amp; Lines</span></a>
+      <a href="{{ sport_home_href('ncaawb') }}" class="bk-sidebar-item {% if active_sport == 'ncaawb' %}active{% endif %}"><span class="si-icon"><img loading="lazy" src="{{ sidebar_icon_url('ncaawb') }}" alt=""></span><span class="si-name">Data Pipeline Status</span></a>
     </div>
   </div>
 </div>

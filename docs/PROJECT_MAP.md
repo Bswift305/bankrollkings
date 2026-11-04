@@ -415,34 +415,22 @@ cache for those with `?v=...` and/or a service-worker version bump.
   Undefined passes that test then crashes on compare), and runs the SAME floor-parlay strategy
   pipeline as NBA (`attach_floor_reliability_to_props` degrades to SMALL SAMPLE for sports
   without floor history). NBA path (`build_live_prop_runtime_context`) is untouched.
-  `sport=ncaamb|ncaawb` still short-circuits to the CBB-themed pre-season parlay shell.
+  `sport=ncaamb|ncaawb` still short-circuits to the CBB honest unavailable state.
   Football defaults to `date=all` (weekly slates); WNBA/MLB default `date=today`.
 - **Props** with no sport → cross-sport "pick a sport" hub (`/tools/props` = `method_hub('props')`)
   or `/home/props` preview. By design ("Props is now a cross-sport entry point").
-- **College hoops (ncaamb/ncaawb)** Command Center → `college_hoops_command_center.html`
-  (rendered by a branch in `sport_under_construction`; that catch-all + `under_construction.html`
-  now only matter for hypothetical future leagues). The command center is a real themed hub:
-  hero, workflow lens, a **Board Surfaces grid linking the four themed pages below**, season
-  modules, and model focus. METHOD_HUB_CONFIG college cards also link the themed boards now
-  (no more "use the expansion board" copy).
-  **The four main board surfaces have real CBB-themed pre-season pages** (men cyan / women
-  magenta), gated like every other sport (All Access / owner). All share
-  `_college_hoops_access_gate` and override `focus_mode_label`/`regular_mode_label` →
-  `Top 25 Focus` / `Full Board` (with `postseason_only=False`) so they don't inherit the
-  league-wide "NBA Finals" labels:
-  - **Props** `/sports/{ncaamb,ncaawb}/props` → `_render_college_hoops_props` →
-    `render_props_screener_page` with `_college_hoops_example_props` **example** rows.
-  - **Market** `/sports/{ncaamb,ncaawb}/market-edge` → `_render_college_hoops_market` →
-    `smart_picks_v2.html` (blank board, `market_sport_key` themes it).
-  - **Trends** `/sports/{ncaamb,ncaawb}/trends` → `_render_college_hoops_trends` →
-    `trend_board.html` (blank board, `trend_sport_key` themes it).
-  - **Parlay** `/parlay?sport=ncaamb|ncaawb` → `parlay()` **short-circuits to**
-    `_render_college_hoops_parlay` (blank `parlay_formula.html`) BEFORE the NBA runtime loads —
-    so college Parlay no longer falls through to the NBA board.
-  Real college boards/data are still NOT built — these are themed shells (example/blank "live
-  board opens when the season tips off"). `smart_picks_v2.html` + `trend_board.html` had
-  `active_sport` hardcoded to `nba`; now dynamic via `market_sport_key`/`trend_sport_key`
-  (default `nba`, so NBA pages are unchanged).
+- **College hoops (ncaamb/ncaawb) — honest unavailable state (truthfulness safeguard B,
+  `fix/ncaab-shell-honesty`).** No CBB data pipeline exists. Every CBB section — Command Center
+  `/sports/{ncaamb,ncaawb}`, Props `/sports/{..}/props[/<filter>]`, Market `/sports/{..}/market-edge`,
+  Trends `/sports/{..}/trends`, Parlay `/parlay?sport=ncaamb|ncaawb` (short-circuits BEFORE the NBA
+  runtime) — renders `ncaab_unavailable.html` via `_render_ncaab_unavailable(sport_key, section)`,
+  gated by `_college_hoops_access_gate` (All Access / owner), showing exactly
+  `NCAAB_PIPELINE_UNAVAILABLE_TEXT` ("NCAAB data pipeline is not yet available") + section nav.
+  The old themed shells (example rows with fabricated confidence on real team names, "Live Board &
+  Lines", "Full prop boards … college hoops") are removed. Hubs, free preview `/free/{ncaamb,ncaawb}`,
+  cross-sport snapshots (cache key `v2-ncaab-honest`), sidebar and workflow nav all carry the same
+  honest state. Guard: `qc_ncaab_shell_honesty.py` (enumerates `app.url_map` CBB rules, mutation
+  proof). When a real feed lands, replace the guard's expectations deliberately.
 
 ---
 

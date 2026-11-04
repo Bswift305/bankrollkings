@@ -421,7 +421,7 @@
 
             <div class="method-tab-strip">
                 {% for card in cards %}
-                <a href="{{ card.tab_href }}" class="method-tab {% if active_sport == card.sport_key %}active{% endif %} {% if card.status == 'watch' %}watch{% endif %}">
+                <a href="{{ card.tab_href }}" class="method-tab {% if active_sport == card.sport_key %}active{% endif %} {% if card.status in ('watch', 'unavailable') %}watch{% endif %}">
                     <span>{{ card.sport }}</span>
                     {% if card.game_count is defined %}
                     <span class="method-tab-count">{{ card.game_count }}</span>
@@ -469,6 +469,8 @@
                 <div class="method-quick-note">
                     {% if active_card.status == 'live' %}
                     This sport has a working route behind this method today.
+                    {% elif active_card.status == 'unavailable' %}
+                    {{ active_card.note }}
                     {% else %}
                     This sport still leans on its main board while this method layer matures.
                     {% endif %}
@@ -505,7 +507,6 @@
                 <span class="props-logo-pill"><img src="{{ sport_logo_url('mlb') }}" alt="">MLB</span>
                 <span class="props-logo-pill"><img src="{{ sport_logo_url('nfl') }}" alt="">NFL</span>
                 <span class="props-logo-pill"><img src="{{ sport_logo_url('ncaaf') }}" alt="">CFB</span>
-                <span class="props-logo-pill"><img src="{{ sport_logo_url('ncaamb') }}" alt="">CBB</span>
             </div>
         </section>
 

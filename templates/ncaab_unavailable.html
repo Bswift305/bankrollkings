@@ -1,0 +1,28 @@
+{% set active_sport = sport_key %}
+{% extends "bk_base.html" %}
+{# Honest state for every college-basketball section. No CBB data pipeline exists: this page must
+   never carry sample rows, team names, confidence values, picks, projections, simulations,
+   injuries or coverage claims. Guarded by qc_ncaab_shell_honesty.py (the markers below scope it). #}
+{% block title %}{{ sport_title }} {{ section_title }}{% endblock %}
+{% block app_class %}no-slip{% endblock %}
+{% block betslip %}{% endblock %}
+
+{% block content %}
+<!-- ncaab-honest:start -->
+<section class="card mb-24 panel-glow bk-ncaab-honest" data-ncaab-honest="{{ sport_key }}" data-ncaab-section="{{ section_key }}">
+    <div class="card-header panel-header-gloss">
+        <div class="card-title">{{ sport_title }} &middot; {{ section_title }}</div>
+        <span class="badge">Unavailable</span>
+    </div>
+    <div class="p-24">
+        <p class="bk-ncaab-honest-status" style="font-size: 16px; font-weight: 700; color: var(--text-bright); margin: 0 0 8px;">{{ honest_text }}</p>
+        <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin: 0 0 16px;">{{ honest_note }}</p>
+        <nav aria-label="{{ sport_title }} sections" style="display: flex; flex-wrap: wrap; gap: 8px;">
+            {% for link in section_links %}
+            <a class="btn btn-sm{% if link.key == section_key %} btn-primary{% endif %}" href="{{ link.href }}">{{ link.label }}</a>
+            {% endfor %}
+        </nav>
+    </div>
+</section>
+<!-- ncaab-honest:end -->
+{% endblock %}

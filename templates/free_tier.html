@@ -403,7 +403,19 @@
 {% endblock sidebar %}
 
 {% block main %}
-{% if active_preview %}
+{% if active_preview and active_preview.pipeline_unavailable %}
+{# College basketball: no data pipeline -- honest state only (qc_ncaab_shell_honesty.py). #}
+<!-- ncaab-honest:start -->
+<section class="bk-content free-hero bk-ncaab-honest" data-ncaab-honest="{{ active_preview.key }}" data-ncaab-section="free_preview">
+  <div class="free-kicker">{{ active_preview.kicker }}</div>
+  <h1>{{ active_preview.title }}</h1>
+  <p>{{ active_preview.summary }}</p>
+  <div class="free-actions">
+    <a class="bk-btn" href="{{ url_for('free_tier') }}">All Free Samples</a>
+  </div>
+</section>
+<!-- ncaab-honest:end -->
+{% elif active_preview %}
 <section class="bk-content free-hero">
   <div class="free-kicker">{{ active_preview.kicker }}</div>
   <h1>{{ active_preview.title }}</h1>
@@ -646,6 +658,7 @@
         <em>{{ sport.status }}</em>
       </div>
       <p>{{ sport.summary }}</p>
+      {% if not sport.pipeline_unavailable %}
       <div class="free-metrics">
         <span>{{ sport.today_games }} games</span>
         <span>{{ sport.props_rows }} props</span>
@@ -655,6 +668,7 @@
       <small>Sample: {{ sport.best_prop.player }} · {{ sport.best_prop.stat }} {{ sport.best_prop.direction }} {{ sport.best_prop.line }}</small>
       {% else %}
       <small>Season-prep sample: {{ sport.drivers|join(' · ') }}</small>
+      {% endif %}
       {% endif %}
     </a>
     {% endfor %}

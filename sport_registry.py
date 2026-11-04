@@ -140,7 +140,7 @@ SPORTS: dict[str, SportSpec] = {
         min_market_prob=None, min_lean_gap=None,
         requires_play_verdict=False,
         qc_prefix='ncaamb', calibrator=None, live=False,
-        notes='Themed shell only: routes render, no data pipeline yet. Deferred to tip-off.',
+        notes='No data pipeline: routes render only the honest unavailable state (qc_ncaab_shell_honesty).',
     ),
     'NCAAWB': SportSpec(
         code='NCAAWB', key='ncaawb', label="Women's College Hoops",
@@ -151,7 +151,7 @@ SPORTS: dict[str, SportSpec] = {
         min_market_prob=None, min_lean_gap=None,
         requires_play_verdict=False,
         qc_prefix='ncaawb', calibrator=None, live=False,
-        notes='Themed shell only: routes render, no data pipeline yet. Deferred to tip-off.',
+        notes='No data pipeline: routes render only the honest unavailable state (qc_ncaab_shell_honesty).',
     ),
 }
 

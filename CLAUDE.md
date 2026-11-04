@@ -49,7 +49,7 @@ and risk warnings is a **regression, not a simplification**.
 | WNBA | Full |
 | NFL | Full |
 | CFB / NCAAF | Full |
-| Men's / Women's CBB | Themed pre-season shells only — no real board data yet |
+| Men's / Women's CBB | No data pipeline — every CBB page renders "NCAAB data pipeline is not yet available" (`qc_ncaab_shell_honesty.py`) |
 
 ---
 
@@ -425,8 +425,9 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
   candidates against a 2025-only `NFL_GameLogs.csv`, so nothing resolved. Fixed 2026-10-18. (The
   prop grader uses `load_nfl_gamelogs()`, NOT the parquet directly, so the gamelog file itself had
   to carry the current season.)
-- **College hoops:** Command Center and themed Props/Market/Trends/Parlay shells are
-  built; real data and boards are not.
+- **College hoops:** no data pipeline. Command Center + Props/Market/Trends/Parlay routes keep
+  their URLs but render only the honest unavailable state (`ncaab_unavailable.html`); sample rows,
+  fabricated confidence and coverage claims were removed. Guard: `qc_ncaab_shell_honesty.py`.
 - **Fantasy Salary / Value / Own%** need a DFS slate provider decision (SportsDataIO or
   FantasyData) — a user decision, then wiring. **No salaries, no contests** by
   deliberate choice (money-league legal risk).

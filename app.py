@@ -558,7 +558,7 @@ PRICING_TIERS = [
         'summary': 'One membership, the whole platform. Every sport, every board, every lab — no tiers, no upsells. The market, the context, and transparent research in one place so you can decide for yourself.',
         'best_for': 'Anyone who wants to evaluate wagers for themselves',
         'features': [
-            'Full prop boards across NBA, MLB, WNBA, NFL, CFB, and college hoops',
+            'Full prop boards across NBA, MLB, WNBA, NFL, and CFB',
             'Player pages, team pages, matchup analysis, floor plays, and the parlay builder',
             'NFL NextGen Stats, MLB Statcast, and NBA tracking intelligence',
             'Market edge signals, line movement, calibration history, and bet review',
@@ -1530,6 +1530,15 @@ def is_owner_user(user):
     return email in OWNER_EMAILS or role == 'owner' or is_admin
 
 
+# NCAAB truthfulness safeguard: no men's or women's college-basketball data feed exists. Every
+# CBB surface (command center, props/market/trends/parlay shells, hubs, free preview, nav) renders
+# this exact honest state instead of sample rows, confidence values or coverage claims.
+# Guarded by qc_ncaab_shell_honesty.py.
+NCAAB_SPORT_KEYS = frozenset({'ncaamb', 'ncaawb'})
+NCAAB_PIPELINE_UNAVAILABLE_TEXT = 'NCAAB data pipeline is not yet available'
+NCAAB_PIPELINE_UNAVAILABLE_NOTE = 'This section will show licensed market data when it becomes available.'
+
+
 def normalize_sport_access_key(sport_key):
     sport_key = str(sport_key or '').strip().lower()
     return {
@@ -1733,6 +1742,10 @@ def build_sport_workflow_nav(active_sport='', active_page='', can_see_missed=Fal
         items = [it for it in items if it['key'] != 'missed']
     if not can_see_calibration:
         items = [it for it in items if it['key'] != 'calibration_lab']
+    # College basketball has no data pipeline: only its own honest shell sections stay in the
+    # nav (no Review/Injuries/Hot Streaks/Alt Markets/etc. links implying CBB coverage).
+    if sport_key in NCAAB_SPORT_KEYS:
+        items = [it for it in items if it['key'] in {'dashboard', 'props', 'parlay_builder', 'market', 'trends'}]
 
     # Core = the everyday workflow; everything else is grouped under "Labs" in the
     # command toolbar so a newcomer lands on the essentials, not 15 equal buttons.
@@ -22176,7 +22189,9 @@ def _dashboard_best_props_for_games(props_df, game_names):
 
 
 def build_cross_sport_dashboard_snapshots(postseason_only=False):
-    cache_key = f"cross_sport_dashboard_snapshots::{int(bool(postseason_only))}"
+    # 'v2-ncaab-honest': the CBB snapshot output changed (no data load, honest status/note); the
+    # bumped key retires pre-change disk pkl entries that the data-file token alone would keep.
+    cache_key = f"cross_sport_dashboard_snapshots::v2-ncaab-honest::{int(bool(postseason_only))}"
     cache_version = _build_file_token(
         DATA_DIR / 'schedules' / 'NBA_Schedule.csv',
         DATA_DIR / 'schedules' / 'WNBA_Schedule.csv',
@@ -22257,7 +22272,7 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
             'href': f"/sports/ncaamb?postseason={1 if postseason_only else 0}",
             'schedule': DATA_DIR / 'schedules' / 'NCAAMB_Schedule.csv',
             'props': DATA_DIR / 'props' / 'NCAAMB_Props.csv',
-            'status': 'Building',
+            'status': 'Unavailable',
             'tone': 'soft',
         },
         {
@@ -22266,15 +22281,20 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
             'href': f"/sports/ncaawb?postseason={1 if postseason_only else 0}",
             'schedule': DATA_DIR / 'schedules' / 'NCAAWB_Schedule.csv',
             'props': DATA_DIR / 'props' / 'NCAAWB_Props.csv',
-            'status': 'Building',
+            'status': 'Unavailable',
             'tone': 'soft',
         },
     ]
 
     snapshots = []
     for config in sport_configs:
-        schedule = _load_cached_csv(config['schedule'])
-        props = _load_cached_csv(config['props'])
+        if config['key'] in NCAAB_SPORT_KEYS:
+            # No CBB pipeline: never surface a stray file as a live slate or best prop.
+            schedule = pd.DataFrame()
+            props = pd.DataFrame()
+        else:
+            schedule = _load_cached_csv(config['schedule'])
+            props = _load_cached_csv(config['props'])
         today_games = pd.DataFrame()
         if not schedule.empty and 'Date' in schedule.columns:
             today_games = schedule[schedule['Date'].astype(str).str[:10] == today].copy()
@@ -22341,7 +22361,9 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
             ),
             'is_live': config['status'] == 'Live',
             'note': (
-                'Live slate with props and matchup reads.'
+                f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'
+                if config['key'] in NCAAB_SPORT_KEYS
+                else 'Live slate with props and matchup reads.'
                 if config['status'] == 'Live'
                 else 'No active daily slate yet; use this as the season-prep workspace.'
                 if config['status'] == 'Season Prep'
@@ -22436,17 +22458,19 @@ FREE_SPORT_PREVIEW_CONFIG = {
     },
     'ncaamb': {
         'sport': 'Men CBB',
-        'kicker': 'Free Men CBB Season Prep',
-        'title': 'Men CBB Preview Board',
-        'summary': 'A game-lines and totals preview for men’s college hoops, built around tempo, efficiency, travel, and matchup profile.',
-        'drivers': ['Tempo', 'Efficiency', 'Travel', 'Matchup'],
+        'kicker': "Men's College Basketball",
+        'title': 'Men CBB Status',
+        'summary': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}. {NCAAB_PIPELINE_UNAVAILABLE_NOTE}',
+        'drivers': [],
+        'pipeline_unavailable': True,
     },
     'ncaawb': {
         'sport': 'Women CBB',
-        'kicker': 'Free Women CBB Season Prep',
-        'title': 'Women CBB Preview Board',
-        'summary': 'A game-lines and totals preview for women’s college hoops, with team profile and market education until live data arrives.',
-        'drivers': ['Tempo', 'Efficiency', 'Team form', 'Market line'],
+        'kicker': "Women's College Basketball",
+        'title': 'Women CBB Status',
+        'summary': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}. {NCAAB_PIPELINE_UNAVAILABLE_NOTE}',
+        'drivers': [],
+        'pipeline_unavailable': True,
     },
 }
 
@@ -22501,7 +22525,9 @@ FREE_SPORT_LOCKED_FEATURES = {
 
 def get_free_sport_locked_features(sport_key):
     sport_key = normalize_sport_access_key(sport_key)
-    if sport_key in {'ncaaf', 'ncaamb', 'ncaawb'}:
+    if sport_key in NCAAB_SPORT_KEYS:
+        return []
+    if sport_key in {'ncaaf'}:
         return [
             {'plan': 'All Access', 'title': 'Full game-line board', 'description': 'Tempo, efficiency, spread, total, and team-profile context once the sport is in season.', 'href': f'/sports/{sport_key}'},
             {'plan': 'All Access', 'title': 'Team matchup context', 'description': 'College markets need team-strength and matchup reads before any prop-style workflow.', 'href': f'/sports/{sport_key}'},
@@ -22542,6 +22568,8 @@ def _props_file_for_free_sport(sport_key):
 
 
 def build_free_sport_prop_rows(sport_key, limit=6):
+    if normalize_sport_access_key(sport_key) in NCAAB_SPORT_KEYS:
+        return []
     path = _props_file_for_free_sport(sport_key)
     if not path or not path.exists():
         return []
@@ -22605,7 +22633,10 @@ def build_free_sport_preview_context(sport_key, sport_snapshots=None):
             matchups.append(matchup)
         if len(matchups) >= 3:
             break
-    status = 'Live sample' if sample_rows else 'Season-prep sample'
+    if sport_key in NCAAB_SPORT_KEYS:
+        status = 'Unavailable'
+    else:
+        status = 'Live sample' if sample_rows else 'Season-prep sample'
     locked_features = get_free_sport_locked_features(sport_key)
     return {
         **config,
@@ -23262,6 +23293,19 @@ def build_today_hub_context(postseason_only=False, selected_sport=''):
         ('ncaawb', 'Women CBB', '/sports/ncaawb', load_ncaawb_schedule, False),
     ]
     for sport_key, sport, href, loader, use_filter in sport_specs:
+        if sport_key in NCAAB_SPORT_KEYS:
+            # No CBB pipeline: honest unavailable card, never a loaded slate.
+            cards.append({
+                'sport_key': sport_key,
+                'sport': sport,
+                'label': f'{sport} Today',
+                'href': f"{href}?postseason={postseason_flag}",
+                'status': 'unavailable',
+                'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.',
+                'game_count': 0,
+                'tab_href': f"/tools/today?sport={sport_key}&postseason={postseason_flag}",
+            })
+            continue
         try:
             schedule_df = loader()
         except Exception:
@@ -23307,8 +23351,8 @@ def build_matchup_lens_hub_context(postseason_only=False, selected_sport=''):
         {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Matchup Lens', 'href': f'/sports/mlb?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the MLB board as the current baseball matchup environment read.'},
         {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Matchup Lens', 'href': f'/sports/nfl?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the NFL board and matchup routes for weekly football matchup context.'},
         {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Matchup Lens', 'href': f'/sports/ncaaf?postseason={postseason_flag}', 'status': 'live', 'note': 'Use the CFB board and matchup routes for college-football matchup context.'},
-        {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Matchup Lens', 'href': f'/sports/ncaamb?postseason={postseason_flag}', 'status': 'watch', 'note': 'Men college hoops currently routes through the expansion board while matchup-specific workflow catches up.'},
-        {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Matchup Lens', 'href': f'/sports/ncaawb?postseason={postseason_flag}', 'status': 'watch', 'note': 'Women college hoops currently routes through the expansion board while matchup-specific workflow catches up.'},
+        {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Matchup Lens', 'href': f'/sports/ncaamb?postseason={postseason_flag}', 'status': 'unavailable', 'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'},
+        {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Matchup Lens', 'href': f'/sports/ncaawb?postseason={postseason_flag}', 'status': 'unavailable', 'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'},
     ]
     for card in cards:
         card['tab_href'] = f"/tools/matchup-lens?sport={card['sport_key']}&postseason={postseason_flag}"
@@ -36810,16 +36854,16 @@ SPORTS_LAUNCH_PAGES = {
         'highlights': ['Player props', 'Game lines + totals', 'Trend profiles', 'Floor plays']
     },
     'ncaamb': {
-        'title': "Men's College Hoops",
-        'kicker': 'College Basketball Expansion',
-        'summary': "Men's college basketball pages are being built with game line and total reads first, then team form and matchup context underneath.",
-        'highlights': ['Game environment context', 'Game line / O-U board', 'Team form boards', 'Tempo + efficiency tracking']
+        'title': "Men's College Basketball",
+        'kicker': "Men's College Basketball",
+        'summary': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.',
+        'highlights': []
     },
     'ncaawb': {
-        'title': "Women's College Hoops",
-        'kicker': "Women's College Expansion",
-        'summary': "Women's college basketball pages are being built around team-driven line and total reads, with matchup context carrying more weight than prop volume.",
-        'highlights': ['Game line / O-U board', 'Matchup context', 'Tempo tracking', 'Postseason workflow']
+        'title': "Women's College Basketball",
+        'kicker': "Women's College Basketball",
+        'summary': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.',
+        'highlights': []
     }
 }
 
@@ -36845,8 +36889,8 @@ METHOD_HUB_CONFIG = {
             {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Props', 'href': '/sports/mlb/props', 'status': 'live', 'note': 'MLB prop board centered on the daily baseball slate.'},
             {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Props', 'href': '/sports/nfl/props', 'status': 'live', 'note': 'Weekly football prop board built from the NFL workbook flow.'},
             {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Props', 'href': '/sports/ncaaf/props', 'status': 'live', 'note': 'College football props with the current CFB board rules.'},
-            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Props', 'href': '/sports/ncaamb/props', 'status': 'watch', 'note': 'Pre-season preview of the men college hoops prop board with example plays in the CBB theme.'},
-            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Props', 'href': '/sports/ncaawb/props', 'status': 'watch', 'note': 'Pre-season preview of the women college hoops prop board with example plays in the CBB theme.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Props', 'href': '/sports/ncaamb/props', 'status': 'unavailable', 'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Props', 'href': '/sports/ncaawb/props', 'status': 'unavailable', 'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'},
         ],
     },
     'market-edge': {
@@ -36859,8 +36903,8 @@ METHOD_HUB_CONFIG = {
             {'sport': 'MLB', 'label': 'MLB Market Edge', 'href': '/sports/mlb/market-edge', 'status': 'live', 'note': 'MLB market-edge board for daily baseball pricing and book splits.'},
             {'sport': 'NFL', 'label': 'NFL Market Edge', 'href': '/sports/nfl', 'status': 'watch', 'note': 'NFL still leans more on the full football board than a separate market-edge page.'},
             {'sport': 'CFB', 'label': 'CFB Market Edge', 'href': '/sports/ncaaf', 'status': 'watch', 'note': 'CFB still leans more on the full football board than a separate market-edge page.'},
-            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Market Edge', 'href': '/sports/ncaamb/market-edge', 'status': 'watch', 'note': 'Pre-season preview of the men college hoops market-edge board in the CBB theme.'},
-            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Market Edge', 'href': '/sports/ncaawb/market-edge', 'status': 'watch', 'note': 'Pre-season preview of the women college hoops market-edge board in the CBB theme.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Market Edge', 'href': '/sports/ncaamb/market-edge', 'status': 'unavailable', 'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Market Edge', 'href': '/sports/ncaawb/market-edge', 'status': 'unavailable', 'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'},
         ],
     },
     'parlay': {
@@ -36873,8 +36917,8 @@ METHOD_HUB_CONFIG = {
             {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Parlay', 'href': '/parlay?sport=mlb&sample=current', 'status': 'live', 'note': 'Parlay builder fed by the daily MLB prop board with the same tier and strategy engine.'},
             {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Parlay', 'href': '/parlay?sport=nfl&sample=current', 'status': 'live', 'note': 'Parlay builder fed by the weekly NFL prop board; fills with the live football slate in season.'},
             {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Parlay', 'href': '/parlay?sport=ncaaf&sample=current', 'status': 'live', 'note': 'Parlay builder fed by the CFB prop board; fills with the live college slate in season.'},
-            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Parlay', 'href': '/parlay?sport=ncaamb', 'status': 'watch', 'note': 'Pre-season preview of the men college hoops parlay builder in the CBB theme.'},
-            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Parlay', 'href': '/parlay?sport=ncaawb', 'status': 'watch', 'note': 'Pre-season preview of the women college hoops parlay builder in the CBB theme.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Parlay', 'href': '/parlay?sport=ncaamb', 'status': 'unavailable', 'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Parlay', 'href': '/parlay?sport=ncaawb', 'status': 'unavailable', 'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'},
         ],
     },
     'injuries': {
@@ -36887,8 +36931,8 @@ METHOD_HUB_CONFIG = {
             {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Injury Context', 'href': '/sports/mlb', 'status': 'watch', 'note': 'MLB injury badges and feed health are live, but the main baseball board is still the best place to start.'},
             {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Injury Context', 'href': '/sports/nfl', 'status': 'watch', 'note': 'NFL injury data is loaded, but the sport still leans on the full football board instead of a dedicated injury page.'},
             {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Injury Context', 'href': '/sports/ncaaf', 'status': 'watch', 'note': 'CFB injury support is thinner, so use the main college-football board first.'},
-            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Injury Context', 'href': '/sports/ncaamb', 'status': 'watch', 'note': 'Men college hoops injury context is still light, so the command center is the current entry point.'},
-            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Injury Context', 'href': '/sports/ncaawb', 'status': 'watch', 'note': 'Women college hoops injury context is still light, so the command center is the current entry point.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Injury Context', 'href': '/sports/ncaamb', 'status': 'unavailable', 'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Injury Context', 'href': '/sports/ncaawb', 'status': 'unavailable', 'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'},
         ],
     },
     'trends': {
@@ -36901,8 +36945,8 @@ METHOD_HUB_CONFIG = {
             {'sport_key': 'mlb', 'sport': 'MLB', 'label': 'MLB Streak Patterns', 'href': '/sports/mlb/trends', 'status': 'live', 'note': 'MLB streak patterns are live and tied to the current baseball board.'},
             {'sport_key': 'nfl', 'sport': 'NFL', 'label': 'NFL Streak Patterns', 'href': '/sports/nfl/trends', 'status': 'live', 'note': 'NFL streak patterns are organized inside the current football method board.'},
             {'sport_key': 'cfb', 'sport': 'CFB', 'label': 'CFB Streak Patterns', 'href': '/sports/ncaaf/trends', 'status': 'live', 'note': 'CFB streak patterns are available through the current college-football method board.'},
-            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Streak Patterns', 'href': '/sports/ncaamb/trends', 'status': 'watch', 'note': 'Pre-season preview of the men college hoops trend board in the CBB theme.'},
-            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Streak Patterns', 'href': '/sports/ncaawb/trends', 'status': 'watch', 'note': 'Pre-season preview of the women college hoops trend board in the CBB theme.'},
+            {'sport_key': 'ncaamb', 'sport': 'Men CBB', 'label': 'Men CBB Streak Patterns', 'href': '/sports/ncaamb/trends', 'status': 'unavailable', 'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'},
+            {'sport_key': 'ncaawb', 'sport': 'Women CBB', 'label': 'Women CBB Streak Patterns', 'href': '/sports/ncaawb/trends', 'status': 'unavailable', 'note': f'{NCAAB_PIPELINE_UNAVAILABLE_TEXT}.'},
         ],
     },
 }
@@ -39341,39 +39385,9 @@ def sport_under_construction(league):
     workbook_preview = load_nfl_floor_play_preview() if league_key == 'nfl' else None
     sport_profile = get_sport_model_profile(league_key)
     football_methods = get_football_method_modules(league_key) if league_key in {'nfl', 'ncaaf'} else []
-    if league_key in ('ncaamb', 'ncaawb'):
-        # Real college-hoops command center: links every themed pre-season board
-        # surface (props / market / trends / parlay) instead of the generic shell.
-        board_surfaces = [
-            {
-                'kicker': 'Player Props', 'title': 'Props Board', 'status': 'Example Plays',
-                'href': f'/sports/{league_key}/props',
-                'note': 'The real props screener layout with example plays in the college theme, so the read order is set before the live slate arrives.',
-            },
-            {
-                'kicker': 'Market Reads', 'title': 'Market Edge', 'status': 'Preview',
-                'href': f'/sports/{league_key}/market-edge',
-                'note': 'Line movement, book splits, and price-path workflow in the college theme. Fills with live market reads when the season tips off.',
-            },
-            {
-                'kicker': 'Form + Consistency', 'title': 'Streak Patterns', 'status': 'Preview',
-                'href': f'/sports/{league_key}/trends',
-                'note': 'The trend board ready for hot-hand and consistency reads once college game logs start flowing.',
-            },
-            {
-                'kicker': 'Ticket Building', 'title': 'Parlay Builder', 'status': 'Preview',
-                'href': f'/parlay?sport={league_key}',
-                'note': 'The parlay workflow in the college theme — anchor, round robin, and flyer structure ready for the live board.',
-            },
-        ]
-        return render_template(
-            'college_hoops_command_center.html',
-            page=config,
-            postseason_only=postseason_only,
-            sport_profile=sport_profile,
-            sport_key=league_key,
-            board_surfaces=board_surfaces,
-        )
+    if league_key in NCAAB_SPORT_KEYS:
+        # No CBB pipeline: the command center is the honest unavailable state.
+        return _render_ncaab_unavailable(league_key, 'command_center')
     return render_template(
         'under_construction.html',
         page=config,
@@ -39385,79 +39399,33 @@ def sport_under_construction(league):
     )
 
 
-def _college_hoops_example_props(sport_key):
-    """Placeholder example rows so the pre-season college-hoops props board renders
-    with the real layout + sport color theme. Clearly example data; the live board
-    opens when the season tips off."""
-    men = sport_key == 'ncaamb'
-    teams = ['DUKE', 'UNC', 'KAN', 'UCLA', 'GONZ', 'BAY'] if men else ['UCONN', 'SC', 'STAN', 'IOWA', 'LSU', 'TEX']
-    examples = [
-        ('Example Guard', 'PTS', 17.5, 19.2, 'OVER', 71, 63),
-        ('Example Wing', 'REB', 6.5, 7.4, 'OVER', 66, 60),
-        ('Example Forward', 'PTS', 14.5, 13.1, 'UNDER', 64, 58),
-        ('Example Guard 2', 'AST', 4.5, 5.3, 'OVER', 69, 61),
-        ('Example Center', 'REB', 8.5, 9.0, 'OVER', 62, 57),
-        ('Example Wing 2', '3PM', 2.5, 2.1, 'UNDER', 60, 55),
-    ]
-    rows = []
-    for i, (player, stat, line, avg, direction, conf, over) in enumerate(examples):
-        t1 = teams[i % len(teams)]
-        t2 = teams[(i + 1) % len(teams)]
-        rows.append({
-            'player': player, 'team': t1, 'stat': stat, 'line': line, 'avg': avg,
-            'direction': direction, 'confidence': conf,
-            'over_rate': over if direction == 'OVER' else 100 - over,
-            'matchup': f'{t1} @ {t2}', 'book': 'Example', 'game_total': 142.5,
-            'core_model_read': 'Example row — the live board opens when the season tips off.',
-            'situations': ['Pre-season example'],
-        })
-    return rows
+NCAAB_SHELL_SECTIONS = (
+    ('command_center', 'Command Center'),
+    ('props', 'Props'),
+    ('market', 'Market Edge'),
+    ('trends', 'Streak Patterns'),
+    ('parlay', 'Parlay Builder'),
+)
+NCAAB_SPORT_TITLES = {
+    'ncaamb': "Men's College Basketball",
+    'ncaawb': "Women's College Basketball",
+}
 
 
-def _render_college_hoops_props(sport_key, sport_label, filter_type=None):
-    current_user = get_current_user()
-    if not current_user:
-        return render_access_gate_response(get_sport_pass_plan_for_sport(sport_key), build_requested_path(), current_user=None)
-    if not is_owner_user(current_user):
-        current_plan = normalize_user_plan(current_user)
-        if not (get_plan_rank(current_plan) >= get_plan_rank('pro') or user_has_sport_access(current_user, sport_key)):
-            return render_access_gate_response(get_sport_pass_plan_for_sport(sport_key), build_requested_path(), current_user=current_user)
-    refresh_meta = {
-        'status': 'preview', 'is_stale': False, 'has_live_props': False,
-        'last_updated': 'Pre-season preview', 'books': [],
-        'warning': f'{sport_label} props are an example layout — the live board opens when the season tips off.',
-    }
-    return render_props_screener_page(
-        sport_key=sport_key,
-        sport_label=sport_label,
-        rows=_college_hoops_example_props(sport_key),
-        refresh_meta=refresh_meta,
-        postseason_only=False,  # college pre-season: no NBA-postseason labels/toggle
-        filter_type=filter_type,
-        props_base_path=f'/sports/{sport_key}/props',
-        props_tracking_label='Pre-Season Preview',
-        props_tracking_note=f'{sport_label} board — example layout. Live props open when the season tips off.',
-        focus_mode_label='Top 25 Focus',
-        regular_mode_label='Full Board',
-    )
-
-
-@app.route('/sports/ncaamb/props')
-@app.route('/sports/ncaamb/props/<filter_type>')
-def ncaamb_props_page(filter_type=None):
-    return _render_college_hoops_props('ncaamb', "Men's College Hoops", filter_type)
-
-
-@app.route('/sports/ncaawb/props')
-@app.route('/sports/ncaawb/props/<filter_type>')
-def ncaawb_props_page(filter_type=None):
-    return _render_college_hoops_props('ncaawb', "Women's College Hoops", filter_type)
+def _ncaab_section_href(sport_key, section_key):
+    return {
+        'command_center': f'/sports/{sport_key}',
+        'props': f'/sports/{sport_key}/props',
+        'market': f'/sports/{sport_key}/market-edge',
+        'trends': f'/sports/{sport_key}/trends',
+        'parlay': f'/parlay?sport={sport_key}',
+    }[section_key]
 
 
 def _college_hoops_access_gate(sport_key):
-    """Shared access gate for the college-hoops pre-season preview boards
-    (props / market / trends / parlay). Returns a gate response to return early,
-    or None when the current user may view the board (owner, Pro, or sport pass)."""
+    """Shared access gate for every college-hoops shell section (command center / props /
+    market / trends / parlay). Returns a gate response to return early, or None when the
+    current user may view the page (owner, paid plan)."""
     current_user = get_current_user()
     if not current_user:
         return render_access_gate_response(get_sport_pass_plan_for_sport(sport_key), build_requested_path(), current_user=None)
@@ -39468,102 +39436,60 @@ def _college_hoops_access_gate(sport_key):
     return None
 
 
-def _render_college_hoops_market(sport_key, sport_label):
+def _render_ncaab_unavailable(sport_key, section_key):
+    """Honest state for every college-basketball shell section. No CBB data pipeline exists, so
+    nothing here may show sample rows, team names, confidence values, picks, projections,
+    simulations, injuries or coverage claims -- only the exact unavailable sentence and the
+    section navigation. Guarded by qc_ncaab_shell_honesty.py."""
     gate = _college_hoops_access_gate(sport_key)
     if gate is not None:
         return gate
-    refresh_meta = {
-        'status': 'preview', 'is_stale': False, 'has_live_props': False,
-        'last_updated': 'Pre-season preview', 'books': [],
-        'warning': f'{sport_label} Market Edge is an example layout — the live board opens when the season tips off.',
-    }
-    base_params = {
-        'date': 'today', 'direction': 'all', 'postseason': 0, 'sample': 'current',
-        'model_debug': None, 'team': None, 'player': None, 'stat': None,
-    }
+    section_titles = dict(NCAAB_SHELL_SECTIONS)
     return render_template(
-        'smart_picks_v2.html',
-        picks=[],
-        stat_options=STAT_COLUMNS,
-        date_filter='today', direction_filter='all', upcoming={},
-        postseason_only=False,  # college pre-season: no NBA-postseason labels/toggle
-        team_query='', player_query='', stat_query='',
-        query_suffix='', sample_mode='current',
-        sort_by='confidence', sort_dir='desc',
-        base_params=base_params, build_sort_link=build_sort_link,
-        refresh_meta=refresh_meta, model_debug=False,
-        market_sport_key=sport_key, live_feed_sport_label=sport_label,
-        focus_mode_label='Top 25 Focus', regular_mode_label='Full Board',
+        'ncaab_unavailable.html',
+        sport_key=sport_key,
+        sport_title=NCAAB_SPORT_TITLES[sport_key],
+        section_key=section_key,
+        section_title=section_titles[section_key],
+        honest_text=NCAAB_PIPELINE_UNAVAILABLE_TEXT,
+        honest_note=NCAAB_PIPELINE_UNAVAILABLE_NOTE,
+        section_links=[
+            {'key': key, 'label': label, 'href': _ncaab_section_href(sport_key, key)}
+            for key, label in NCAAB_SHELL_SECTIONS
+        ],
     )
 
 
-def _render_college_hoops_trends(sport_key, sport_label):
-    gate = _college_hoops_access_gate(sport_key)
-    if gate is not None:
-        return gate
-    blank_slot = {'rate': None, 'hits': 0, 'chances': 0, 'best_stat': None, 'best_stat_rate': None}
-    trend_meta = {
-        'gamelog_rows': 0, 'row_count': 0, 'sample_mode': 'current',
-        'scope_label': 'Pre-Season Preview', 'props_rows': 0,
-        'opportunity_summary': {'3': dict(blank_slot), '5': dict(blank_slot)},
-    }
-    base_params = {'postseason': 0, 'stat': 'all', 'team': '', 'sample': 'current'}
-    return render_template(
-        'trend_board.html',
-        rows=[],
-        postseason_only=False,
-        stat_filter='ALL', team_query='', teams=[],
-        sample_mode='current', sort_by='consistency_index', sort_dir='asc',
-        base_params=base_params, stat_options=STAT_COLUMNS, trend_meta=trend_meta,
-        trend_sport_key=sport_key,
-        focus_mode_label='Top 25 Focus', regular_mode_label='Full Board',
-    )
+@app.route('/sports/ncaamb/props')
+@app.route('/sports/ncaamb/props/<filter_type>')
+def ncaamb_props_page(filter_type=None):
+    return _render_ncaab_unavailable('ncaamb', 'props')
 
 
-def _render_college_hoops_parlay(sport_key, sport_label):
-    gate = _college_hoops_access_gate(sport_key)
-    if gate is not None:
-        return gate
-    current_user = get_current_user()
-    refresh_meta = {
-        'status': 'preview', 'is_stale': False, 'has_live_props': False,
-        'last_updated': 'Pre-season preview', 'books': [],
-        'warning': f'{sport_label} Parlay Builder is an example layout — the live board opens when the season tips off.',
-    }
-    return render_template(
-        'parlay_formula.html',
-        props=[],
-        rules={'max_per_player': 1, 'max_per_game': 2, 'min_games': 3, 'target_legs': '4-6 main / 8-10 flyer'},
-        strategy=build_floor_parlay_plan([]),
-        stat_options=STAT_COLUMNS, date_filter='today', direction_filter='all', upcoming={},
-        postseason_only=False, team_query='', player_query='', stat_query='',
-        query_suffix='', sample_mode='current', saved_parlays=[],
-        slate_scope_label='Pre-Season Preview', refresh_meta=refresh_meta, selected_ticket_id=None,
-        current_user=current_user, sort_by='confidence', sort_dir='desc', model_debug=False,
-        handoff_context=build_parlay_handoff_context([]), parlay_sport_key=sport_key,
-        live_feed_sport_label=sport_label,
-        focus_mode_label='Top 25 Focus', regular_mode_label='Full Board',
-    )
+@app.route('/sports/ncaawb/props')
+@app.route('/sports/ncaawb/props/<filter_type>')
+def ncaawb_props_page(filter_type=None):
+    return _render_ncaab_unavailable('ncaawb', 'props')
 
 
 @app.route('/sports/ncaamb/market-edge')
 def ncaamb_market_edge_page():
-    return _render_college_hoops_market('ncaamb', "Men's College Hoops")
+    return _render_ncaab_unavailable('ncaamb', 'market')
 
 
 @app.route('/sports/ncaawb/market-edge')
 def ncaawb_market_edge_page():
-    return _render_college_hoops_market('ncaawb', "Women's College Hoops")
+    return _render_ncaab_unavailable('ncaawb', 'market')
 
 
 @app.route('/sports/ncaamb/trends')
 def ncaamb_trends_page():
-    return _render_college_hoops_trends('ncaamb', "Men's College Hoops")
+    return _render_ncaab_unavailable('ncaamb', 'trends')
 
 
 @app.route('/sports/ncaawb/trends')
 def ncaawb_trends_page():
-    return _render_college_hoops_trends('ncaawb', "Women's College Hoops")
+    return _render_ncaab_unavailable('ncaawb', 'trends')
 
 
 @app.route('/test-drive')
@@ -43370,12 +43296,10 @@ def parlay():
     parlay_sport_key = normalize_sport_access_key(request.args.get('sport', 'nba') or 'nba')
     if parlay_sport_key not in {'nba', 'wnba', 'mlb', 'nfl', 'ncaaf', 'ncaamb', 'ncaawb'}:
         parlay_sport_key = 'nba'
-    # College hoops is pre-season: render a CBB-themed blank parlay board instead of
+    # College hoops has no data pipeline: render the honest unavailable state instead of
     # falling through to the NBA runtime (which would load NBA props on a college page).
-    if parlay_sport_key == 'ncaamb':
-        return _render_college_hoops_parlay('ncaamb', "Men's College Hoops")
-    if parlay_sport_key == 'ncaawb':
-        return _render_college_hoops_parlay('ncaawb', "Women's College Hoops")
+    if parlay_sport_key in NCAAB_SPORT_KEYS:
+        return _render_ncaab_unavailable(parlay_sport_key, 'parlay')
     # Every other non-NBA sport builds from its own live prop board.
     if parlay_sport_key in PARLAY_SPORT_BOARD_LABELS:
         return _render_sport_parlay(parlay_sport_key, current_user=current_user, postseason_only=postseason_only)
