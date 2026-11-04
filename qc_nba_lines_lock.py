@@ -557,26 +557,36 @@ def qc_nba_daily():
     check("fetch_game_lines.py" in cmd and "--allow-reuse" in cmd and "--lock-wait-seconds" in cmd
           and "nba_daily" in cmd, "bk-daily's NBA lines step runs the shared publisher entry with reuse + bounded lock wait")
 
-    def drive(lines_rc, pub_outcome):
-        with tempfile.TemporaryDirectory() as td:
+    from services import run_receipts
+    from services.qc_run_receipts import props_receipt, receipt_sandbox, token_from
+
+    def drive(lines_rc, pub_outcome, write_own=True):
+        with tempfile.TemporaryDirectory() as td, receipt_sandbox():
             base = Path(td)
             (base / "data/tracking").mkdir(parents=True)
             (base / "data/props").mkdir(parents=True)
             saved = (nba.BASE_DIR, nba.PROPS_ARTIFACT, nba.subprocess.run)
             ran = []
 
-            def fake_run(command, timeout=None, **kw):
+            def fake_run(command, timeout=None, env=None, **kw):
                 joined = " ".join(map(str, command))
                 label = next(l for l, c, _ in nba.STEPS if next(x for x in c if str(x).endswith(".py")) in joined)
                 ran.append(label)
-                if label == "game_lines" and pub_outcome:
-                    (base / "data/tracking/_last_nba_lines_publish.json").write_text(
-                        json.dumps({"outcome": pub_outcome, "exit_code": lines_rc, "detail": "qc"}), encoding="utf-8")
                 if label == "game_lines":
+                    # what the real publisher writes: its OWN per-run receipt on every path (incl. 75 / 76);
+                    # the shared file is history only and is written here to prove it is never adopted.
+                    outcome = pub_outcome or {75: "SKIPPED_LOCKED", 76: "LOCK_UNAVAILABLE"}.get(lines_rc)
+                    (base / "data/tracking/_last_nba_lines_publish.json").write_text(
+                        json.dumps({"outcome": "UPDATED", "exit_code": 0, "detail": "qc-history"}), encoding="utf-8")
+                    if write_own and outcome:
+                        run_receipts.write(token_from(env), "lines",
+                                           {"outcome": outcome, "exit_code": lines_rc, "detail": "qc"})
                     return _Fake(lines_rc)
                 if label == "player_props":
                     (base / "data/tracking/_last_props_fetch_basketball_nba.json").write_text(
                         json.dumps({"events_found": 0}), encoding="utf-8")
+                    props_receipt(env, base, 1, base / "data/props/NBA_Props.csv", advanced=False)
+                    return _Fake(1)
                 return _Fake(0)
             nba.BASE_DIR, nba.PROPS_ARTIFACT = base, base / "data/props/NBA_Props.csv"
             nba.subprocess.run = fake_run
@@ -597,6 +607,10 @@ def qc_nba_daily():
           f"nba_daily: fresh REUSED_FRESH publisher receipt -> REUSED_FRESH, full chain runs (rc={rc})")
     rc, ran, outs, text = drive(76, None)
     check(rc != 0 and outs.get("game_lines") == "LOCK_UNAVAILABLE", "nba_daily: exit 76 -> LOCK_UNAVAILABLE (alerting)")
+    rc, ran, outs, text = drive(75, None, write_own=False)
+    check(rc != 0 and outs.get("game_lines") == "RUN_RECEIPT_MISSING" and "player_props" not in ran,
+          "nba_daily: exit 75 WITHOUT this run's own receipt -> RUN_RECEIPT_MISSING (exit code alone never "
+          f"classifies; the shared UPDATED history file is never adopted) ({outs.get('game_lines')})")
     rc, ran, outs, text = drive(0, "REUSED_FRESH_AFTER_LOCK")
     check(rc == 0 and outs.get("game_lines") == "REUSED_FRESH_AFTER_LOCK" and "player_props" in ran,
           f"nba_daily: REUSED_FRESH_AFTER_LOCK publisher receipt -> benign, full chain runs (rc={rc})")
@@ -611,6 +625,10 @@ def qc_nba_daily():
 
 
 def main() -> int:
+    # Receipt-identity contract: every publisher child writes its own per-run receipt; keep them in a qc_* temp
+    # dir (children inherit the env), never the checkout's runtime dir.
+    _rcpt = tempfile.mkdtemp(prefix="qc_runreceipts_")
+    os.environ["BK_NBA_RUN_RECEIPT_DIR"] = os.path.join(_rcpt, "receipts")
     for fn in (qc_in_process, qc_lock_unit, qc_reuse_rules, qc_nba_daily, qc_two_process,
                qc_wait_then_no_fresh, qc_location_enforcement):
         try:

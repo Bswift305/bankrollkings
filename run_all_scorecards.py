@@ -128,6 +128,11 @@ SCORECARDS = [
     # NBA writers, a real concurrent thread + process, and a rotated ledger cannot inflate it; missing header
     # -> UNAVAILABLE; remaining quota reported separately as an account-global snapshot. Offline, temp dirs.
     ("NBA Credit Attribution QC", "qc_nba_credit_attribution.py", 300),
+    # NBA receipt-identity contract (owner 2026-11-04): a governed NBA stage outcome comes ONLY from the stage's
+    # own per-run receipt (missing -> RUN_RECEIPT_MISSING, other token -> RUN_RECEIPT_MISMATCH); never a shared /
+    # tokenless / mtime-selected file. Behaviour (concurrency, killed writer, unsafe token, containment, retention)
+    # + static caller inventory. Offline, temp dirs.
+    ("NBA Run-Receipt Contract QC", "qc_nba_run_receipt_contract.py", 300),
     # Elite alert HISTORY (v5): exact "Historical alert" label, book/line only with an aware-UTC capture time +
     # recorded source, no action/price styling/ticket path; /elite/alerts/export obeys the same rule.
     ("Elite Alert History QC", "qc_elite_alert_history.py", 300),

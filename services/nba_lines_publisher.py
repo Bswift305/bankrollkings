@@ -203,21 +203,22 @@ def reuse_check(base_dir, outputs: dict, now: datetime | None = None,
                   f"{str(receipt.get('run_id'))[:8]} (within the {window_minutes}-min window)")
 
 
+_RUN_TOKEN: str | None = None   # this invocation's run token (services/run_receipts), set by publish()
+
+
 def _write_publish_receipt(base_dir, payload: dict) -> None:
-    # Only the lock holder calls this; atomic temp + replace. The replace retries a Windows sharing violation
-    # (another process -- e.g. the previous holder's parent classifying its stage -- reading the receipt at
-    # that instant); see services/receipt_io.py. Every receipt carries this stage run's token.
-    from services.receipt_io import current_stage_run_id, write_stage_run_copy, write_text_atomic
+    # 1. THIS run's own receipt (services/run_receipts): the ONLY source of the stage outcome for any caller.
+    # 2. The shared `_last_nba_lines_publish.json`: operational history only; atomic temp + replace with a
+    #    bounded retry on a Windows sharing violation.
+    from services import run_receipts
+    from services.receipt_io import write_text_atomic
+    if _RUN_TOKEN:
+        run_receipts.record(_RUN_TOKEN, "lines", payload, "NBA game lines")
     path = publish_receipt_path(base_dir)
-    text = json.dumps({**payload, "stage_run_id": current_stage_run_id()}, indent=2, default=str)
     try:
-        write_stage_run_copy(path, "lines", text)   # this run's own copy first (nothing else writes it)
+        write_text_atomic(path, json.dumps({**payload, "stage_run_id": _RUN_TOKEN}, indent=2, default=str))
     except OSError as exc:
-        print(f"[WARN] could not write this run's NBA lines publisher receipt copy: {exc}")
-    try:
-        write_text_atomic(path, text)
-    except OSError as exc:
-        print(f"[WARN] could not write the NBA lines publisher receipt: {exc}")
+        print(f"[WARN] could not write the NBA lines publisher history receipt: {exc}")
 
 
 def _fetch_outcome(base_dir, run_id_before, rc: int) -> str:
@@ -235,8 +236,14 @@ def _fetch_outcome(base_dir, run_id_before, rc: int) -> str:
 def publish(args, *, run_fetch, base_dir, outputs: dict, caller: str = "unspecified",
             allow_reuse: bool = False, lock_wait_seconds: float = 0.0,
             fetch_after_contention: bool = True) -> int:
-    """Run one governed NBA lines publish. Returns the process exit code (see the module state machine)."""
-    global _ACTIVE_LOCK
+    """Run one governed NBA lines publish. Returns the process exit code (see the module state machine).
+    Every invocation has a run token (the caller's, or its own when standalone) and writes its own per-run
+    receipt on every path, including SKIPPED_LOCKED / LOCK_UNAVAILABLE (best effort for the latter)."""
+    global _ACTIVE_LOCK, _RUN_TOKEN
+    from services import run_receipts
+    _RUN_TOKEN = run_receipts.begin("NBA game lines", caller)
+    if _RUN_TOKEN is None:
+        return EXIT_FAILED
     try:
         path, root, source = lock_spec()
         lock = ExclusiveLock(path, label=f"nba_game_lines:{caller}", root=root)
@@ -245,10 +252,18 @@ def publish(args, *, run_fetch, base_dir, outputs: dict, caller: str = "unspecif
     except LockUnavailable as exc:   # incl. LockPathRejected (containment / symlink / permissions)
         print(f"[{LOCK_UNAVAILABLE}] NBA game lines ({caller}): {exc}. No paid request made, nothing written.",
               flush=True)
+        run_receipts.record(_RUN_TOKEN, "lines", {"caller": caller, "outcome": LOCK_UNAVAILABLE,
+                                                  "exit_code": EXIT_LOCK_UNAVAILABLE, "paid_requests": 0,
+                                                  "detail": str(exc)}, "NBA game lines")
         return EXIT_LOCK_UNAVAILABLE
     if not got:
         print(f"[{SKIPPED_LOCKED}] NBA game lines ({caller}): another process holds {path} "
               f"(waited {lock.waited_seconds:.1f}s). No paid request made, nothing written.", flush=True)
+        run_receipts.record(_RUN_TOKEN, "lines", {"caller": caller, "outcome": SKIPPED_LOCKED,
+                                                  "exit_code": EXIT_LOCKED, "paid_requests": 0,
+                                                  "lock_waited_seconds": lock.waited_seconds,
+                                                  "detail": "another NBA lines publisher held the shared lock"},
+                            "NBA game lines")
         return EXIT_LOCKED
     _ACTIVE_LOCK = lock
     started = datetime.now(timezone.utc)

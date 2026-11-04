@@ -350,8 +350,10 @@ def qc_orchestration():
     check("data/odds/NBA_Odds.csv" in fpp.SPORT_EVENT_MANIFESTS.get("basketball_nba", []),
           "evidence: fetch_player_props' NBA eligible-event manifest is the game-lines file")
 
+    from services.qc_run_receipts import lines_receipt, props_receipt, receipt_sandbox
+
     def drive(lines_rc):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, receipt_sandbox():
             base = Path(td)
             (base / "data/tracking").mkdir(parents=True)
             (base / "data/props").mkdir(parents=True)
@@ -363,11 +365,17 @@ def qc_orchestration():
                 label = next(l for l, c, _ in nba.STEPS
                              if next(x for x in c if str(x).endswith(".py")) in joined)
                 ran.append(label)
+                # The faked children honour the receipt-identity contract: each writes ITS OWN per-run receipt
+                # (outcome from the real publisher mapping), else the stage reads RUN_RECEIPT_MISSING.
                 if label == "game_lines":
+                    lines_receipt(env, base, lines_rc, wrote_fetch_receipt=False)
                     return _Fake(lines_rc)
                 if label == "player_props":
                     (base / "data/tracking/_last_props_fetch_basketball_nba.json").write_text(json.dumps(
                         {"events_found": 0}), encoding="utf-8")
+                    # a real NO_ACTIVE_EVENTS props child exits 1 (benign only by its receipt)
+                    props_receipt(env, base, 1, nba.PROPS_ARTIFACT, advanced=False)
+                    return _Fake(1)
                 return _Fake(0)
 
             nba.BASE_DIR, nba.PROPS_ARTIFACT = base, base / "data/props/NBA_Props.csv"

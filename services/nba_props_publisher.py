@@ -96,18 +96,19 @@ def lines_odds_path(base_dir) -> Path:
     return Path(base_dir) / "data" / "odds" / "NBA_Odds.csv"
 
 
+_RUN_TOKEN: str | None = None   # this invocation's run token (services/run_receipts), set by publish()
+
+
 def _write_json(path: Path, payload: dict) -> None:
-    # Atomic temp + replace; the replace retries a Windows sharing violation and every receipt carries this
-    # stage run's token (services/receipt_io.py -- v5 race fix).
-    from services.receipt_io import current_stage_run_id, write_stage_run_copy, write_text_atomic
-    text = json.dumps({**payload, "stage_run_id": current_stage_run_id()}, indent=2, default=str)
-    if Path(path).name == "_last_nba_props_publish.json":   # publisher receipt: also this run's own copy
-        try:
-            write_stage_run_copy(path, "props", text)
-        except OSError as exc:
-            print(f"[WARN] could not write this run's NBA props publisher receipt copy: {exc}")
+    # The publisher receipt goes FIRST to this run's own receipt (services/run_receipts) -- the only source of
+    # the stage outcome -- then to the shared history file. Atomic temp + replace with a bounded retry on a
+    # Windows sharing violation; every file carries this run's token.
+    from services import run_receipts
+    from services.receipt_io import write_text_atomic
+    if _RUN_TOKEN and Path(path).name == "_last_nba_props_publish.json":
+        run_receipts.record(_RUN_TOKEN, "props", payload, "NBA player props")
     try:
-        write_text_atomic(path, text)
+        write_text_atomic(path, json.dumps({**payload, "stage_run_id": _RUN_TOKEN}, indent=2, default=str))
     except OSError as exc:
         print(f"[WARN] could not write {path.name}: {exc}")
 
@@ -148,8 +149,14 @@ def lines_prerequisite(base_dir, now: datetime | None = None) -> tuple[bool, str
 
 def publish(args, *, run_fetch, base_dir, output, caller: str = "unspecified", allow_reuse: bool = False,
             lock_wait_seconds: float = 0.0, fetch_after_contention: bool = True) -> int:
-    """Run one governed NBA props publish. Returns the process exit code (module state machine)."""
-    global _ACTIVE_LOCK
+    """Run one governed NBA props publish. Returns the process exit code (module state machine). Every
+    invocation has a run token (the caller's, or its own when standalone) and writes its own per-run receipt on
+    every path, including SKIPPED_LOCKED / LOCK_UNAVAILABLE (best effort for the latter)."""
+    global _ACTIVE_LOCK, _RUN_TOKEN
+    from services import run_receipts
+    _RUN_TOKEN = run_receipts.begin("NBA player props", caller)
+    if _RUN_TOKEN is None:
+        return EXIT_FAILED
     output = Path(output)
     try:
         path, root, source = lock_spec()
@@ -158,10 +165,18 @@ def publish(args, *, run_fetch, base_dir, output, caller: str = "unspecified", a
     except LockUnavailable as exc:
         print(f"[{LOCK_UNAVAILABLE}] NBA player props ({caller}): {exc}. No paid request made, nothing written.",
               flush=True)
+        run_receipts.record(_RUN_TOKEN, "props", {"caller": caller, "outcome": LOCK_UNAVAILABLE,
+                                                  "exit_code": EXIT_LOCK_UNAVAILABLE, "paid_requests": 0,
+                                                  "detail": str(exc)}, "NBA player props")
         return EXIT_LOCK_UNAVAILABLE
     if not got:
         print(f"[{SKIPPED_LOCKED}] NBA player props ({caller}): another process holds {path} "
               f"(waited {lock.waited_seconds:.1f}s). No paid request made, nothing written.", flush=True)
+        run_receipts.record(_RUN_TOKEN, "props", {"caller": caller, "outcome": SKIPPED_LOCKED,
+                                                  "exit_code": EXIT_LOCKED, "paid_requests": 0,
+                                                  "lock_waited_seconds": lock.waited_seconds,
+                                                  "detail": "another NBA props publisher held the props lock"},
+                            "NBA player props")
         return EXIT_LOCKED
     _ACTIVE_LOCK = lock
     started = datetime.now(timezone.utc)

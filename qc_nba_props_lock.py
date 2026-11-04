@@ -462,22 +462,31 @@ def qc_nba_daily():
     check(labels.index("game_lines") < labels.index("player_props"), "props run AFTER lines in bk-daily")
 
     def drive(props_rc, pub_outcome):
-        with tempfile.TemporaryDirectory() as td:
+        from services import run_receipts
+        from services.qc_run_receipts import lines_receipt, receipt_sandbox, token_from
+        with tempfile.TemporaryDirectory() as td, receipt_sandbox():
             base = Path(td)
             (base / "data/tracking").mkdir(parents=True)
             (base / "data/props").mkdir(parents=True)
             saved = (nba.BASE_DIR, nba.PROPS_ARTIFACT, nba.subprocess.run)
 
-            def fake_run(command, timeout=None, **kw):
+            def fake_run(command, timeout=None, env=None, **kw):
                 joined = " ".join(map(str, command))
                 label = next(l for l, c, _ in nba.STEPS if next(x for x in c if str(x).endswith(".py")) in joined)
+                if label == "game_lines":
+                    lines_receipt(env, base, 0, wrote_fetch_receipt=False)
+                    return _Fake(0)
                 if label == "player_props":
                     (base / "data/tracking/_last_props_fetch_basketball_nba.json").write_text(
                         json.dumps({"events_found": 3, "rows_fetched": 0, "provider_error_count": 0,
                                     "markets_present_anywhere": ["player_points"]}), encoding="utf-8")
-                    if pub_outcome:
-                        (base / "data/tracking/_last_nba_props_publish.json").write_text(
-                            json.dumps({"outcome": pub_outcome, "detail": "qc"}), encoding="utf-8")
+                    # the shared history file says something else: it must never be adopted
+                    (base / "data/tracking/_last_nba_props_publish.json").write_text(
+                        json.dumps({"outcome": "UPDATED", "detail": "qc-history"}), encoding="utf-8")
+                    outcome = pub_outcome or {75: "SKIPPED_LOCKED", 76: "LOCK_UNAVAILABLE"}.get(props_rc)
+                    if outcome:
+                        run_receipts.write(token_from(env), "props", {"outcome": outcome, "exit_code": props_rc,
+                                                                      "detail": "qc"})
                     return _Fake(props_rc)
                 return _Fake(0)
             nba.BASE_DIR, nba.PROPS_ARTIFACT = base, base / "data/props/NBA_Props.csv"
@@ -494,7 +503,8 @@ def qc_nba_daily():
                                         (0, "REUSED_FRESH", "REUSED_FRESH", True),
                                         (0, "REUSED_FRESH_AFTER_LOCK", "REUSED_FRESH_AFTER_LOCK", True),
                                         (1, "NO_FRESH_AFTER_LOCK", "NO_FRESH_AFTER_LOCK", False),
-                                        (1, "SKIPPED_BLOCKED_BY_LINES", "SKIPPED_BLOCKED_BY_LINES", False)):
+                                        (1, "SKIPPED_BLOCKED_BY_LINES", "SKIPPED_BLOCKED_BY_LINES", False),
+                                        (1, "", "RUN_RECEIPT_MISSING", False)):
         rc, got = drive(props_rc, pub)
         check(got == want and (rc == 0) is benign and ro.is_alerting(got) is (not benign),
               f"nba_daily props step: exit {props_rc}{' + receipt ' + pub if pub else ''} -> {got} "
@@ -502,6 +512,10 @@ def qc_nba_daily():
 
 
 def main() -> int:
+    # Receipt-identity contract: every publisher child writes its own per-run receipt; keep them in a qc_* temp
+    # dir (children inherit the env), never the checkout's runtime dir.
+    _rcpt = tempfile.mkdtemp(prefix="qc_runreceipts_")
+    os.environ["BK_NBA_RUN_RECEIPT_DIR"] = os.path.join(_rcpt, "receipts")
     for fn in (qc_in_process, qc_nba_daily, qc_lines_prerequisite, qc_contention_reuse_crash, qc_failed_holder,
                qc_location_and_separation):
         try:
