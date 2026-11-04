@@ -20,6 +20,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from services.run_outcomes import BENIGN_LINES_NONPUBLISH
+
 BASE_DIR = Path(__file__).parent.resolve()
 
 # (label, command, timeout, Odds API sport key whose fetch receipt proves the outcome)
@@ -28,11 +30,12 @@ STEPS = [
     ("WNBA game lines", [sys.executable, "fetch_wnba_game_lines.py", "--days", "5"], 240, "basketball_wnba"),
 ]
 
-# The ONLY benign non-zero exit: the provider answered with zero events in the window (off-season),
-# proven by a receipt written by THIS run. Exit code 1 alone cannot distinguish that from a provider
-# error, a validation reject, a cost-receipt failure or a publish failure -- so without that proof a
-# non-zero exit is a FAILURE, never "OK" (2026-11 correction).
-BENIGN_RECEIPT_OUTCOMES = frozenset({"NO_ACTIVE_EVENTS"})
+# The ONLY benign non-zero exits: a proven no-event / no-game window, proven by a receipt written by THIS
+# run (services.run_outcomes.BENIGN_LINES_NONPUBLISH = NO_ACTIVE_EVENTS, NO_GAMES_SCHEDULED). Exit code 1
+# alone cannot distinguish that from a provider error, a validation reject, a cost-receipt failure, a
+# publish failure or SCHEDULE_UNAVAILABLE (provider empty, no authoritative schedule) -- so without that
+# proof a non-zero exit is a FAILURE, never "OK" (2026-11 correction).
+BENIGN_RECEIPT_OUTCOMES = BENIGN_LINES_NONPUBLISH
 
 
 def _receipt_path(sport: str) -> Path:
@@ -47,9 +50,7 @@ def _mtime(path: Path) -> float:
 
 
 def classify_step(returncode: int, sport: str, receipt_mtime_before: float) -> tuple[str, str]:
-    """Return (status, detail) with status in {OK, SKIPPED_NO_ACTIVE_EVENTS, FAILED}."""
-    if returncode == 0:
-        return "OK", "published"
+    """Return (status, detail) with status in {OK, SKIPPED_<benign outcome>, FAILED}."""
     path = _receipt_path(sport)
     fresh = _mtime(path) > receipt_mtime_before
     receipt = None
@@ -58,9 +59,13 @@ def classify_step(returncode: int, sport: str, receipt_mtime_before: float) -> t
             receipt = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             receipt = None
+    if returncode == 0:
+        if receipt is not None and receipt.get("outcome") not in (None, "UPDATED"):
+            return "FAILED", f"exit 0 but this run's receipt says outcome={receipt.get('outcome')}"
+        return "OK", "published"
     if returncode == 1 and receipt and receipt.get("exit_code") == 1 \
             and receipt.get("outcome") in BENIGN_RECEIPT_OUTCOMES:
-        return "SKIPPED_NO_ACTIVE_EVENTS", "provider returned zero events (proven by this run's receipt)"
+        return f"SKIPPED_{receipt.get('outcome')}", (f"{receipt.get('outcome')} (proven by this run's receipt)")
     if receipt:
         return "FAILED", f"exit {returncode}, outcome={receipt.get('outcome')}"
     return "FAILED", f"exit {returncode}, no fresh receipt proving a benign cause"
@@ -90,7 +95,7 @@ def main() -> int:
         if status == "FAILED":
             failures.append((label, detail))
             print(f"FAILED: {detail}")
-        elif status == "SKIPPED_NO_ACTIVE_EVENTS":
+        elif status.startswith("SKIPPED_"):
             print(f"SKIPPED (benign): {detail}")
         else:
             print("OK")

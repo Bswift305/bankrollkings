@@ -50,6 +50,31 @@ unparseable, ambiguous (fall-back fold) or nonexistent (spring-forward gap) time
 (`PRIOR_BASELINE_INVALID`). After the first successful publish the prior carries provider UTC and the
 bridge is no longer used.
 
+## Governed no-game result
+
+An empty provider response alone is **never** proof that there are no NBA games. The decision belongs to
+an authoritative schedule that is independent of the odds provider (`services/nba_schedule_authority.py`):
+
+| Schedule verdict (checked **before** any paid call) | Provider | Outcome |
+|---|---|---|
+| fresh authoritative source says zero games for the governed Eastern service date | not called | `NO_GAMES_SCHEDULED` (benign, zero credits) |
+| games expected | zero events | `VALIDATION_FAILED` / `PROVIDER_ZERO_EVENTS_GAMES_EXPECTED` (fail closed) |
+| missing / stale / ambiguous / circular | zero events | `SCHEDULE_UNAVAILABLE` (alerting, fail closed) |
+
+**Audit result: no authoritative independent NBA schedule source exists** (file:line detail in the module
+docstring). `NBA_Schedule.csv` is written by this same fetch (schedule alias), `load_schedule` returns the
+`NBA_Odds`-derived frame while `BK_NBA_STATS_ENABLED` is off, `fetch_schedule.py` (nba_api) is gated,
+dev-only (batch files, not `run_daily.py`), falls back to `NBA_Odds.csv` and uses a naive service date, and
+the Odds API `/events` listing is the same provider. So `AUTHORITATIVE_SOURCES` is empty, the verdict is
+always `SCHEDULE_UNAVAILABLE`, and **no code path emits `NO_GAMES_SCHEDULED`**. An NBA provider-empty answer
+is recorded as `SCHEDULE_UNAVAILABLE` (exit 1, files untouched, verdict stored in the receipt);
+`refresh_nba_daily` and `refresh_line_movement_snapshots` classify it as a failure, never `OK`.
+
+Needed before `NO_GAMES_SCHEDULED` may exist: a licensed, provider-independent NBA season schedule with
+provider game ids, UTC tip times, `fetched_at` + source provenance and an explicit Eastern service date,
+refreshed on prod through `run_daily.py`, with a freshness bound and its own QC. QC:
+`qc_nba_no_game_governance.py`.
+
 ## Required before any stronger coverage rule
 
 A per-event book minimum or a book-retention ratio must **not** be added from intuition. A read-only

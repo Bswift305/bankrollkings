@@ -19,6 +19,21 @@ The vocabulary (one honest state per child):
   SKIPPED_BLOCKED_BY_LINES  not run: it needs fresh game lines and the lines
                      step failed this run (honest skip, never success)       ALERTING
 
+Game-lines governance (2026-11, docs/game_lines_event_contract.md "Governed no-game result" and
+"Single publisher + lock"):
+  NO_GAMES_SCHEDULED a FRESH, AUTHORITATIVE, INDEPENDENT schedule affirmatively
+                     says zero games for the governed Eastern service date;
+                     decided BEFORE any paid call (zero credits)             benign
+  SCHEDULE_UNAVAILABLE the provider returned zero events and no fresh
+                     authoritative independent schedule can confirm a no-game
+                     day (missing / stale / ambiguous / circular source):
+                     fail closed, never an invented no-game result           ALERTING
+  SKIPPED_LOCKED     another process holds the shared NBA game-lines publisher
+                     lock; this run made no paid request and wrote nothing   ALERTING
+  REUSED_FRESH       the other lines job published a receipt-verified lines
+                     file inside the reuse window; reused, no paid request   benign
+An outcome in NEITHER set is unknown and is treated as alerting by is_alerting (fail closed).
+
 Pure: stdlib only, no pandas, no app import -- safe to import from any refresh script.
 """
 from __future__ import annotations
@@ -35,13 +50,24 @@ PROVIDER_ERROR = "PROVIDER_ERROR"
 STALE = "STALE"
 SKIP = "SKIP"
 SKIPPED_BLOCKED_BY_LINES = "SKIPPED_BLOCKED_BY_LINES"
+NO_GAMES_SCHEDULED = "NO_GAMES_SCHEDULED"
+SCHEDULE_UNAVAILABLE = "SCHEDULE_UNAVAILABLE"
+SKIPPED_LOCKED = "SKIPPED_LOCKED"
+REUSED_FRESH = "REUSED_FRESH"
 
-BENIGN = frozenset({UPDATED, NO_ACTIVE_EVENTS, NO_MARKETS_POSTED, SKIP})
-ALERTING = frozenset({VALIDATION_FAILED, PROVIDER_ERROR, STALE, SKIPPED_BLOCKED_BY_LINES})
+BENIGN = frozenset({UPDATED, NO_ACTIVE_EVENTS, NO_MARKETS_POSTED, SKIP, NO_GAMES_SCHEDULED, REUSED_FRESH})
+ALERTING = frozenset({VALIDATION_FAILED, PROVIDER_ERROR, STALE, SKIPPED_BLOCKED_BY_LINES,
+                      SCHEDULE_UNAVAILABLE, SKIPPED_LOCKED})
+
+# Game-lines receipt outcomes that prove a benign NON-publish (nothing to fetch). Exit code alone can never
+# prove one; a receipt written by THIS run must. SCHEDULE_UNAVAILABLE is deliberately absent.
+BENIGN_LINES_NONPUBLISH = frozenset({NO_ACTIVE_EVENTS, NO_GAMES_SCHEDULED})
 
 
 def is_alerting(outcome: str) -> bool:
-    return outcome in ALERTING
+    # Fail closed: only an outcome explicitly declared BENIGN is non-alerting. An unknown string (a new
+    # child vocabulary word nobody classified) must never read as a clean run.
+    return outcome not in BENIGN
 
 
 def load_shape_receipt(base_dir: Path, sport_slug: str) -> dict | None:
