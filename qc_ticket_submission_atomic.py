@@ -97,7 +97,7 @@ POOL = VALID + [lg for lg, _c in BAD.values()]
 def wire(leg, **extra):
     """What the browser sends: identity + display fields (+ a canary in non-identity fields)."""
     w = {'sport': leg['sport'], 'label': leg['label'], 'game': leg['game'], 'tier': leg['tier'],
-         'price': leg.get('price') if leg.get('price') is not None else -110,
+         'price': leg.get('price') if leg.get('price') is not None else -110,  # synthetic-fixture
          'reason': f'{CANARY} reason', 'note': CANARY}
     w.update(extra)
     return w
@@ -289,7 +289,7 @@ SGP_AWAY, SGP_HOME = 'Atomic Away Hawks', 'Atomic Home Bears'
 SGP_GAME = f'{SGP_AWAY}@{SGP_HOME}'
 
 
-def _sgp_leg(i, kickoff=LATE, upd_h=0.5, book='SynBook', price=-110):
+def _sgp_leg(i, kickoff=LATE, upd_h=0.5, book='SynBook', price=-110):  # synthetic-fixture
     ts = iso(NOW - timedelta(hours=upd_h))
     lg = {'kind': 'player', 'category': 'Receiving', 'player': f'Sgp Player {i}', 'team': 'BEARS',
           'position': None, 'stat': 'Rec Yds', 'direction': 'OVER', 'line': 40.5 + i, 'price': price,
