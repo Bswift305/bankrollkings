@@ -1,0 +1,33 @@
+[Unit]
+Description=Bankroll Kings - NBA game lines every 4h (shared publisher + lock; 1 /odds call = 3 credits)
+After=network-online.target
+Wants=network-online.target
+
+# NOT installed or enabled by the repo. Install (source of record: ops/), via SSM as root, AFTER the
+# branch is merged and deployed to /opt/bankrollkings:
+#   sudo install -d -o ubuntu -g ubuntu -m 755 /opt/bankrollkings-runtime/locks
+#     (the shared lock dir; if BK_RUNTIME_DIR is set in /opt/bankrollkings/.env the lock lives at
+#      $BK_RUNTIME_DIR/locks/ instead -- create that one, owned by ubuntu. bk-daily reads the same .env,
+#      so both jobs always resolve the SAME lock path; never set BK_NBA_LINES_LOCK_PATH on prod.)
+#   sudo cp ops/bk-nba-lines.service /etc/systemd/system/bk-nba-lines.service
+#   sudo cp ops/bk-nba-lines.timer   /etc/systemd/system/bk-nba-lines.timer
+#   sudo systemctl daemon-reload && sudo systemctl enable --now bk-nba-lines.timer
+# One-shot first run + verify (spends 3 Odds API credits):
+#   sudo systemctl start bk-nba-lines.service
+#   journalctl -u bk-nba-lines.service -n 40 --no-pager
+#   cat /opt/bankrollkings/data/tracking/_last_nba_lines_publish.json
+# Remove:  sudo systemctl disable --now bk-nba-lines.timer && sudo rm /etc/systemd/system/bk-nba-lines.*
+#
+# The script is a Python entrypoint in the checkout (Python reads it whole at start, so a mid-run git pull
+# cannot corrupt the running job the way it can a bash script).
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/bankrollkings
+EnvironmentFile=/opt/bankrollkings/.env
+ExecStart=/opt/bankrollkings/venv/bin/python refresh_nba_lines.py
+# Lock wait is zero for this job, the fetch itself is one HTTP call; 5 min is generous.
+TimeoutStartSec=300
+# Exit codes are honest and NOT masked: 1 = failed publish, 75 = SKIPPED_LOCKED (bk-daily or a manual run
+# held the lock), 76 = LOCK_UNAVAILABLE. Each marks the unit failed so it is visible; the timer keeps firing.
