@@ -267,10 +267,10 @@ EVENT = {"id": "evt1", "home_team": "Home Team", "away_team": "Away Team",
 def fake_lines_json(url):
     return [{**EVENT, "bookmakers": [{"key": "draftkings", "title": "DraftKings", "last_update": "2099-01-01T00:00:00Z",
              "markets": [{"key": "h2h", "outcomes": [{"name": "Home Team", "price": -150}, {"name": "Away Team", "price": 130}]},
-                         {"key": "spreads", "outcomes": [{"name": "Home Team", "point": -3.5, "price": -110},
-                                                         {"name": "Away Team", "point": 3.5, "price": -110}]},
-                         {"key": "totals", "outcomes": [{"name": "Over", "point": 160.5, "price": -110},
-                                                        {"name": "Under", "point": 160.5, "price": -110}]}]}]}]
+                         {"key": "spreads", "outcomes": [{"name": "Home Team", "point": -3.5, "price": -112},
+                                                         {"name": "Away Team", "point": 3.5, "price": -112}]},
+                         {"key": "totals", "outcomes": [{"name": "Over", "point": 160.5, "price": -112},
+                                                        {"name": "Under", "point": 160.5, "price": -112}]}]}]}]
 
 
 def fake_props_json(url):
@@ -278,8 +278,8 @@ def fake_props_json(url):
         return [dict(EVENT)]
     outs = []
     for i in range(6):
-        outs += [{"name": "Over", "description": f"Player {i}", "point": 10.5 + i, "price": -110},
-                 {"name": "Under", "description": f"Player {i}", "point": 10.5 + i, "price": -110}]
+        outs += [{"name": "Over", "description": f"Player {i}", "point": 10.5 + i, "price": -112},
+                 {"name": "Under", "description": f"Player {i}", "point": 10.5 + i, "price": -108}]
     return {"bookmakers": [{"key": "draftkings", "title": "DraftKings", "last_update": "2099-01-01T00:00:00Z",
                             "markets": [{"key": "player_points", "last_update": "2099-01-01T00:00:00Z",
                                          "outcomes": outs}]}]}
