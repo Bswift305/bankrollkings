@@ -70,6 +70,16 @@ always `SCHEDULE_UNAVAILABLE`, and **no code path emits `NO_GAMES_SCHEDULED`**. 
 is recorded as `SCHEDULE_UNAVAILABLE` (exit 1, files untouched, verdict stored in the receipt);
 `refresh_nba_daily` and `refresh_line_movement_snapshots` classify it as a failure, never `OK`.
 
+### Timer-enablement blocker
+
+**TIMER-ENABLEMENT BLOCKER:** the proposed 4-hourly NBA lines timer (`ops/bk-nba-lines.timer`,
+`OnCalendar=*-*-* 00/4:15:00` -> 00:15, 04:15, 08:15, 12:15, 16:15, 20:15 UTC; the 12:15 run leaves 45 min
+before bk-daily's 13:00 UTC start) **cannot be enabled** until an independent, legally approved NBA
+schedule source, or another reviewed no-game contract, exists. Until then every provider-empty answer
+(including a genuine no-game day) is `SCHEDULE_UNAVAILABLE`, and a 4h timer would raise that alert six
+times on every off-day. The `SCHEDULE_UNAVAILABLE` fail-closed behaviour is accepted in code and must
+**never** be replaced by a fabricated `NO_GAMES_SCHEDULED`. The unit files stay in `ops/`, uninstalled.
+
 Needed before `NO_GAMES_SCHEDULED` may exist: a licensed, provider-independent NBA season schedule with
 provider game ids, UTC tip times, `fetched_at` + source provenance and an explicit Eastern service date,
 refreshed on prod through `run_daily.py`, with a freshness bound and its own QC. QC:
