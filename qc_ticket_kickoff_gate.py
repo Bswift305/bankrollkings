@@ -359,7 +359,9 @@ def surface_checks(fx_label=''):
         CLOCK['now'] = PRE
         held = app.build_daily_cards(sizes=[3], risk='safe', legs='all', timeframe='week')['cards'][0]['legs']
         CLOCK['now'] = POST
-        body = [dict(sport=l['sport'], label=l['label'], game=l['game'], tier=l['tier'], price=l['price']) for l in held]
+        # each leg carries the quote terms the user confirmed (quote-change atomicity)
+        body = [dict(sport=l['sport'], label=l['label'], game=l['game'], tier=l['tier'], **app.ticket_quote_terms(l))
+                for l in held]
         calls['n'] = 0
         captured.clear()
         r = c.post('/tools/daily-card.png', json={'legs': body}, headers={'X-CSRFToken': token})
@@ -371,8 +373,10 @@ def surface_checks(fx_label=''):
                                      == [EARLY_LABEL],
                                      f'HTTP {r.status_code}, rendered={bool(captured)}, {j.get("message")}')
         clean = [b for b in body if b['label'] != EARLY_LABEL]
-        clean += [dict(sport='NFL', label=f'{PLAYERS[5]} Receiving Yards 40.5+', game='G5A @ G5H', tier='floor',
-                       price=-155)]
+        _lab5 = f'{PLAYERS[5]} Receiving Yards 40.5+'
+        _fl, _sw = app._card_pools('all', now=POST)
+        _src5 = next(l for l in _fl + _sw if l.get('label') == _lab5)     # the terms the user saw for it
+        clean += [dict(sport='NFL', label=_lab5, game='G5A @ G5H', tier='floor', **app.ticket_quote_terms(_src5))]
         calls['n'] = 0
         captured.clear()
         r = c.post('/tools/daily-card.png', json={'legs': clean}, headers={'X-CSRFToken': token})

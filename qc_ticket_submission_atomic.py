@@ -15,7 +15,8 @@ Contract under test (synthetic pools, frozen server clock, renderer patched, not
     * three valid + one invalid never becomes a three-leg image (renderer never called, no bytes)
     * no image / file created on rejection (temp DATA_DIR + the repo cache dir are unchanged)
     * the corrected all-valid resubmission -> 200 image/png with exactly the submitted legs, in order,
-      priced from the server quote
+      priced from the server quote (each leg carries the quote terms the user confirmed; a forged price is
+      rejected 409 quote_changed -- qc_ticket_quote_change.py owns that contract)
     * logs + stdout/stderr carry no raw payload / canary (sanitized counts + reason codes only)
   GET /tools/daily-card.png -- takes no client legs: forged leg/selection params never reach the image
   SGP Workbench export / handoff (/tools/sgp-workbench) -- the same atomic rule: any non-executable leg
@@ -95,10 +96,15 @@ POOL = VALID + [lg for lg, _c in BAD.values()]
 
 
 def wire(leg, **extra):
-    """What the browser sends: identity + display fields (+ a canary in non-identity fields)."""
+    """What the browser sends: identity + display fields (+ a canary in non-identity fields) + the quote
+    terms the user confirmed (book / event / market / selection / line / price, exactly as rendered)."""
     w = {'sport': leg['sport'], 'label': leg['label'], 'game': leg['game'], 'tier': leg['tier'],
-         'price': leg.get('price') if leg.get('price') is not None else -110,  # synthetic-fixture
          'reason': f'{CANARY} reason', 'note': CANARY}
+    terms = app.ticket_quote_terms(leg)
+    if terms:
+        w.update(terms)
+    else:
+        w['price'] = -110  # synthetic-fixture
     w.update(extra)
     return w
 
@@ -256,9 +262,16 @@ def check_image(rec, client, fx):
     rec(bool(re.search(r'reasons=[A-Z_:0-9,]+', log_text)),
         'LOG: the rejection line carries reason codes only')
 
-    # 3. corrected all-valid resubmission -> 200 image/png with EXACTLY the submitted legs
+    # 3. a forged +900 is REJECTED whole (409 quote_changed), never repriced; then the corrected all-valid
+    #    resubmission -> 200 image/png with EXACTLY the submitted legs
     n0 = len(fx.renders)
-    sub = [wire(l, price=900) for l in VALID]
+    r = post(client, {'legs': [wire(l, price=900) for l in VALID]})
+    j = r.get_json(silent=True) or {}
+    rec(r.status_code == 409 and j.get('error') == 'quote_changed' and len(fx.renders) == n0
+        and all('PRICE_CHANGED' in e.get('reasons', []) for e in j.get('legs') or []),
+        f'IMG forged price: a forged +900 on every leg -> 409 quote_changed, nothing rendered (HTTP {r.status_code})')
+    n0 = len(fx.renders)
+    sub = [wire(l) for l in VALID]
     r = post(client, {'legs': sub})
     card = fx.renders[-1] if len(fx.renders) == n0 + 1 else {}
     got = [l.get('label') for l in card.get('legs', [])]
@@ -267,7 +280,7 @@ def check_image(rec, client, fx):
         f'IMG corrected: all-valid 4-leg resubmission -> 200 image/png with exactly the 4 submitted legs in order '
         f'(HTTP {r.status_code}, {got})')
     rec([l.get('price') for l in card.get('legs', [])] == [l['price'] for l in VALID],
-        'IMG corrected: prices are the server quote, never the client number (+900 ignored)')
+        'IMG corrected: prices are the server quote (the confirmed terms only confirm, never price)')
     r2 = post(client, {'legs': [wire(l) for l in VALID[:2]]})
     rec(r2.status_code == 200 and r2.mimetype == 'image/png' and len(fx.renders[-1].get('legs', [])) == 2,
         f'IMG corrected: a 2-leg editor ticket (editor MIN) renders exactly 2 legs (HTTP {r2.status_code})')
@@ -330,9 +343,16 @@ class SgpFixture:
             setattr(app, n, v)
 
 
+def sgp_conf(ids):
+    """{id: price} the user confirmed when adding each leg (quote-change atomicity)."""
+    every = SGP_VALID + [b for b, _c in SGP_BAD.values()]
+    return {lg['id']: lg['price'] for lg in every if lg['id'] in ids and lg['price'] is not None}
+
+
 def sgp_page(client, ids):
     r = client.get('/tools/sgp-workbench?' + urlencode([('game', SGP_GAME), ('thesis', 'custom')]
-                                                         + [('sel', i) for i in ids]))
+                                                         + [('sel', i) for i in ids]
+                                                         + [('cf', f'{i}~{p:+d}') for i, p in sgp_conf(ids).items()]))
     return r.status_code, r.get_data(as_text=True)
 
 
@@ -342,7 +362,8 @@ def check_sgp(rec, client):
         v3 = [lg['id'] for lg in SGP_VALID[:3]]
         for kind, (bad, code) in SGP_BAD.items():
             ids = v3 + [bad['id']]
-            ctx = app.build_sgp_workbench_context(game=SGP_GAME, selected_ids=ids, thesis='custom')
+            ctx = app.build_sgp_workbench_context(game=SGP_GAME, selected_ids=ids, thesis='custom',
+                                                  confirmed=sgp_conf(ids))
             h = ctx.get('handoff') or {}
             bl = h.get('legs') or []
             rec(h.get('status') == 'rejected' and [b.get('id') for b in bl] == [bad['id']]
@@ -355,13 +376,15 @@ def check_sgp(rec, client):
                 and f'data-sgp-blocked="{bad["id"]}"' in un and code in un,
                 f'SGP {kind}: rendered page shows the per-leg reason and NO full-fidelity export copy (HTTP {code_})')
         ids = v3 + ['not-a-real|leg|id']
-        ctx = app.build_sgp_workbench_context(game=SGP_GAME, selected_ids=ids, thesis='custom')
+        ctx = app.build_sgp_workbench_context(game=SGP_GAME, selected_ids=ids, thesis='custom',
+                                              confirmed=sgp_conf(ids))
         h = ctx.get('handoff') or {}
         rec(h.get('status') == 'rejected' and [b.get('reasons') for b in h.get('legs') or []] == [['NOT_ON_BOARD']]
             and [u['id'] for u in ctx['unresolved_selected']] == ['not-a-real|leg|id'],
             'SGP malformed id: an unknown leg id is listed NOT_ON_BOARD and blocks export (never dropped)')
         ids = [lg['id'] for lg in SGP_VALID]
-        ctx = app.build_sgp_workbench_context(game=SGP_GAME, selected_ids=ids, thesis='custom')
+        ctx = app.build_sgp_workbench_context(game=SGP_GAME, selected_ids=ids, thesis='custom',
+                                              confirmed=sgp_conf(ids))
         rec((ctx.get('handoff') or {}).get('status') == 'held' and ctx['ticket_gate']['executable'],
             'SGP corrected: the all-valid 4-leg ticket is exportable (handoff held with full-fidelity copy)')
         code_, page = sgp_page(client, ids)

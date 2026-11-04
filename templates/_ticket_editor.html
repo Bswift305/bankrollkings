@@ -11,8 +11,8 @@
   <button type="button" class="dc-save dc-saveimg">&#8681; Download image</button>
   <button type="button" class="dc-save dc-reroll" style="margin-left:7px;">&#8635; Reroll</button>
   {% if c.removed_started %}<div class="dc-kickoff-note" role="note"><b>{{ c.removed_started|length }} leg{{ '' if c.removed_started|length == 1 else 's' }} removed &mdash; game started</b> ({{ c.removed_started|join(', ') }}). This ticket was rebuilt from games that have not kicked off.</div>{% endif %}
-  {% for l in c.legs %}
-  <div class="dc-leg" data-game="{{ l.game }}" data-price="{{ l.price }}" data-tier="{{ l.tier }}" data-sport="{{ l.sport }}" data-reason="{{ l.reason }}" data-label="{{ l.label }}" data-kickoff="{{ l.kickoff_utc or '' }}">
+  {% for l in c.legs %}{% set qt = ticket_quote_terms(l) or {} %}
+  <div class="dc-leg" data-game="{{ l.game }}" data-price="{{ l.price }}" data-tier="{{ l.tier }}" data-sport="{{ l.sport }}" data-reason="{{ l.reason }}" data-label="{{ l.label }}" data-kickoff="{{ l.kickoff_utc or '' }}" data-book="{{ qt.book if qt.book is not none else '' }}" data-event="{{ qt.event if qt.event is not none else '' }}" data-market="{{ qt.market if qt.market is not none else '' }}" data-selection="{{ qt.selection if qt.selection is not none else '' }}" data-line="{{ qt.line if qt.line is not none else '' }}" data-qprice="{{ qt.price if qt.price is not none else '' }}">
     <span class="dc-tag {{ l.tier }}">{{ 'SWING' if l.tier in ['swing','edge'] else 'FLOOR' }}</span>
     <span class="bd">
       <span class="tp">{{ l.label }} <span class="dc-sp">{{ l.sport }}</span></span>
@@ -47,7 +47,8 @@
 
 <style>.dc-kickoff-note{margin:8px 0 2px;font-size:12px;color:var(--text-muted);border-left:3px solid #d9a441;padding:4px 8px;}
 .dc-leg.dc-started{opacity:.55;}.dc-leg.dc-started .pr{color:#d9a441;}
-.dc-leg.dc-blocked{outline:1px solid #d9a441;outline-offset:2px;}.dc-blockednote{display:block;font-size:11.5px;color:#d9a441;margin-top:2px;}</style>
+.dc-leg.dc-blocked{outline:1px solid #d9a441;outline-offset:2px;}.dc-blockednote{display:block;font-size:11.5px;color:#d9a441;margin-top:2px;}
+.dc-terms{display:block;font-size:11.5px;margin-top:2px;}.dc-confirm{margin-top:3px;font-size:11.5px;padding:2px 8px;cursor:pointer;}</style>
 <script id="dc-bench" type="application/json">{{ bench|tojson }}</script>
 <script>
 (function(){
@@ -82,6 +83,7 @@
     leg.classList.remove('dc-blocked'); var bn=leg.querySelector('.dc-blockednote'); if(bn) bn.remove();
     leg.dataset.game=b.game; leg.dataset.price=b.price; leg.dataset.tier=b.tier;
     leg.dataset.sport=b.sport; leg.dataset.reason=b.reason||''; leg.dataset.label=b.label; leg.dataset.kickoff=b.kickoff_utc||'';
+    setTerms(leg, b.terms||{});
     var tag=leg.querySelector('.dc-tag'); tag.className='dc-tag '+tierClass(b.tier); tag.textContent=(b.tier==='floor'?'FLOOR':'SWING');
     var tp=leg.querySelector('.tp'); tp.textContent=b.label+' ';
     var sport=document.createElement('span'); sport.className='dc-sp'; sport.textContent=b.sport; tp.appendChild(sport);
@@ -89,11 +91,28 @@
     var pr=leg.querySelector('.pr'); pr.textContent=sgn(+b.price); pr.title=(b.book||'')+' · '+(b.quote_label||'');
     leg.querySelector('.dc-swap').setAttribute('aria-label','Choose a replacement for '+b.label);
   }
+  // Quote-change atomicity: every leg carries the quote terms the user SAW (book / event / market /
+  // selection / line / price) and sends them back verbatim. The server compares them with its CURRENT
+  // quote: any change (a better price too) rejects the whole ticket with the current terms per leg; the
+  // user confirms them explicitly here and downloads again. Nothing is ever repriced silently.
+  function setTerms(leg, t){
+    leg.dataset.book=t.book==null?'':t.book; leg.dataset.event=t.event==null?'':t.event;
+    leg.dataset.market=t.market==null?'':t.market; leg.dataset.selection=t.selection==null?'':t.selection;
+    leg.dataset.line=t.line==null?'':t.line; leg.dataset.qprice=t.price==null?'':t.price;
+  }
+  function termsOf(l){
+    function v(x){ return x===''||x==null ? null : x; }
+    return {book:v(l.dataset.book), event:v(l.dataset.event), market:v(l.dataset.market),
+            selection:v(l.dataset.selection), line:v(l.dataset.line), price:v(l.dataset.qprice)};
+  }
+  function termText(t){ return (t.book||'—')+' · '+(t.line==null||t.line===''?'—':t.line)+' · '+(t.price==null||t.price===''?'—':sgn(+t.price)); }
   var CSRF="{{ csrf_token() }}";
   function downloadImage(card, btn){
     var legs=[].map.call(card.querySelectorAll('.dc-leg'), function(l){
-      return {label:l.dataset.label, price:+l.dataset.price, tier:l.dataset.tier,
-              sport:l.dataset.sport, game:l.dataset.game, reason:l.dataset.reason};
+      var t=termsOf(l);
+      return {label:l.dataset.label, tier:l.dataset.tier, sport:l.dataset.sport, game:l.dataset.game,
+              reason:l.dataset.reason, book:t.book, event:t.event, market:t.market,
+              selection:t.selection, line:t.line, price:t.price};
     });
     var orig=btn.innerHTML; btn.disabled=true; btn.textContent='⏳ Rendering…';
     clearBlocked(card);
@@ -110,7 +129,7 @@
       .catch(function(e){ btn.disabled=false; btn.innerHTML=orig; if(e!==null){ announce(card,'Could not render the ticket image.'); } });
   }
   function clearBlocked(card){
-    [].forEach.call(card.querySelectorAll('.dc-blockednote'), function(n){ n.remove(); });
+    [].forEach.call(card.querySelectorAll('.dc-blockednote,.dc-terms,.dc-confirm'), function(n){ n.remove(); });
     [].forEach.call(card.querySelectorAll('.dc-leg.dc-blocked'), function(l){ l.classList.remove('dc-blocked'); });
   }
   function showRejection(card, j){
@@ -120,10 +139,32 @@
       var l=els[(+e.position||0)-1]; if(!l) return;
       l.classList.add('dc-blocked');
       var n=document.createElement('span'); n.className='dc-blockednote';
+      var host=(l.querySelector('.bd')||l);
+      if(e.current){
+        // old -> new terms + an EXPLICIT confirm: the user accepts the current terms, then downloads again
+        n.textContent=(e.note||'quote changed')+' — review the current terms';
+        host.appendChild(n);
+        var c=e.current, was=termsOf(l), tr=document.createElement('span'); tr.className='dc-terms';
+        tr.textContent='You confirmed: '+termText(was)+'  →  Now: '+termText(c)+(c.updated_label?' ('+c.updated_label+')':'');
+        host.appendChild(tr);
+        var b=document.createElement('button'); b.type='button'; b.className='dc-confirm';
+        b.textContent='Confirm current terms';
+        b.addEventListener('click', function(){ applyCurrent(l, c); l.classList.remove('dc-blocked');
+          [].forEach.call(host.querySelectorAll('.dc-blockednote,.dc-terms,.dc-confirm'), function(x){ x.remove(); });
+          reprice(card); announce(card, (c.label||l.dataset.label)+' — current terms confirmed. Download again to save.'); });
+        host.appendChild(b);
+        return;
+      }
       n.textContent=(e.note||'not executable')+' — remove or swap this leg';
-      (l.querySelector('.bd')||l).appendChild(n);
+      host.appendChild(n);
     });
     announce(card, (j&&j.message)||'This ticket could not be rendered. Nothing was removed.');
+  }
+  function applyCurrent(leg, c){
+    if(c.label){ leg.dataset.label=c.label; var tp=leg.querySelector('.tp'); if(tp && tp.firstChild){ tp.firstChild.textContent=c.label+' '; } }
+    if(c.price!=null){ leg.dataset.price=c.price; }
+    setTerms(leg, c);
+    var pr=leg.querySelector('.pr'); if(pr && c.price!=null){ pr.textContent=sgn(+c.price); pr.title=(c.book||'')+' · '+(c.updated_label||''); }
   }
   function eligibleSwaps(leg, card){
     var onCard=[].filter.call(card.querySelectorAll('.dc-leg'), function(x){return x!==leg;})
@@ -176,7 +217,8 @@
   document.addEventListener('keydown',function(e){ if(e.key==='Escape' && swapBackdrop.classList.contains('open')) closeSwap(); });
 
   // ---- Shared add / remove / reorder (the SAME logic on both surfaces, via one component) ----
-  var MIN=2, MAX=5;
+  // Frozen ticket contract {{ TICKET_SUBMIT_MIN_LEGS }}..{{ TICKET_SUBMIT_MAX_LEGS }} legs (server-enforced); the editor builds within it.
+  var MIN={{ TICKET_SUBMIT_MIN_LEGS }}, MAX={{ TICKET_EDITOR_MAX_LEGS }};
   function cardLegs(card){ return [].slice.call(card.querySelectorAll('.dc-leg')); }
   function legKey(l){ return (l.dataset.game||'')+'|'+(l.dataset.label||''); }
   function announce(card,msg){ var lr=card.querySelector('.dc-live'); if(lr){ lr.textContent=''; setTimeout(function(){ lr.textContent=msg; },30); } }

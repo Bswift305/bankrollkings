@@ -147,7 +147,7 @@
         <span class="mb-pr" title="{{ l.price_note }}">n/a</span>
       </div>
       {% else %}
-      <div class="mb-leg" data-game="{{ g.game }}" data-price="{{ l.price }}" data-tier="{{ l.tier }}" data-sport="{{ l.sport }}" data-reason="{{ l.reason }}" data-label="{{ l.label }}" data-kickoff="{{ l.kickoff_utc or '' }}">
+      {% set qt = ticket_quote_terms(l) or {} %}<div class="mb-leg" data-game="{{ g.game }}" data-price="{{ l.price }}" data-tier="{{ l.tier }}" data-sport="{{ l.sport }}" data-reason="{{ l.reason }}" data-label="{{ l.label }}" data-kickoff="{{ l.kickoff_utc or '' }}" data-book="{{ qt.book if qt.book is not none else '' }}" data-event="{{ qt.event if qt.event is not none else '' }}" data-market="{{ qt.market if qt.market is not none else '' }}" data-selection="{{ qt.selection if qt.selection is not none else '' }}" data-line="{{ qt.line if qt.line is not none else '' }}" data-qprice="{{ qt.price if qt.price is not none else '' }}">
         <span class="mb-tag {{ l.tier }}">{{ 'FLOOR' if l.tier == 'floor' else ('EDGE' if l.tier == 'edge' else 'SWING') }}</span>
         <span class="mb-bd">
           <span class="mb-tp">{{ l.label }}<span class="mb-sp">{{ l.sport }}</span></span>
@@ -181,7 +181,7 @@
       <button type="button" class="mb-btn go" id="mb-save" disabled>&#128229; Save as card image</button>
       <button type="button" class="mb-btn ghost" id="mb-clear" title="Clear slip">Clear</button>
     </div>
-    <div class="mb-warn" id="mb-warn">Max 8 legs on a saved card.</div>
+    <div class="mb-warn" id="mb-warn">Max {{ TICKET_SUBMIT_MAX_LEGS }} legs on a saved card.</div>
   </div>
 </div>
 
@@ -191,7 +191,9 @@
 <script>
 (function(){
   var CSRF="{{ csrf_token() }}";
-  var slip=[]; // {label,price,tier,sport,game,reason,kickoff}
+  // Frozen ticket contract (server-enforced): {{ TICKET_SUBMIT_MIN_LEGS }}..{{ TICKET_SUBMIT_MAX_LEGS }} legs -- 1 is rejected, 9+ is rejected, never trimmed.
+  var MINL={{ TICKET_SUBMIT_MIN_LEGS }}, MAXL={{ TICKET_SUBMIT_MAX_LEGS }};
+  var slip=[]; // {label,price,tier,sport,game,reason,kickoff,terms}
   // D4 kickoff gate, client mirror: server clock (rendered at build) + elapsed page time -- never the
   // browser's wall clock. Missing/unparseable kickoff fails closed. The server re-checks on save.
   var SERVER_NOW=Date.parse("{{ server_now_utc or '' }}"), T0=(window.performance&&performance.now)?performance.now():0;
@@ -218,14 +220,31 @@
       slip.forEach(function(l,i){
         var r=document.createElement('div'); r.className='mb-srow';
         r.innerHTML='<button class="x" data-i="'+i+'" aria-label="Remove">&times;</button>'+
-          '<span class="sl">'+l.label+'</span><span class="sp">'+sgn(+l.price)+'</span>';
+          '<span class="sl"></span><span class="sp">'+sgn(+l.price)+'</span>';
+        r.querySelector('.sl').textContent=l.label;
         if(l._why){ var why=document.createElement('span'); why.className='mb-why';
           why.style.cssText='display:block;flex-basis:100%;font-size:11px;color:#d9a441;';
-          why.textContent=l._why+' — remove this leg'; r.classList.add('mb-blocked'); r.appendChild(why); }
+          why.textContent=l._why+(l._cur?' — review the current terms':' — remove this leg'); r.classList.add('mb-blocked'); r.appendChild(why);
+          if(l._cur){
+            // quote changed: old -> new terms + an EXPLICIT confirm; the user then saves again
+            var tr=document.createElement('span'); tr.className='mb-why';
+            tr.style.cssText='display:block;flex-basis:100%;font-size:11px;';
+            tr.textContent='You confirmed: '+termText(l.terms||{})+'  →  Now: '+termText(l._cur)+(l._cur.updated_label?' ('+l._cur.updated_label+')':'');
+            r.appendChild(tr);
+            var cb=document.createElement('button'); cb.type='button'; cb.className='mb-btn ghost mb-confirm'; cb.dataset.i=i;
+            cb.textContent='Confirm current terms'; r.appendChild(cb);
+          } }
         rows.appendChild(r);
       });
       rows.querySelectorAll('.x').forEach(function(b){
         b.addEventListener('click', function(){ slip.splice(+b.dataset.i,1); render(); });
+      });
+      rows.querySelectorAll('.mb-confirm').forEach(function(b){
+        b.addEventListener('click', function(){ var l=slip[+b.dataset.i]; if(!l||!l._cur) return; var c=l._cur;
+          if(c.label) l.label=c.label; if(c.price!=null) l.price=+c.price;
+          l.terms={book:c.book, event:c.event, market:c.market, selection:c.selection, line:c.line, price:c.price};
+          delete l._why; delete l._cur; render();
+          var w=document.getElementById('mb-warn'); w.textContent=l.label+' — current terms confirmed. Save again to render.'; w.style.display='block'; });
       });
     }
     var d=1; slip.forEach(function(l){ d*=dec(l.price); });
@@ -236,14 +255,19 @@
       var pay=5*d; document.getElementById('mb-pv').textContent='$'+(pay%1===0?pay:pay.toFixed(2));
       document.getElementById('mb-od').textContent=sgn(amer(d));
     } else { pr.style.display='none'; }
-    document.getElementById('mb-save').disabled = slip.length<2 || slip.length>8;
-    if(slip.length>8) document.getElementById('mb-warn').textContent='Max 8 legs on a saved card.';
-    document.getElementById('mb-warn').style.display = slip.length>8 ? 'block':'none';
+    document.getElementById('mb-save').disabled = slip.length<MINL || slip.length>MAXL;
+    if(slip.length>MAXL) document.getElementById('mb-warn').textContent='Max '+MAXL+' legs on a saved card.';
+    document.getElementById('mb-warn').style.display = slip.length>MAXL ? 'block':'none';
     syncMarks();
   }
+  function nz(x){ return x===''||x==null ? null : x; }
+  function termText(t){ return (t.book||'—')+' · '+(t.line==null||t.line===''?'—':t.line)+' · '+(t.price==null||t.price===''?'—':sgn(+t.price)); }
   function toggle(el){
     var l={label:el.dataset.label, price:+el.dataset.price, tier:el.dataset.tier,
-           sport:el.dataset.sport, game:el.dataset.game, reason:el.dataset.reason, kickoff:el.dataset.kickoff};
+           sport:el.dataset.sport, game:el.dataset.game, reason:el.dataset.reason, kickoff:el.dataset.kickoff,
+           // the quote terms the user SAW when adding the leg -- sent back verbatim as the confirmed terms
+           terms:{book:nz(el.dataset.book), event:nz(el.dataset.event), market:nz(el.dataset.market),
+                  selection:nz(el.dataset.selection), line:nz(el.dataset.line), price:nz(el.dataset.qprice)}};
     var i=slip.findIndex(function(x){ return key(x)===key(l); });
     if(i>=0) slip.splice(i,1);
     else if(!notStarted(l.kickoff)){ el.querySelector('.mb-add').disabled=true; el.querySelector('.mb-pr').textContent='Started';
@@ -256,14 +280,17 @@
   });
   document.getElementById('mb-clear').addEventListener('click', function(){ slip=[]; render(); });
   document.getElementById('mb-save').addEventListener('click', function(){
-    var btn=this; if(slip.length<2||slip.length>8) return;
+    var btn=this; if(slip.length<MINL||slip.length>MAXL) return;
     var st=slip.filter(function(l){ return !notStarted(l.kickoff); });
     if(st.length){ var w=document.getElementById('mb-warn'); w.textContent=st.length+' leg'+(st.length!==1?'s':'')+' removed — game started. Remove '+st.map(function(l){return l.label;}).join(', ')+' and save again.'; w.style.display='block'; return; }
     var orig=btn.innerHTML; btn.disabled=true; btn.textContent='⏳ Rendering…';
-    slip.forEach(function(l){ delete l._why; });
+    slip.forEach(function(l){ delete l._why; delete l._cur; });
     // The server accepts the slip WHOLE or rejects it WHOLE (409 not executable / 422 malformed) with a
     // reason per leg -- it never drops a leg. Each blocked leg is marked in the slip for the user to remove.
-    var sent=slip.map(function(l){ return {label:l.label, price:l.price, tier:l.tier, sport:l.sport, game:l.game, reason:l.reason}; });
+    // The server also compares each leg's CONFIRMED quote terms with its current quote: a changed book /
+    // line / price (a better price too) rejects the whole slip (409) with the current terms per leg.
+    var sent=slip.map(function(l){ var t=l.terms||{}; return {label:l.label, tier:l.tier, sport:l.sport, game:l.game, reason:l.reason,
+      book:t.book, event:t.event, market:t.market, selection:t.selection, line:t.line, price:t.price}; });
     fetch('/tools/daily-card.png', {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
       body:JSON.stringify({legs:sent})})
       .then(function(r){ if(!r.ok){ if(r.status===409||r.status===422){ return r.json().then(function(j){ markRejected(j); throw null; }); } throw 0; } return r.blob(); })
@@ -276,7 +303,7 @@
       .catch(function(e){ btn.disabled=false; btn.innerHTML=orig; if(e!==null){ var w=document.getElementById('mb-warn'); w.textContent='Could not render the ticket image.'; w.style.display='block'; } });
   });
   function markRejected(j){
-    ((j&&j.legs)||[]).forEach(function(e){ if(e && !e.executable && slip[(+e.position||0)-1]){ slip[e.position-1]._why=e.note||'not executable'; } });
+    ((j&&j.legs)||[]).forEach(function(e){ if(e && !e.executable && slip[(+e.position||0)-1]){ slip[e.position-1]._why=e.note||'not executable'; if(e.current){ slip[e.position-1]._cur=e.current; } } });
     render();
     var w=document.getElementById('mb-warn'); w.textContent=(j&&j.message)||'This ticket could not be rendered. Nothing was removed.'; w.style.display='block';
   }

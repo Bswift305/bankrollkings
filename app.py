@@ -34013,6 +34013,7 @@ def build_daily_cards(sizes=(3, 4, 5), risk='balanced', legs='all', timeframe='s
         bench.append({k: l.get(k) for k in ('sport', 'kind', 'tier', 'label', 'game', 'price',
                                              'reason', 'hit', 'sample', 'market_pct', 'book', 'quote_at',
                                              'quote_label', 'event_id', 'kickoff_utc')})
+        bench[-1]['terms'] = ticket_quote_terms(l)     # the confirmable quote terms the editor sends back
         if len(bench) >= 60:
             break
     return {'available': bool(cards), 'cards': cards, 'bench': bench,
@@ -34693,10 +34694,40 @@ def journal_report():
 # server never alters it: every submitted leg must resolve on the server's current pool AND pass the
 # full executable-leg contract (_leg_quote_failures) on ONE server clock, or the WHOLE ticket is
 # rejected with per-leg reasons. Server-built cards (GET) may still be rebuilt with a visible notice.
-TICKET_SUBMIT_MIN_LEGS = 2          # the shared editor's MIN and the Menu slip's minimum
-TICKET_SUBMIT_MAX_LEGS = 8          # the Menu slip's maximum (the editor caps at 5)
+#
+# EXECUTABLE TICKET RANGE -- FROZEN CONTRACT (D4, owner decision 3): a user-selected executable ticket has
+# 2..8 legs. 1 leg -> rejected with a minimum message; 2..8 -> accepted only when EVERY leg is executable;
+# 9+ -> rejected, NEVER truncated. ONE pair of constants, enforced by _ticket_leg_count_failure at every
+# boundary: the image POST (shared editor: Today's Cards / King's Tickets / Green Light ticket, and the
+# Menu slip) and the SGP Workbench export / handoff. The editor and Menu JS read the same constants
+# (Jinja globals below). The shared editor's *construction* cap (TICKET_EDITOR_MAX_LEGS = 5, the
+# "2-5 leg" King's Tickets product) is a narrower builder limit INSIDE the contract, never a wider one.
+TICKET_SUBMIT_MIN_LEGS = 2
+TICKET_SUBMIT_MAX_LEGS = 8
+TICKET_EDITOR_MAX_LEGS = 5
+assert TICKET_SUBMIT_MIN_LEGS <= TICKET_EDITOR_MAX_LEGS <= TICKET_SUBMIT_MAX_LEGS
 _TICKET_ID_FIELDS = ('sport', 'label', 'game')        # a submitted leg's public identity
 _TICKET_ID_MAXLEN = 200
+# QUOTE-CHANGE ATOMICITY (D4, owner decision 1): the quote terms the user saw and confirmed travel with
+# every submitted leg and are compared, after canonicalization, against the CURRENT canonical server
+# quote. Any book / line / price change (a BETTER price too) or event / market / selection mismatch
+# rejects the WHOLE ticket (409) with the current safe terms per changed leg -- the user re-confirms and
+# resubmits. The server stays authoritative: matching terms are priced from the server quote; a client
+# value never prices anything. A leg submitted with NO terms (an older client) is QUOTE_UNCONFIRMED:
+# rejected with its current terms, never silently accepted (the conservative choice).
+_TICKET_TERM_FIELDS = ('book', 'event', 'market', 'selection', 'line', 'price')
+TICKET_QUOTE_CHANGE_CODES = frozenset({'BOOK_CHANGED', 'LINE_CHANGED', 'PRICE_CHANGED', 'QUOTE_MISMATCH',
+                                       'QUOTE_UNCONFIRMED'})
+# Current-quote availability codes layered on the executable-leg vocabulary (the original codes stay).
+_QUOTE_UNAVAILABLE_FROM = frozenset({'NO_QUOTE', 'MISSING_PRICE', 'INVALID_PRICE', 'PRICE_NOT_FROM_QUOTE',
+                                     'MISSING_BOOK', 'NOT_A_SPORTSBOOK', 'MISSING_LINE', 'LINE_NOT_FROM_QUOTE',
+                                     'MISSING_EVENT', 'MISSING_MARKET', 'MISSING_SELECTION',
+                                     'MISSING_UPDATE_TIME', 'QUOTE_FROM_FUTURE'})
+# Book aliases -> one canonical key. Mirrors fetch_player_props.BOOKMAKER_TITLES (provider key -> title;
+# williamhill_us IS Caesars) -- qc_ticket_quote_change.py asserts the two stay in parity.
+_TICKET_BOOK_ALIASES = {'draftkings': 'DraftKings', 'fanduel': 'FanDuel', 'betmgm': 'BetMGM',
+                        'caesars': 'Caesars', 'williamhill_us': 'Caesars', 'betrivers': 'BetRivers',
+                        'fanatics': 'Fanatics'}
 # Display text per reason code (the existing executable-leg vocabulary + three submission codes).
 TICKET_REASON_TEXT = {
     'STARTED': 'game started',
@@ -34720,6 +34751,15 @@ TICKET_REASON_TEXT = {
     'NOT_ON_BOARD': 'no longer on the board',
     'MALFORMED_LEG': 'leg is malformed',
     'DUPLICATE_LEG': 'leg appears twice',
+    # quote-change atomicity (the confirmed terms vs the current canonical quote)
+    'PRICE_CHANGED': 'price changed since you confirmed it',
+    'LINE_CHANGED': 'line changed since you confirmed it',
+    'BOOK_CHANGED': 'sportsbook changed since you confirmed it',
+    'QUOTE_MISMATCH': 'current quote does not match the selection you confirmed',
+    'QUOTE_UNCONFIRMED': 'quote terms not confirmed — review the current terms',
+    'QUOTE_STALE': 'price is stale',
+    'QUOTE_UNAVAILABLE': 'no verified price',
+    'WRONG_LEG_COUNT': 'ticket leg count outside 2–8',
 }
 
 
@@ -34734,23 +34774,202 @@ def _ticket_reason_note(codes):
     return '; '.join(dict.fromkeys(TICKET_REASON_TEXT.get(c, 'not executable') for c in codes))
 
 
+def _ticket_leg_count_failure(n):
+    """THE executable-ticket range check (2..8, frozen -- see TICKET_SUBMIT_MIN/MAX_LEGS): None when `n`
+    legs is in range, else the user-facing message. Shared by the image POST and the SGP Workbench export
+    / handoff. A count outside the range is a rejection, NEVER a truncation."""
+    lo, hi = TICKET_SUBMIT_MIN_LEGS, TICKET_SUBMIT_MAX_LEGS
+    if n < lo:
+        return (f'A ticket needs at least {lo} legs; this one has {n}. Nothing was rendered, exported or '
+                'handed off — add a leg and save again.')
+    if n > hi:
+        return (f'A ticket holds at most {hi} legs; this one has {n}. Nothing was rendered, exported or '
+                'handed off, and nothing was trimmed for you — remove legs and save again.')
+    return None
+
+
+def _quote_plain(value):
+    """numpy scalar -> its Python value (server quotes may carry np.int64 / np.float64)."""
+    return value.item() if isinstance(value, np.generic) else value
+
+
+def _canon_quote_book(value):
+    """Canonical sportsbook key for comparison: case / whitespace / punctuation / provider-key alias
+    insensitive ('DraftKings' == ' draft kings ' == 'draftkings'; 'williamhill_us' == 'Caesars'). A
+    non-book source ('consensus', 'Unrecorded source', blank) canonicalizes to '' -- never a book.
+    None only when the value is not text (malformed)."""
+    import unicodedata
+    if not isinstance(value, str):
+        return None
+    t = _clean_book(value)
+    if not t or t.casefold() in _NON_BOOK_SOURCES:
+        return ''
+
+    def _k(s):
+        return re.sub(r'[\W_]+', '', unicodedata.normalize('NFKC', s).casefold())
+    k = _k(t)
+    for alias, title in _TICKET_BOOK_ALIASES.items():
+        if k in (_k(alias), _k(title)):
+            return _k(title)
+    return k
+
+
+def _canon_quote_price(value):
+    """Canonical American odds (int) for comparison: 150 == '+150' == '150' == 150.0 == '150.0'. None when
+    the value is not a readable whole number (malformed: bool, fractional, NaN/inf, text)."""
+    import math
+    value = _quote_plain(value)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if math.isfinite(value) and value == int(value) else None
+    if isinstance(value, str) and re.fullmatch(r'\s*[+-]?\d{1,6}(?:\.0*)?\s*', value):
+        return int(float(value))
+    return None
+
+
+def _canon_quote_line(value):
+    """Canonical line (float, 4 dp) for comparison: -3.5 == '-3.5' == '-3.50'; '+3.5' == 3.5. None when
+    unreadable (malformed: bool, NaN/inf, text)."""
+    import math
+    value = _quote_plain(value)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        f = float(value)
+    elif isinstance(value, str) and re.fullmatch(r'\s*[+-]?(?:\d{1,6}(?:\.\d{0,4})?|\.\d{1,4})\s*', value):
+        f = float(value)
+    else:
+        return None
+    return round(f, 4) if math.isfinite(f) else None
+
+
+_QUOTE_NUM_RE = re.compile(r'[+-]?\d+(?:\.\d+)?')
+
+
+def _canon_quote_text(value, drop_numbers=False):
+    """Canonical event / market / selection text: NFKC + casefold, every whitespace / punctuation / '_'
+    run removed, every number re-spelled canonically ('40.50' == '40.5', '+3.5' == '3.5'). With
+    drop_numbers (the SELECTION compare) numbers are masked -- the line is compared as its own term, so a
+    line move reads LINE_CHANGED, not a selection mismatch. None when the value is not text."""
+    import unicodedata
+    if not isinstance(value, str):
+        return None
+    t = unicodedata.normalize('NFKC', value).casefold()
+    parts, pos = [], 0
+    for m in _QUOTE_NUM_RE.finditer(t):
+        parts.append(re.sub(r'[\W_]+', '', t[pos:m.start()]))
+        parts.append('#' if drop_numbers else format(float(m.group()), 'g'))
+        pos = m.end()
+    parts.append(re.sub(r'[\W_]+', '', t[pos:]))
+    return '|'.join(p for p in parts if p)
+
+
+_TICKET_TERM_CANON = {
+    'book': _canon_quote_book, 'event': _canon_quote_text, 'market': _canon_quote_text,
+    'selection': lambda v: _canon_quote_text(v, drop_numbers=True),
+    'line': _canon_quote_line, 'price': _canon_quote_price,
+}
+
+
+def ticket_quote_terms(leg):
+    """The confirmable quote terms of ONE server leg, from its single-book quote (book / event / market /
+    selection / line / price), or None when it has no quote. Every ticket surface renders exactly these
+    into the browser, and the browser sends them back verbatim as the user's CONFIRMED terms."""
+    q = leg.get('quote') if isinstance(leg, dict) else None
+    if not isinstance(q, dict):
+        return None
+    return {f: _quote_plain(q.get(f)) for f in _TICKET_TERM_FIELDS}
+
+
+def _ticket_current_terms(srv):
+    """The CURRENT safe display terms of a server leg for a quote-change rejection: identity (the label
+    may have moved with the line), book / event / market / selection / line / price and the quote's update
+    time. All server data, bounded -- never an echo of the client's payload."""
+    q = (srv or {}).get('quote') or {}
+    t = ticket_quote_terms(srv) or {}
+    upd = q.get('updated_utc') if isinstance(q.get('updated_utc'), str) else None
+    return {'sport': _ticket_display(srv.get('sport')), 'label': _ticket_display(srv.get('label')),
+            'game': _ticket_display(srv.get('game')), 'book': _ticket_display(t.get('book')),
+            'event': _ticket_display(t.get('event'), 120), 'market': _ticket_display(t.get('market')),
+            'selection': _ticket_display(t.get('selection'), 120),
+            'line': _canon_quote_line(t.get('line')), 'price': _canon_quote_price(t.get('price')),
+            'updated_utc': _ticket_display(upd, 40) or None, 'updated_label': _updated_label(upd)}
+
+
+def _confirmed_terms_verdict(sub, srv):
+    """(codes, malformed) for ONE submitted leg's confirmed terms vs the server leg's CURRENT quote, both
+    canonicalized (formatting-only differences compare equal). Terms that are present but unreadable
+    (wrong type, '+1x0') -> malformed. Any term absent (an older client sending none / some) ->
+    QUOTE_UNCONFIRMED. Otherwise one code per changed term: BOOK_CHANGED / LINE_CHANGED / PRICE_CHANGED
+    (a better price too) and QUOTE_MISMATCH for event / market / selection. [] = the user confirmed
+    exactly the current quote."""
+    cur = ticket_quote_terms(srv) or {}
+    given = {}
+    for f in _TICKET_TERM_FIELDS:
+        v = sub.get(f) if isinstance(sub, dict) else None
+        if v is None or (isinstance(v, str) and not v.strip()):
+            continue
+        if (isinstance(v, str) and len(v) > _TICKET_ID_MAXLEN) or _TICKET_TERM_CANON[f](v) is None:
+            return [], True
+        given[f] = v
+    if len(given) < len(_TICKET_TERM_FIELDS):
+        return ['QUOTE_UNCONFIRMED'], False
+    c = _TICKET_TERM_CANON
+    codes = []
+    if c['book'](given['book']) != c['book'](cur.get('book')):
+        codes.append('BOOK_CHANGED')
+    if c['line'](given['line']) != c['line'](cur.get('line')):
+        codes.append('LINE_CHANGED')
+    if c['price'](given['price']) != c['price'](cur.get('price')):
+        codes.append('PRICE_CHANGED')
+    if any(c[f](given[f]) != c[f](cur.get(f)) for f in ('event', 'market', 'selection')):
+        codes.append('QUOTE_MISMATCH')
+    return codes, False
+
+
+def _ticket_line_moved_match(sub, sport, game, index):
+    """A submitted leg whose label no longer resolves because its LINE moved (the label carries the line):
+    the ONE pool record in the same sport + game whose quote is the same event / market / selection with
+    the line masked. Ambiguous (alternate lines) or absent -> None (NOT_ON_BOARD; never a guess)."""
+    if not isinstance(sub, dict) or not all(isinstance(sub.get(f), str) and sub.get(f).strip()
+                                            for f in ('event', 'market', 'selection')):
+        return None
+    want = (_canon_quote_text(sub['event']), _canon_quote_text(sub['market']),
+            _canon_quote_text(sub['selection'], drop_numbers=True))
+    hits = []
+    for (s, _lab, g), rec in index.items():
+        if s != sport or g != game:
+            continue
+        t = ticket_quote_terms(rec[0])
+        if t and (_canon_quote_text(t['event']), _canon_quote_text(t['market']),
+                  _canon_quote_text(t['selection'], drop_numbers=True)) == want:
+            hits.append(rec)
+    return hits[0] if len(hits) == 1 else None
+
+
 def _judge_submitted_ticket(payload, now, pool_legs):
     """THE final boundary for a user-submitted ticket. Returns (status, legs, body):
     (200, [server legs in submitted order], None) when EVERY submitted leg is well-formed, resolves on
-    the server pool and is executable at `now`; else (422, None, body) for malformed input (bad JSON,
-    wrong types, wrong leg count, duplicate leg) or (409, None, body) when a well-formed ticket is no
-    longer executable (started / unknown kickoff / stale / unpriced / no recorded sportsbook / not on
-    the board). Nothing is dropped, substituted or repriced from the client; the body lists every
-    submitted leg with its public identity (sport / label / game), its reason codes and display text."""
+    the server pool, is executable at `now` AND carries confirmed quote terms equal (canonicalized) to the
+    current server quote; else (422, None, body) for malformed input (bad JSON, wrong types, unreadable
+    terms, wrong leg count, duplicate leg) or (409, None, body) when a well-formed ticket is no longer
+    executable (started / unknown kickoff / stale / unpriced / no recorded sportsbook / not on the board)
+    or its quote changed since the user confirmed it (BOOK_CHANGED / LINE_CHANGED / PRICE_CHANGED /
+    QUOTE_MISMATCH / QUOTE_UNCONFIRMED -- a changed leg carries its `current` safe terms). Nothing is
+    dropped, substituted or repriced from the client; the body lists every submitted leg with its public
+    identity (sport / label / game), its reason codes and display text."""
     lo, hi = TICKET_SUBMIT_MIN_LEGS, TICKET_SUBMIT_MAX_LEGS
     raw = payload.get('legs') if isinstance(payload, dict) else None
     if not isinstance(raw, list):
         return 422, None, {'error': 'malformed_ticket', 'legs': [],
                            'message': 'This ticket could not be read. Nothing was rendered — rebuild the ticket.'}
-    if not (lo <= len(raw) <= hi):
+    count_msg = _ticket_leg_count_failure(len(raw))
+    if count_msg:
         return 422, None, {'error': 'wrong_leg_count', 'legs': [], 'n_submitted': len(raw),
-                           'message': (f'A ticket needs {lo}–{hi} legs; this one has {len(raw)}. '
-                                       'Nothing was rendered.')}
+                           'min_legs': lo, 'max_legs': hi, 'message': count_msg}
     index = {}
     for l in pool_legs or []:
         k = (l.get('sport'), l.get('label'), l.get('game'))
@@ -34763,7 +34982,7 @@ def _judge_submitted_ticket(payload, now, pool_legs):
         ident = {f: _ticket_display(l.get(f)) if isinstance(l, dict) else '' for f in _TICKET_ID_FIELDS}
         well = isinstance(l, dict) and all(isinstance(l.get(f), str) and l.get(f).strip()
                                            and len(l.get(f)) <= _TICKET_ID_MAXLEN for f in _TICKET_ID_FIELDS)
-        srv = None
+        srv, current = None, None
         if not well:
             reasons, malformed = ['MALFORMED_LEG'], True
         else:
@@ -34772,12 +34991,34 @@ def _judge_submitted_ticket(payload, now, pool_legs):
                 reasons, malformed = ['DUPLICATE_LEG'], True
             else:
                 seen.add(key)
-                srv, reasons = index.get(key, (None, ['NOT_ON_BOARD']))
-                reasons = list(reasons)
-                if srv is not None:
-                    ident = {f: _ticket_display(srv.get(f)) for f in _TICKET_ID_FIELDS}
-        entries.append((srv, {'position': pos, **ident, 'executable': not reasons,
-                              'reasons': reasons, 'note': _ticket_reason_note(reasons) if reasons else ''}))
+                hit = index.get(key)
+                exact = hit is not None
+                if hit is None:                        # the label carries the line: did the line move?
+                    hit = _ticket_line_moved_match(l, key[0], key[2], index)
+                if hit is None:
+                    reasons = ['NOT_ON_BOARD']
+                else:
+                    srv, why = hit
+                    reasons = list(why)
+                    if 'STALE_QUOTE' in reasons:
+                        reasons.append('QUOTE_STALE')
+                    if set(reasons) & _QUOTE_UNAVAILABLE_FROM:
+                        reasons.append('QUOTE_UNAVAILABLE')
+                    if not reasons:                    # executable now: did the user confirm THIS quote?
+                        codes, bad = _confirmed_terms_verdict(l, srv)
+                        if bad:
+                            reasons, malformed = ['MALFORMED_LEG'], True
+                        else:
+                            reasons = codes
+                            if codes:
+                                current = _ticket_current_terms(srv)
+                    if exact:
+                        ident = {f: _ticket_display(srv.get(f)) for f in _TICKET_ID_FIELDS}
+        entry = {'position': pos, **ident, 'executable': not reasons,
+                 'reasons': reasons, 'note': _ticket_reason_note(reasons) if reasons else ''}
+        if current is not None:
+            entry['current'] = current
+        entries.append((srv, entry))
     report = [e for _s, e in entries]
     blocked = [e for e in report if not e['executable']]
     if malformed:
@@ -34789,6 +35030,13 @@ def _judge_submitted_ticket(payload, now, pool_legs):
         n_b = len(blocked)
         started = [e['label'] for e in blocked if 'STARTED' in e['reasons']]
         why = '; '.join(f"{e['label'] or 'leg ' + str(e['position'])} — {e['note']}" for e in blocked[:5])
+        if all(set(e['reasons']) <= TICKET_QUOTE_CHANGE_CODES for e in blocked):
+            return 409, None, {'error': 'quote_changed', 'legs': report, 'n_blocked': n_b,
+                               'removed_started': started, 'server_now_utc': _utc_iso(now),
+                               'message': (f"{n_b} leg{'s' if n_b != 1 else ''} on this ticket changed since "
+                                           f"you confirmed {'it' if n_b == 1 else 'them'} ({why}). Nothing was "
+                                           'rendered, nothing was repriced and nothing was removed for you — '
+                                           'review the current terms, confirm them, then save again.')}
         return 409, None, {'error': 'ticket_not_executable', 'legs': report, 'n_blocked': n_b,
                            'removed_started': started, 'server_now_utc': _utc_iso(now),
                            'message': (f"{n_b} leg{'s' if n_b != 1 else ''} on this ticket "
@@ -34805,6 +35053,14 @@ def _judge_submitted_ticket(payload, now, pool_legs):
                      'reason': str(srv.get('reason') or '')[:110],
                      'kickoff_utc': srv.get('kickoff_utc')})
     return 200, legs, None
+
+
+# The frozen ticket contract + the confirmable-terms helper, exposed to every ticket template (the shared
+# editor, the Menu slip, the SGP Workbench) so the browser limits and payload can never drift from it.
+app.jinja_env.globals.update(TICKET_SUBMIT_MIN_LEGS=TICKET_SUBMIT_MIN_LEGS,
+                             TICKET_SUBMIT_MAX_LEGS=TICKET_SUBMIT_MAX_LEGS,
+                             TICKET_EDITOR_MAX_LEGS=TICKET_EDITOR_MAX_LEGS,
+                             ticket_quote_terms=ticket_quote_terms)
 
 
 def _log_ticket_rejection(surface, status, body):
@@ -34828,7 +35084,8 @@ def _log_ticket_rejection(surface, status, body):
 def daily_card_image():
     """Render one Daily Card as a shareable Bankroll Kings PNG ticket, via the marketing card
     generator. GET ?n=3/4/5 renders the auto card; POST {legs:[...]} renders the user's CURRENT
-    card (after live swaps), repriced server-side."""
+    card (after live swaps) only when every leg's confirmed quote terms still equal the server's current
+    quote -- a changed quote is a whole-ticket 409 with the current terms, never a silent reprice."""
     import io
     from flask import send_file, abort
     n = request.args.get('n', type=int) or 3
@@ -34836,7 +35093,9 @@ def daily_card_image():
         # A USER-SUBMITTED ticket is atomic: rendered with exactly the submitted legs, or rejected whole
         # (409 non-executable / 422 malformed) with per-leg reasons -- never a partial image (D4).
         # Never price what the browser sends: each leg is re-resolved against the server's current pool
-        # on ONE server clock; the price is the server's quote price, not the client's number.
+        # on ONE server clock and its confirmed terms (book / event / market / selection / line / price)
+        # must equal the current quote, or the whole ticket is 409 quote_changed. The price rendered is
+        # the server's quote price; the client's number only ever confirms, never prices.
         now = _now_utc()
         _f, _s = _card_pools('all', now=now)
         status, legs, body = _judge_submitted_ticket(request.get_json(silent=True), now, _f + _s)
@@ -48129,11 +48388,93 @@ def _sgp_apply_kickoff_gate(lg, now):
     return why
 
 
-def _sgp_ticket_gate(selected, unresolved_ids, now):
-    """Server-side kickoff verdict for the WHOLE workbench ticket at `now` (server clock; nothing from
-    the browser). Every selected leg is re-judged here -- not trusted from an earlier annotation -- and a
-    selected id that no longer resolves on this game's board counts as unknown kickoff (fail closed).
-    Any started / unknown-kickoff leg => not executable: no export, copy, handoff or ticket build."""
+_SGP_CONFIRM_SEP = '~'
+
+
+def _sgp_parse_confirmed(raw):
+    """{leg id: canonical confirmed price} from the workbench URL state `cf=<leg id>~<price>` -- the price
+    the user saw when adding the leg (the id itself pins book / market / selection / direction / line).
+    A dict {id: price} is accepted too. Unreadable entries are simply unconfirmed (QUOTE_UNCONFIRMED),
+    never accepted."""
+    items = []
+    if isinstance(raw, dict):
+        items = list(raw.items())
+    else:
+        for s in raw or []:
+            if isinstance(s, str) and _SGP_CONFIRM_SEP in s:
+                items.append(tuple(s.rsplit(_SGP_CONFIRM_SEP, 1)))
+    out = {}
+    for i, p in items:
+        cp = _canon_quote_price(p)
+        if isinstance(i, str) and i.strip() and cp is not None:
+            out[i] = cp
+    return out
+
+
+def _sgp_id_key(leg_id, mask=None):
+    """Canonical comparison key of a workbench leg id (book|kind|who|stat|direction|line[|...]): slot 0
+    through the book canonicalizer, slot 5 through the line canonicalizer, the rest as canonical text, so a
+    formatting-only respelling ('draftkings' / '250.50') is the SAME leg. `mask` blanks one slot (the
+    moved-line / moved-book lookup)."""
+    parts = str(leg_id).split('|')
+    if len(parts) < 6:
+        return None
+    key = []
+    for k, p in enumerate(parts):
+        if k == mask:
+            key.append('*')
+        elif k == 0:
+            key.append(_canon_quote_book(p))
+        elif k == 5 and _canon_quote_line(p) is not None:
+            key.append(_canon_quote_line(p))
+        else:
+            key.append(_canon_quote_text(p))
+    return tuple(key)
+
+
+def _sgp_moved_leg(uid, by_id):
+    """An unresolved selection whose LINE (slot 5) or SPORTSBOOK (slot 0) moved: the ONE current menu leg
+    equal to it in every other slot -> (leg, 'LINE_CHANGED' | 'BOOK_CHANGED'); gone or ambiguous -> None
+    (NOT_ON_BOARD -- never a guess)."""
+    for slot, code in ((5, 'LINE_CHANGED'), (0, 'BOOK_CHANGED')):
+        want = _sgp_id_key(uid, mask=slot)
+        if want is None:
+            return None
+        hits = [lg for lid, lg in by_id.items() if _sgp_id_key(lid, mask=slot) == want]
+        if len(hits) == 1:
+            return hits[0], code
+    return None
+
+
+def _sgp_current_terms(lg):
+    """Current safe display terms of one workbench leg for a quote-change rejection (server data only)."""
+    ts = str(lg.get('timestamp') or '').strip()
+    return {'id': lg.get('id'), 'label': _ticket_display(lg.get('label')), 'book': _ticket_display(lg.get('book')),
+            'line': _canon_quote_line(lg.get('line')), 'price': _canon_quote_price(lg.get('price')),
+            'updated_utc': _ticket_display(ts, 40) or None,
+            'updated_label': (f"updated {_ticket_display(ts, 40)} ({lg.get('tz') or _SGP_TZ_NOTE})" if ts
+                              else _updated_label(None))}
+
+
+def _sgp_availability_codes(reasons):
+    out = []
+    if 'STALE_QUOTE' in reasons:
+        out.append('QUOTE_STALE')
+    if set(reasons) & _QUOTE_UNAVAILABLE_FROM:
+        out.append('QUOTE_UNAVAILABLE')
+    return out
+
+
+def _sgp_ticket_gate(selected, unresolved_ids, now, confirmed=None, moved=None):
+    """Server-side verdict for the WHOLE workbench ticket at `now` (server clock; nothing from the browser
+    decides it). Every selected leg is re-judged here -- not trusted from an earlier annotation -- and a
+    selected id that no longer resolves on this game's board counts as unknown kickoff (fail closed), unless
+    its line / sportsbook MOVED (`moved`), which is a quote change. Not executable (no export, copy, handoff
+    or ticket build) when ANY leg is started / unknown-kickoff / unquoted / stale, when the leg count is
+    outside the frozen 2..8 range, or when a leg's current quote differs from the terms the user confirmed
+    (`confirmed`: {id: price}; no confirmation -> QUOTE_UNCONFIRMED, conservative)."""
+    confirmed = confirmed if isinstance(confirmed, dict) else _sgp_parse_confirmed(confirmed)
+    moved = moved or {}
     started, missing, blocked = [], [], []
     for lg in selected or []:
         why = _leg_kickoff_failure(lg, now)
@@ -48144,15 +48485,52 @@ def _sgp_ticket_gate(selected, unresolved_ids, now):
         # Atomic export: the WHOLE ticket is judged; any leg that is not executable (kickoff, price,
         # recorded sportsbook, line, quote freshness) blocks export -- nothing is dropped for the user.
         reasons = ([why] if why else []) + _sgp_leg_quote_failures(lg, now)
+        reasons += _sgp_availability_codes(reasons)
+        entry = {'id': lg.get('id'), 'label': lg.get('label')}
+        if not reasons:                                # executable: is this the quote the user confirmed?
+            cp = confirmed.get(lg.get('id'))
+            if cp is None:
+                reasons = ['QUOTE_UNCONFIRMED']
+            elif cp != _canon_quote_price(lg.get('price')):
+                reasons = ['PRICE_CHANGED']
+            if reasons:
+                entry['current'] = _sgp_current_terms(lg)
+                entry['confirmed'] = {'book': _ticket_display(lg.get('book')),
+                                      'line': _canon_quote_line(lg.get('line')), 'price': cp}
         if reasons:
-            blocked.append({'id': lg.get('id'), 'label': lg.get('label'), 'reasons': reasons,
-                            'note': _ticket_reason_note(reasons)})
-    gone = list(unresolved_ids or [])
+            blocked.append({**entry, 'reasons': reasons, 'note': _ticket_reason_note(reasons)})
+    gone = []
+    for uid in unresolved_ids or []:
+        mv = moved.get(uid)
+        if mv is None:
+            gone.append(uid)
+            continue
+        lg, code = mv                                  # the line or the sportsbook moved under the user
+        why = _leg_kickoff_failure(lg, now)
+        if why == 'STARTED':
+            started.append(lg.get('label'))
+        elif why:
+            missing.append(lg.get('label'))
+        fails = ([why] if why else []) + _sgp_leg_quote_failures(lg, now)
+        fails += _sgp_availability_codes(fails)
+        cp = confirmed.get(uid)
+        reasons = [code] + fails
+        parts = str(uid).split('|')
+        entry = {'id': uid, 'label': uid}
+        if not fails:
+            if cp is not None and cp != _canon_quote_price(lg.get('price')):
+                reasons.append('PRICE_CHANGED')
+            entry['current'] = _sgp_current_terms(lg)
+            entry['confirmed'] = {'book': _ticket_display(parts[0]), 'line': _canon_quote_line(parts[5]),
+                                  'price': cp}
+        blocked.append({**entry, 'reasons': reasons, 'note': _ticket_reason_note(reasons)})
     blocked += [{'id': i, 'label': i, 'reasons': ['NOT_ON_BOARD'], 'note': _ticket_reason_note(['NOT_ON_BOARD'])}
                 for i in gone]
-    return {'executable': not (started or missing or gone or blocked), 'started': started,
+    n_legs = len(selected or []) + len(unresolved_ids or [])
+    count_msg = _ticket_leg_count_failure(n_legs)
+    return {'executable': not (started or missing or gone or blocked or count_msg), 'started': started,
             'missing_kickoff': missing, 'unresolved': gone, 'not_executable': blocked,
-            'server_now_utc': _utc_iso(now)}
+            'leg_count_error': count_msg, 'n_legs': n_legs, 'server_now_utc': _utc_iso(now)}
 
 
 def _sgp_leg_quote_failures(lg, now):
@@ -48337,15 +48715,17 @@ _SGP_HANDOFF_REQUIRED = ['game', 'player_or_team', 'stat', 'direction', 'line', 
 _SGP_HANDOFF_PARLAY_ACCEPTS = ['player_or_team', 'stat', 'direction', 'line']  # single leg, no price/book/ts
 
 
-def _sgp_handoff_state(selected, gate=None):
+def _sgp_handoff_state(selected, gate=None, confirmed=None):
     """V1 handoff: the existing Parlay Builder accepts a single leg (player/stat/direction/line) with no
     price/sportsbook/timestamp/quote-scope and no multi-leg SGP import. That loses required fields, so the
     handoff is HELD and the mismatch reported; the user gets a full-fidelity copyable summary instead.
     D4: if the server-side kickoff gate says the ticket carries a started / unknown-kickoff leg, the
     handoff is REJECTED -- no copy/export, no King's Tickets build -- until the user removes or rebuilds
-    it. With no gate passed, it is computed here on the server clock (never skipped)."""
+    it. With no gate passed, it is computed here on the server clock (never skipped) -- and with no
+    `confirmed` terms every executable leg is QUOTE_UNCONFIRMED (conservative): a handoff carries only
+    quote terms the user confirmed and that still equal the current quote, within the 2..8 leg range."""
     if gate is None:
-        gate = _sgp_ticket_gate(selected, [], _now_utc())
+        gate = _sgp_ticket_gate(selected, [], _now_utc(), confirmed=confirmed)
     if not gate.get('executable'):
         n_s = len(gate.get('started') or [])
         n_m = len(gate.get('missing_kickoff') or [])
@@ -48357,19 +48737,31 @@ def _sgp_handoff_state(selected, gate=None):
             parts.append(f"{n_m} leg{'s' if n_m != 1 else ''} with kickoff unavailable")
         if n_u:
             parts.append(f"{n_u} leg{'s' if n_u != 1 else ''} no longer on the board")
-        n_q = sum(1 for b in (gate.get('not_executable') or [])
-                  if not set(b.get('reasons') or []) & {'STARTED', 'MISSING_KICKOFF', 'NOT_ON_BOARD'})
+        blocked = list(gate.get('not_executable') or [])
+        n_c = sum(1 for b in blocked if set(b.get('reasons') or []) <= TICKET_QUOTE_CHANGE_CODES)
+        n_q = sum(1 for b in blocked
+                  if not set(b.get('reasons') or []) & {'STARTED', 'MISSING_KICKOFF', 'NOT_ON_BOARD'}
+                  and not set(b.get('reasons') or []) <= TICKET_QUOTE_CHANGE_CODES)
         if n_q:
             parts.append(f"{n_q} leg{'s' if n_q != 1 else ''} without an executable quote "
                          '(price, sportsbook, line or freshness)')
+        if n_c:
+            parts.append(f"{n_c} leg{'s' if n_c != 1 else ''} whose quote changed since you confirmed it "
+                         '(price, line or sportsbook) -- review the current terms and confirm them')
+        if gate.get('leg_count_error'):
+            n = int(gate.get('n_legs') or 0)
+            parts.append(f"it has {n} leg{'s' if n != 1 else ''}; an exportable ticket has "
+                         f'{TICKET_SUBMIT_MIN_LEGS}–{TICKET_SUBMIT_MAX_LEGS} legs (never trimmed for you)')
         if not parts:
             parts.append('a leg is not executable')
         _kick = bool(n_s or n_m or n_u)
-        return {'status': 'rejected', 'reason': 'kickoff_gate' if _kick else 'quote_gate', 'gate': gate,
-                'legs': list(gate.get('not_executable') or []),
+        reason = ('kickoff_gate' if _kick else 'quote_gate' if n_q else 'quote_changed' if n_c
+                  else 'leg_count' if gate.get('leg_count_error') else 'quote_gate')
+        return {'status': 'rejected', 'reason': reason, 'gate': gate, 'legs': blocked,
+                'leg_count_error': gate.get('leg_count_error'),
                 'message': ('This ticket cannot be exported, copied or handed off: ' + '; '.join(parts)
-                            + '. Remove or rebuild the marked leg(s) -- nothing was removed for you.'),
-                'leg_count': len(selected or []) + n_u}
+                            + '. Nothing was removed, repriced or trimmed for you.'),
+                'leg_count': int(gate.get('n_legs') or (len(selected or []) + n_u))}
     missing = [f for f in _SGP_HANDOFF_REQUIRED if f not in _SGP_HANDOFF_PARLAY_ACCEPTS]
     return {
         'status': 'held',
@@ -48384,7 +48776,7 @@ def _sgp_handoff_state(selected, gate=None):
     }
 
 
-def build_sgp_workbench_context(game=None, selected_ids=None, thesis='custom'):
+def build_sgp_workbench_context(game=None, selected_ids=None, thesis='custom', confirmed=None):
     """Context for /tools/sgp-workbench. Matchup-first; facts create visibility; no score/ordering/
     probability; missing inputs abstain visibly. Reuses the NFL matchup week list + line-move 'What's
     Changed?'. Single game only -- selection ids that are not in this game's menu are ignored."""
@@ -48440,17 +48832,62 @@ def build_sgp_workbench_context(game=None, selected_ids=None, thesis='custom'):
     # this game's board (e.g. its game kicked off and the feed dropped it) is NOT silently deleted -- it
     # stays in the URL state, is listed for the user to remove/rebuild, and blocks any export.
     want = list(dict.fromkeys(str(i) for i in (selected_ids or []) if str(i).strip()))
+    # Quote-change atomicity: `confirmed` ({id: price}, or the URL's `cf=<id>~<price>` list) is the price
+    # the user saw when adding each leg. A formatting-only respelling of an id (book case, '250.50') is the
+    # same leg: it is mapped onto the menu id (and its confirmation with it) -- never a different leg.
+    conf = _sgp_parse_confirmed(confirmed)
+    canon_ids = {}
+    for lid in by_id:
+        canon_ids.setdefault(_sgp_id_key(lid), []).append(lid)
+    remap = {}
+    for i in want:
+        if i not in by_id:
+            hits = canon_ids.get(_sgp_id_key(i)) or []
+            if len(hits) == 1:
+                remap[i] = hits[0]
+    if remap:
+        want = list(dict.fromkeys(remap.get(i, i) for i in want))
+        conf = {remap.get(i, i): p for i, p in conf.items()}
     cur = [i for i in want if i in by_id]
     unresolved = [i for i in want if i not in by_id]
+    moved = {}
+    for i in unresolved:
+        mv = _sgp_moved_leg(i, by_id)
+        if mv is not None:
+            moved[i] = mv
     selected = [by_id[i] for i in cur]
     ctx['selected'] = selected
     from urllib.parse import urlencode
 
+    def _url(ids, cmap):
+        return '/tools/sgp-workbench?' + urlencode(
+            [('game', game), ('thesis', thesis)] + [('sel', i) for i in ids]
+            + [('cf', f'{i}{_SGP_CONFIRM_SEP}{cmap[i]:+d}') for i in ids if i in cmap])
+
     def _toggle(leg_id):
-        nxt = [i for i in want if i != leg_id] if leg_id in want else want + [leg_id]
-        return '/tools/sgp-workbench?' + urlencode([('game', game), ('thesis', thesis)]
-                                                   + [('sel', i) for i in nxt])
-    ctx['unresolved_selected'] = [{'id': i, 'note': SGP_UNRESOLVED_NOTE, 'remove_url': _toggle(i)}
+        if leg_id in want:
+            return _url([i for i in want if i != leg_id], conf)
+        cmap = dict(conf)
+        p = _canon_quote_price((by_id.get(leg_id) or {}).get('price'))
+        if p is not None:                              # adding = confirming the price shown on this render
+            cmap[leg_id] = p
+        return _url(want + [leg_id], cmap)
+
+    def _confirm(changes):
+        """URL that replaces each changed leg by its CURRENT leg id + confirms its CURRENT price."""
+        ids, cmap = list(want), dict(conf)
+        for old, cterms in changes:
+            new = cterms.get('id') or old
+            ids = [new if i == old else i for i in ids]
+            cmap.pop(old, None)
+            if cterms.get('price') is not None:
+                cmap[new] = cterms['price']
+        return _url(list(dict.fromkeys(ids)), cmap)
+    _moved_note = {'LINE_CHANGED': 'Line changed since you confirmed it — review the current terms below',
+                   'BOOK_CHANGED': 'Sportsbook changed since you confirmed it — review the current terms below'}
+    ctx['unresolved_selected'] = [{'id': i, 'note': _moved_note.get((moved.get(i) or (None, None))[1],
+                                                                    SGP_UNRESOLVED_NOTE),
+                                   'remove_url': _toggle(i)}
                                   for i in unresolved]
     for grp in menu:
         for lg in grp['legs']:
@@ -48461,9 +48898,18 @@ def build_sgp_workbench_context(game=None, selected_ids=None, thesis='custom'):
         lg['remove_url'] = _toggle(lg['id'])
     # a thesis switch preserves the current selection (same game); clear drops all legs (explicit action)
     ctx['thesis_url'] = lambda tk: '/tools/sgp-workbench?' + urlencode(
-        [('game', game), ('thesis', tk)] + [('sel', i) for i in want])
+        [('game', game), ('thesis', tk)] + [('sel', i) for i in want]
+        + [('cf', f'{i}{_SGP_CONFIRM_SEP}{conf[i]:+d}') for i in want if i in conf])
     ctx['clear_url'] = '/tools/sgp-workbench?' + urlencode([('game', game), ('thesis', thesis)])
-    ctx['ticket_gate'] = _sgp_ticket_gate(selected, unresolved, now) if (selected or unresolved) else None
+    ctx['ticket_gate'] = (_sgp_ticket_gate(selected, unresolved, now, confirmed=conf, moved=moved)
+                          if (selected or unresolved) else None)
+    if ctx['ticket_gate']:
+        changes = []
+        for b in ctx['ticket_gate']['not_executable']:
+            if b.get('current'):
+                b['confirm_url'] = _confirm([(b['id'], b['current'])])
+                changes.append((b['id'], b['current']))
+        ctx['ticket_gate']['confirm_all_url'] = _confirm(changes) if len(changes) > 1 else None
     if not menu:
         ctx['abstain'] = 'No genuinely captured legs for this game right now.'
         ctx['handoff'] = _sgp_handoff_state(selected, ctx['ticket_gate']) if unresolved else None
@@ -48487,7 +48933,8 @@ def sgp_workbench_tool():
     game = str(request.args.get('game') or '').strip() or None
     thesis = str(request.args.get('thesis') or 'custom').strip().lower()
     selected_ids = request.args.getlist('sel')
-    ctx = build_sgp_workbench_context(game=game, selected_ids=selected_ids, thesis=thesis)
+    ctx = build_sgp_workbench_context(game=game, selected_ids=selected_ids, thesis=thesis,
+                                      confirmed=request.args.getlist('cf'))
     return render_template('sgp_workbench.html', **ctx)
 
 

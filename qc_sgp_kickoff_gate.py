@@ -149,9 +149,15 @@ class Fixture:
             setattr(app, n, v)
 
 
-def ctx_at(now, sel=()):
+def ctx_at(now, sel=(), conf=None):
     CLOCK['now'] = now
-    return app.build_sgp_workbench_context(game=GAME, selected_ids=list(sel), thesis='custom')
+    return app.build_sgp_workbench_context(game=GAME, selected_ids=list(sel), thesis='custom', confirmed=conf)
+
+
+def confirm_map(ctx, ids):
+    """{id: price} -- the quote terms the user confirmed when adding each leg (quote-change atomicity:
+    an export carries only confirmed terms; the D4 contract also needs 2..8 legs)."""
+    return {lg['id']: lg['price'] for lg in legs(ctx) if lg['id'] in ids and lg['price'] is not None}
 
 
 def legs(ctx):
@@ -165,9 +171,10 @@ def leg_id(ctx, **m):
     raise KeyError(m)
 
 
-def page(client, now, sel=(), extra=()):
+def page(client, now, sel=(), extra=(), conf=None):
     CLOCK['now'] = now
-    q = urlencode([('game', GAME), ('thesis', 'custom')] + [('sel', i) for i in sel] + list(extra))
+    q = urlencode([('game', GAME), ('thesis', 'custom')] + [('sel', i) for i in sel] + list(extra)
+                  + [('cf', f'{i}~{p:+d}') for i, p in (conf or {}).items()])
     r = client.get('/tools/sgp-workbench?' + q)
     return r.status_code, r.get_data(as_text=True)
 
@@ -215,21 +222,22 @@ def check_held(rec, client):
     c0 = ctx_at(PRE)
     q, w = leg_id(c0, player=QB, direction='OVER', book='SynBook'), leg_id(c0, player=WR, direction='OVER')
     held = [q, w]
-    pre = ctx_at(PRE, held)
+    cf = confirm_map(c0, held)
+    pre = ctx_at(PRE, held, cf)
     rec([l['id'] for l in pre['selected']] == held and pre['handoff']['status'] == 'held'
         and pre['ticket_gate']['executable'], 'HELD control: before kickoff the 2-leg ticket is executable (handoff held)')
-    code, html = page(client, PRE, held)
+    code, html = page(client, PRE, held, conf=cf)
     rec('Parlay Builder transfer held' in html and '| scope: individual' in html,
         'HELD control: before kickoff the full-fidelity copy renders')
 
-    post = ctx_at(KICK + S1, held)
+    post = ctx_at(KICK + S1, held, cf)
     rec([l['id'] for l in post['selected']] == held, 'HELD: legs that crossed kickoff are NOT deleted from the ticket [structural]')
     rec(all(l['kickoff_status'] == 'STARTED' and l['held_note'] == 'Started — remove or rebuild' and l.get('remove_url')
             for l in post['selected']), 'HELD: each is marked "Started — remove or rebuild" with a remove control')
     rec(post['ticket_gate'] and not post['ticket_gate']['executable']
         and sorted(post['ticket_gate']['started']) == sorted(l['label'] for l in post['selected'])
         and post['handoff']['status'] == 'rejected', 'HELD: the held ticket is non-executable (handoff rejected)')
-    code, html = page(client, KICK + S1, held)
+    code, html = page(client, KICK + S1, held, conf=cf)
     sb = blocks(html, 'data-selected-id')
     rec(code == 200 and all(i in sb and 'Started — remove or rebuild' in sb[i] and PRICED not in sb[i] for i in held),
         'HELD: rendered selected legs are marked and show no price')
@@ -239,7 +247,7 @@ def check_held(rec, client):
     # the feed drops the started game's QB rows: the held id must be LISTED (not silently dropped)
     write_feeds(app.DATA_DIR, drop_players=(QB,))
     try:
-        gone = ctx_at(KICK - timedelta(minutes=5), held)
+        gone = ctx_at(KICK - timedelta(minutes=5), held, cf)
         un = [u['id'] for u in gone['unresolved_selected']]
         rec(un == [q] and [l['id'] for l in gone['selected']] == [w],
             f'HELD: a held leg that vanished from the feed is listed as unresolved, not deleted ({un}) [structural]')
@@ -250,7 +258,7 @@ def check_held(rec, client):
             'HELD: the next click keeps the vanished id in the ticket state (only an explicit remove drops it) [structural]')
         rec(urlencode([('sel', q)]) not in gone['unresolved_selected'][0]['remove_url'],
             'HELD: the vanished leg has its own explicit remove control [structural]')
-        code, html = page(client, KICK - timedelta(minutes=5), held)
+        code, html = page(client, KICK - timedelta(minutes=5), held, conf=cf)
         ub = blocks(html, 'data-unresolved')
         rec(q in ub and app.SGP_UNRESOLVED_NOTE in ub[q] and 'data-sgp-rejected="1"' in html,
             'HELD: rendered page lists the vanished leg with its note and rejects export [structural]')
@@ -261,9 +269,11 @@ def check_held(rec, client):
 def check_export(rec, client):
     c0 = ctx_at(PRE)
     q = leg_id(c0, player=QB, direction='OVER', book='SynBook')
+    w = leg_id(c0, player=WR, direction='OVER')
+    cf = confirm_map(c0, [q, w])                 # a confirmed 2-leg ticket: only the kickoff gate can reject it
     # forged client clock params are ignored -- the server clock decides
     forged = [('now', iso(PRE)), ('server_now_utc', iso(PRE)), ('kickoff_utc', iso(KICK + timedelta(days=1)))]
-    code, html = page(client, KICK, [q], forged)
+    code, html = page(client, KICK, [q, w], forged, conf=cf)
     rec(code == 200 and 'data-sgp-rejected="1"' in html and '| scope:' not in html,
         'EXP: GET with a forged pre-kickoff client clock is still rejected at kickoff == server now')
     started = [lg for lg in legs(ctx_at(KICK + S1)) if lg.get('player') == QB]   # CLOCK now KICK+1s
@@ -275,8 +285,9 @@ def check_export(rec, client):
     rec(not g['executable'] and g['started'] == [forged_leg['label']],
         'EXP: a forged "ticket_ok" annotation is re-judged by the server gate (rejected)')
     CLOCK['now'] = PRE
-    ok_leg = [lg for lg in legs(ctx_at(PRE)) if lg.get('player') == QB][:1]
-    rec(app._sgp_handoff_state(ok_leg)['status'] == 'held', 'EXP control: a not-started ticket is not rejected')
+    ok_legs = [lg for lg in legs(ctx_at(PRE)) if lg['id'] in (q, w)]
+    rec(len(ok_legs) == 2 and app._sgp_handoff_state(ok_legs, confirmed=cf)['status'] == 'held',
+        'EXP control: a not-started, confirmed 2-leg ticket is not rejected')
     for pl in (RB, TE):
         lid = leg_id(c0, player=pl, direction='OVER')
         cx = ctx_at(PRE, [lid])

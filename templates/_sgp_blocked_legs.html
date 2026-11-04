@@ -1,0 +1,8 @@
+{#- SGP Workbench: the per-leg reasons of a rejected export / handoff (shared by both rejection blocks).
+   A leg whose quote CHANGED since the user confirmed it (price / line / sportsbook) shows the terms the
+   user confirmed -> the CURRENT terms, and an explicit "Confirm current terms" link (never applied for
+   the user). Expects `handoff` (with .legs and .gate). -#}
+{% if handoff.legs %}<ul class="sgp-blocked" style="margin:6px 0 0 18px;padding:0;">{% for b in handoff.legs %}<li data-sgp-blocked="{{ b.id }}" data-reasons="{{ b.reasons|join(',') }}">{{ b.label }} &mdash; {{ b.note }}{% if b.current %}
+  <div class="sgp-terms" data-sgp-current="{{ b.current.id }}" style="font-size:12px;margin-top:2px;">You confirmed: {{ b.confirmed.book or '—' }} &middot; {{ b.confirmed.line if b.confirmed.line is not none else '—' }} &middot; {% if b.confirmed.price is not none %}{{ '%+d'|format(b.confirmed.price) }}{% else %}not confirmed{% endif %} &rarr; Now: {{ b.current.book or '—' }} &middot; {{ b.current.line if b.current.line is not none else '—' }} &middot; {% if b.current.price is not none %}{{ '%+d'|format(b.current.price) }}{% else %}price unavailable{% endif %} ({{ b.current.updated_label }}){% if b.current.label and b.current.label != b.label %} &middot; now listed as {{ b.current.label }}{% endif %}</div>
+  {% if b.confirm_url %}<a class="sgp-chip" data-sgp-confirm="{{ b.id }}" href="{{ b.confirm_url }}">Confirm current terms</a>{% endif %}{% endif %}</li>{% endfor %}</ul>
+{% if handoff.gate and handoff.gate.confirm_all_url %}<div style="margin-top:6px;"><a class="sgp-chip" data-sgp-confirm-all="1" href="{{ handoff.gate.confirm_all_url }}">Confirm all current terms</a></div>{% endif %}{% endif %}

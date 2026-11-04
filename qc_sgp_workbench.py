@@ -62,7 +62,7 @@ def _fixture_menu(away, home):
     return [{'cat': c, 'legs': grouped[c]} for c in order if c in grouped]
 
 
-def _ctx(game='Alpha AAA@Beta BBB', sel=None, thesis='custom', menu=None):
+def _ctx(game='Alpha AAA@Beta BBB', sel=None, thesis='custom', menu=None, confirmed=None):
     """build_sgp_workbench_context with the menu + matchup week monkeypatched (deterministic)."""
     import services.nfl_sgp  # noqa
     saved_menu = app._nfl_sgp_leg_menu
@@ -71,7 +71,8 @@ def _ctx(game='Alpha AAA@Beta BBB', sel=None, thesis='custom', menu=None):
     app.build_nfl_matchup_context = lambda: {'mu_week': [{'away': 'Alpha AAA', 'home': 'Beta BBB'},
                                                          {'away': 'Gamma GGG', 'home': 'Delta DDD'}]}
     try:
-        return app.build_sgp_workbench_context(game=game, selected_ids=sel or [], thesis=thesis)
+        return app.build_sgp_workbench_context(game=game, selected_ids=sel or [], thesis=thesis,
+                                               confirmed=confirmed)
     finally:
         app._nfl_sgp_leg_menu = saved_menu
         app.build_nfl_matchup_context = saved_mctx
@@ -198,7 +199,11 @@ def t12_matchup_menu_unchanged():
 
 @check
 def t13_parlay_handoff_held_reports_mismatch():
-    ctx = _ctx(sel=[_ids(_ctx(), player='QB1', direction='OVER')[0]])
+    # an exportable ticket: 2..8 legs (D4 frozen range) whose quote terms the user confirmed (prices seen)
+    base = _ctx()
+    sel = [_ids(base, player='QB1', direction='OVER')[0], _ids(base, player='WR1', direction='OVER')[0]]
+    conf = {lg['id']: lg['price'] for grp in base['menu'] for lg in grp['legs'] if lg['id'] in sel}
+    ctx = _ctx(sel=sel, confirmed=conf)
     h = ctx['handoff']
     assert h and h['status'] == 'held' and h['reason'] == 'contract_mismatch'
     for f in ('price', 'sportsbook', 'quote_scope', 'source_timestamp'):

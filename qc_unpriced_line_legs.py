@@ -536,7 +536,8 @@ def check_leg_behavior():
         ok('no book or capture time recorded' not in dh and 'SynBook' in dh,
            'D: card leg prices carry their bookmaker + capture time (old "no book" copy gone)')
 
-        # image endpoint: never prices what the browser sends
+        # image endpoint: never prices what the browser sends -- a client price that differs from the
+        # server quote is now REJECTED whole (409 PRICE_CHANGED; quote-change atomicity), still never used
         import re as _re
         from marketing.generators import weekly_cards as _wc
         from PIL import Image as _Image
@@ -549,16 +550,25 @@ def check_leg_behavior():
             return _Image.new('RGB', (2, 2))
         _wc.render_daily_card = _fake_render
         try:
-            forged = [dict(sport=l['sport'], label=l['label'], game=l['game'], tier=l['tier'], price=900)
-                      for l in mixed['cards'][0]['legs']]
+            confirmed = [dict(sport=l['sport'], label=l['label'], game=l['game'], tier=l['tier'],
+                              **app.ticket_quote_terms(l)) for l in mixed['cards'][0]['legs']]
+            forged = [dict(x, price=900) for x in confirmed]
             r = c.post('/tools/daily-card.png', json={'legs': forged}, headers={'X-CSRFToken': token})
+            j = r.get_json(silent=True) or {}
+            ok(r.status_code == 409 and not captured and j.get('error') == 'quote_changed'
+               and all('PRICE_CHANGED' in e.get('reasons', []) and (e.get('current') or {}).get('price')
+                       == quoted_price[e.get('game')] for e in j.get('legs') or [])
+               and '900' not in r.get_data(as_text=True),
+               f'D: image endpoint REJECTS a forged +900 (409 PRICE_CHANGED with the server quote as current), '
+               f'never renders or reprices it (HTTP {r.status_code})')
+            r = c.post('/tools/daily-card.png', json={'legs': confirmed}, headers={'X-CSRFToken': token})
             got = captured.get('card', {}).get('legs', [])
-            ok(r.status_code == 200 and len(got) == len(forged)
+            ok(r.status_code == 200 and len(got) == len(confirmed)
                and all(g['price'] == quoted_price[g['game']] for g in got),
-               f'D: image endpoint reprices from the server quote, ignoring a forged +900 (HTTP {r.status_code})')
+               f'D: confirmed current terms render, priced from the server quote (HTTP {r.status_code})')
             captured.clear()
             unpriced = [dict(sport='CFB', label='UCLA -23', game='Nevada @ UCLA', tier='swing', price=-105)]
-            r = c.post('/tools/daily-card.png', json={'legs': forged[:2] + unpriced}, headers={'X-CSRFToken': token})
+            r = c.post('/tools/daily-card.png', json={'legs': confirmed[:2] + unpriced}, headers={'X-CSRFToken': token})
             j = r.get_json(silent=True) or {}
             bad = [e for e in (j.get('legs') or []) if not e.get('executable')]
             ok(r.status_code == 409 and not captured and len(j.get('legs') or []) == 3
