@@ -31,6 +31,12 @@ OFFLINE: temp dirs only; BK_NBA_LINES_LOCK_PATH points into a temp dir. Exit 0 o
 """
 from __future__ import annotations
 
+import sys as _qc_sys  # noqa: E402
+from pathlib import Path as _QcPath  # noqa: E402
+_qc_sys.path.insert(0, str(_QcPath(__file__).resolve().parent))  # noqa: E402
+from services.qc_runtime import isolate_runtime as _isolate_runtime  # noqa: E402
+_isolate_runtime()  # per-run temp BK_RUNTIME_DIR: a QC never resolves the production runtime
+
 import contextlib
 import hashlib
 import io
@@ -491,25 +497,39 @@ def qc_in_process():
     check(": OK" not in qbuf.getvalue() and "not a success" in qbuf.getvalue(),
           "a failed fetch's cost-receipt line never prints OK")
 
-    # lock path resolution: env override > BK_RUNTIME_DIR > POSIX default; never inside the checkout on prod
+    # lock path resolution: env override > BK_RUNTIME_DIR > POSIX default; never inside the checkout on prod.
+    # Asserted through the PURE resolver -- this QC never lets runtime_root() hand it a production path.
+    p1 = pubm._resolve_runtime_root("/opt/bankrollkings-runtime") / "locks" / pubm.LOCK_FILENAME
+    p2 = pubm._resolve_runtime_root("") / "locks" / pubm.LOCK_FILENAME
+    check(p1.as_posix() == "/opt/bankrollkings-runtime/locks/nba_game_lines.lock",
+          f"lock path follows BK_RUNTIME_DIR ({p1.as_posix()})")
+    # (Windows dev: bk_runtime honours BK_RUNTIME_DIR itself, which inside this QC is the isolated qc_runtime_* dir)
+    check((os.name == "nt" and (".runtime" in p2.as_posix() or "qc_runtime_" in p2.as_posix())) or
+          p2.as_posix() == "/opt/bankrollkings-runtime/locks/nba_game_lines.lock",
+          f"unset BK_RUNTIME_DIR -> POSIX default outside the checkout (Windows dev: gitignored .runtime) ({p2.as_posix()})")
+    # Linux gate defect 1: inside a QC process the GUARDED resolver refuses any non-qc-temp runtime
     saved_env = {k: os.environ.get(k) for k in ("BK_NBA_LINES_LOCK_PATH", "BK_RUNTIME_DIR")}
+    refused = []
     try:
         os.environ.pop("BK_NBA_LINES_LOCK_PATH", None)
-        os.environ["BK_RUNTIME_DIR"] = "/opt/bankrollkings-runtime"
-        p1 = pubm.lock_path()
-        os.environ.pop("BK_RUNTIME_DIR", None)
-        p2 = pubm.lock_path()
+        for val in ("/opt/bankrollkings-runtime", None):
+            if val is None:
+                os.environ.pop("BK_RUNTIME_DIR", None)
+            else:
+                os.environ["BK_RUNTIME_DIR"] = val
+            try:
+                pubm.runtime_root()
+                refused.append(False)
+            except pubm.LockPathRejected:
+                refused.append(True)
     finally:
         for k, v in saved_env.items():
             if v is None:
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
-    check(p1.as_posix() == "/opt/bankrollkings-runtime/locks/nba_game_lines.lock",
-          f"lock path follows BK_RUNTIME_DIR ({p1.as_posix()})")
-    check((os.name == "nt" and ".runtime" in p2.as_posix()) or
-          p2.as_posix() == "/opt/bankrollkings-runtime/locks/nba_game_lines.lock",
-          f"unset BK_RUNTIME_DIR -> POSIX default outside the checkout (Windows dev: gitignored .runtime) ({p2.as_posix()})")
+    check(refused == [True, True], "QC guard: runtime_root() REFUSES the production default and an unset runtime "
+                                   f"inside a QC process ({refused})")
 
 
 def qc_reuse_rules():
