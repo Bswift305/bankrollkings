@@ -1245,6 +1245,9 @@ def write_runtime_snapshot(snapshot_key, payload, meta=None):
         'generated_at': datetime.now(timezone.utc).isoformat(),
         'meta': meta or {},
         'payload': payload,
+        # v4: the NBA/WNBA props executable state this snapshot was rendered from. A snapshot rendered while
+        # a feed was withheld must not keep being served (empty) after the feed recovers, and vice versa.
+        'props_exec_tokens': {s: _props_executable_token(s) for s in _snapshot_props_sports(snapshot_key)},
     }
     path.write_text(json.dumps(document, default=_json_safe_value), encoding='utf-8')
     return path
@@ -1304,6 +1307,9 @@ def load_runtime_snapshot(snapshot_key, max_age_minutes=30, allow_stale=False, s
         return None
     if not _snapshot_props_servable(snapshot_key, generated_at.to_pydatetime()):
         return None
+    tokens = document.get('props_exec_tokens')
+    if isinstance(tokens, dict) and any(_props_executable_token(s) != t for s, t in tokens.items()):
+        return None   # rendered from a different props executable state (e.g. while withheld) -> rebuild live
     age_seconds = (datetime.now(timezone.utc) - generated_at.to_pydatetime()).total_seconds()
     fresh_seconds = max(int(max_age_minutes or 0), 1) * 60
     is_stale = age_seconds > fresh_seconds
@@ -3799,6 +3805,17 @@ def get_lines_refresh_meta(odds_df, max_age_hours=LIVE_LINES_MAX_AGE_HOURS, now=
 # exist AND the freshest provider LastUpdated parses to a timezone-aware UTC instant (naive = Eastern wall
 # clock, services/timeutils) AND it is not more than 5 minutes in the future AND it is <= 6h old.
 # ---------------------------------------------------------------------------------------------------------
+#
+# CLOCK-SKEW CONTRACT (owner decision 5, v4). PROPS_FUTURE_TOLERANCE_HOURS (+5 minutes) is a documented
+# clock-skew allowance between the provider's clock and ours -- nothing more:
+#   * freshest LastUpdated in (now, now + 5 min]  -> TOLERATED and LABELLED: executable, with
+#     clock_skew_tolerated=True, clock_skew_seconds=<how far ahead>, status_reason='clock_skew_tolerated',
+#     and the props status partial says so (data-props-clock-skew="1");
+#   * freshest LastUpdated beyond now + 5 min     -> FAILS CLOSED (unavailable_reason='future_timestamp',
+#     every price withheld);
+#   * row level: any individual row whose own LastUpdated is beyond now + 5 min is DROPPED from the
+#     executable frame (counted in future_rows_dropped) even when the feed as a whole is executable.
+# The tolerance never extends the 6h age limit on the other side.
 PROPS_FUTURE_TOLERANCE_HOURS = 5.0 / 60.0
 _EXECUTABLE_PROPS_SPORTS = ('nba', 'wnba')
 
@@ -3811,42 +3828,79 @@ def props_executable_meta(raw_df, max_age_hours=None, now=None):
             limit = min(limit, float(max_age_hours))
     except (TypeError, ValueError):
         pass
-    meta = get_props_refresh_meta(raw_df, max_age_hours=limit, now=now)
+    now_utc = _instant_to_utc(now, naive_tz='UTC') if now is not None else _utc_now()
+    meta = get_props_refresh_meta(raw_df, max_age_hours=limit, now=now_utc)
     age = meta.get('age_hours')
+    skew_seconds = 0
+    freshest = _instant_to_utc(meta.get('last_updated_utc')) if meta.get('last_updated_utc') else None
+    if freshest is not None and freshest > now_utc:
+        skew_seconds = int(round((freshest - now_utc).total_seconds()))
+    tolerance_seconds = int(round(PROPS_FUTURE_TOLERANCE_HOURS * 3600))
     if not meta.get('has_live_props'):
         reason = 'empty'
     elif age is None:
         reason = 'no_timestamp'
-    elif age < -PROPS_FUTURE_TOLERANCE_HOURS:
+    elif skew_seconds > tolerance_seconds:
         reason = 'future_timestamp'
     elif meta.get('is_stale'):
         reason = 'stale'
     else:
         reason = None
     executable = reason is None
-    if reason in ('no_timestamp', 'future_timestamp'):
+    skew_tolerated = bool(executable and 0 < skew_seconds <= tolerance_seconds)
+    if reason == 'no_timestamp':
         meta['status'] = 'unavailable'
-        meta['warning'] = ('Player-prop prices are withheld: the feed has no verifiable update time '
-                           f'({reason.replace("_", " ")}).')
+        meta['warning'] = 'Player-prop prices are withheld: the feed has no verifiable update time (no timestamp).'
+    elif reason == 'future_timestamp':
+        meta['status'] = 'unavailable'
+        meta['warning'] = (f"Player-prop prices are withheld: the feed's update time is {skew_seconds // 60} min "
+                           "in the future, beyond the 5-minute clock-skew allowance (future timestamp).")
     elif reason == 'stale':
         meta['warning'] = (f"Player-prop prices are withheld: the feed was last updated {meta.get('last_updated')} "
                            f"({age:.1f}h ago), past the {limit:g}-hour limit for a current price.")
     meta.update({
         'executable': executable,
         'unavailable_reason': reason,
+        'status_reason': 'clock_skew_tolerated' if skew_tolerated else reason,
+        'clock_skew_tolerated': skew_tolerated,
+        'clock_skew_seconds': skew_seconds,
+        'clock_skew_tolerance_seconds': tolerance_seconds,
         'max_age_hours': limit,
         'prices_withheld': bool(not executable and reason != 'empty'),
         'executable_row_count': int(meta.get('row_count') or 0) if executable else 0,
+        'future_rows_dropped': 0,
     })
     return meta
 
 
+def _drop_future_rows(df, now_utc):
+    """Rows whose OWN LastUpdated is beyond the clock-skew allowance are not executable (fail closed)."""
+    if df is None or getattr(df, 'empty', True) or 'LastUpdated' not in df.columns:
+        return df, 0
+    limit = now_utc + timedelta(hours=PROPS_FUTURE_TOLERANCE_HOURS)
+    bad = set()
+    for v in df['LastUpdated'].dropna().unique().tolist():
+        inst = _instant_to_utc(v)
+        if inst is not None and inst > limit:
+            bad.add(v)
+    if not bad:
+        return df, 0
+    mask = df['LastUpdated'].isin(bad)
+    return df.loc[~mask], int(mask.sum())
+
+
 def _executable_props_frame(sport, raw_df, max_age_hours=None, now=None):
-    """(frame, meta): the raw frame when executable, else an EMPTY frame with the same columns."""
+    """(frame, meta): the raw frame when executable (minus any row beyond the clock-skew allowance), else an
+    EMPTY frame with the same columns."""
     meta = props_executable_meta(raw_df, max_age_hours=max_age_hours, now=now)
     meta['sport'] = sport
     if meta['executable']:
-        return raw_df, meta
+        now_utc = _instant_to_utc(now, naive_tz='UTC') if now is not None else _utc_now()
+        frame, dropped = _drop_future_rows(raw_df, now_utc)
+        if dropped:
+            meta['future_rows_dropped'] = dropped
+            meta['executable_row_count'] = int(len(frame))
+        return frame, meta
     cols = list(raw_df.columns) if raw_df is not None and hasattr(raw_df, 'columns') else []
     return pd.DataFrame(columns=cols), meta
 
@@ -41610,6 +41664,10 @@ def build_market_only_board(feed_loader):
         'age_hours': meta.get('age_hours'),
         'max_age_hours': meta.get('max_age_hours') or LIVE_LINES_MAX_AGE_HOURS,
         'warning': meta.get('warning') or '',
+        # v4 clock-skew contract: a tolerated (<= +5 min) provider-clock lead is labelled, never silent.
+        'status_reason': meta.get('status_reason'),
+        'clock_skew_tolerated': bool(meta.get('clock_skew_tolerated')) and bool(rows),
+        'clock_skew_seconds': meta.get('clock_skew_seconds') or 0,
     }
     return {'rows': rows, 'as_of': meta.get('as_of') or meta.get('generated_at'),
             'books': (meta.get('books') or []) if rows else [], 'props_status': props_status}
