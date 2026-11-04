@@ -33429,17 +33429,25 @@ def _leg_quote_failures(leg, now=None):
                       ('selection', 'MISSING_SELECTION')):
         if not str(q.get(fld) or '').strip():
             out.append(code)
-    upd = _feed_stamp_to_utc(q.get('updated_utc'))
-    if upd is None:
-        out.append('MISSING_UPDATE_TIME')
-    else:
-        from services.freshness_contract import LIVE_MARKET_MAX_AGE_HOURS
-        age_h = (now - upd).total_seconds() / 3600.0
-        if age_h > LIVE_MARKET_MAX_AGE_HOURS:
-            out.append('STALE_QUOTE')
-        elif age_h < -0.25:
-            out.append('QUOTE_FROM_FUTURE')
+    _fresh = _quote_freshness_failure(q.get('updated_utc'), now)
+    if _fresh:
+        out.append(_fresh)
     return out
+
+
+def _quote_freshness_failure(updated, now):
+    """CLOCK-A freshness for ONE quote's source update time (shared by the executable-leg contract and
+    the SGP export gate): None when fresh, else MISSING_UPDATE_TIME / STALE_QUOTE / QUOTE_FROM_FUTURE."""
+    upd = _feed_stamp_to_utc(updated)
+    if upd is None:
+        return 'MISSING_UPDATE_TIME'
+    from services.freshness_contract import LIVE_MARKET_MAX_AGE_HOURS
+    age_h = (now - upd).total_seconds() / 3600.0
+    if age_h > LIVE_MARKET_MAX_AGE_HOURS:
+        return 'STALE_QUOTE'
+    if age_h < -0.25:
+        return 'QUOTE_FROM_FUTURE'
+    return None
 
 
 def _leg_is_executable(leg, now=None):
@@ -34680,6 +34688,142 @@ def journal_report():
     return render_template('decision_journal/report.html', report=report)
 
 
+# --- D4: atomic user-submitted tickets -------------------------------------------------------------
+# Once a user submits a selected ticket (image POST from the shared ticket editor / Menu slip), the
+# server never alters it: every submitted leg must resolve on the server's current pool AND pass the
+# full executable-leg contract (_leg_quote_failures) on ONE server clock, or the WHOLE ticket is
+# rejected with per-leg reasons. Server-built cards (GET) may still be rebuilt with a visible notice.
+TICKET_SUBMIT_MIN_LEGS = 2          # the shared editor's MIN and the Menu slip's minimum
+TICKET_SUBMIT_MAX_LEGS = 8          # the Menu slip's maximum (the editor caps at 5)
+_TICKET_ID_FIELDS = ('sport', 'label', 'game')        # a submitted leg's public identity
+_TICKET_ID_MAXLEN = 200
+# Display text per reason code (the existing executable-leg vocabulary + three submission codes).
+TICKET_REASON_TEXT = {
+    'STARTED': 'game started',
+    'MISSING_KICKOFF': 'kickoff unavailable',
+    'STALE_QUOTE': 'price is stale',
+    'QUOTE_FROM_FUTURE': 'price time is invalid',
+    'MISSING_UPDATE_TIME': 'price capture time not recorded',
+    'NO_QUOTE': 'no verified price',
+    'MISSING_PRICE': 'no verified price',
+    'INVALID_PRICE': 'no verified price',
+    'PRICE_NOT_FROM_QUOTE': 'no verified price',
+    'MISSING_BOOK': 'no recorded sportsbook',
+    'NOT_A_SPORTSBOOK': 'no recorded sportsbook',
+    'MISSING_LINE': 'quote incomplete',
+    'LINE_NOT_FROM_QUOTE': 'quote incomplete',
+    'MISSING_EVENT': 'quote incomplete',
+    'MISSING_MARKET': 'quote incomplete',
+    'MISSING_SELECTION': 'quote incomplete',
+    'MARKED_NON_EXECUTABLE': 'context only — not executable',
+    'NOT_A_LEG': 'leg is malformed',
+    'NOT_ON_BOARD': 'no longer on the board',
+    'MALFORMED_LEG': 'leg is malformed',
+    'DUPLICATE_LEG': 'leg appears twice',
+}
+
+
+def _ticket_display(value, n=80):
+    """Bounded, printable display text for a leg identity field (never a raw payload echo)."""
+    if not isinstance(value, str):
+        return ''
+    return ''.join(ch for ch in value if ch.isprintable())[:n]
+
+
+def _ticket_reason_note(codes):
+    return '; '.join(dict.fromkeys(TICKET_REASON_TEXT.get(c, 'not executable') for c in codes))
+
+
+def _judge_submitted_ticket(payload, now, pool_legs):
+    """THE final boundary for a user-submitted ticket. Returns (status, legs, body):
+    (200, [server legs in submitted order], None) when EVERY submitted leg is well-formed, resolves on
+    the server pool and is executable at `now`; else (422, None, body) for malformed input (bad JSON,
+    wrong types, wrong leg count, duplicate leg) or (409, None, body) when a well-formed ticket is no
+    longer executable (started / unknown kickoff / stale / unpriced / no recorded sportsbook / not on
+    the board). Nothing is dropped, substituted or repriced from the client; the body lists every
+    submitted leg with its public identity (sport / label / game), its reason codes and display text."""
+    lo, hi = TICKET_SUBMIT_MIN_LEGS, TICKET_SUBMIT_MAX_LEGS
+    raw = payload.get('legs') if isinstance(payload, dict) else None
+    if not isinstance(raw, list):
+        return 422, None, {'error': 'malformed_ticket', 'legs': [],
+                           'message': 'This ticket could not be read. Nothing was rendered — rebuild the ticket.'}
+    if not (lo <= len(raw) <= hi):
+        return 422, None, {'error': 'wrong_leg_count', 'legs': [], 'n_submitted': len(raw),
+                           'message': (f'A ticket needs {lo}–{hi} legs; this one has {len(raw)}. '
+                                       'Nothing was rendered.')}
+    index = {}
+    for l in pool_legs or []:
+        k = (l.get('sport'), l.get('label'), l.get('game'))
+        why = _leg_quote_failures(l, now)
+        prev = index.get(k)
+        if prev is None or (prev[1] and not why):      # prefer an executable record of the same leg
+            index[k] = (l, why)
+    entries, seen, malformed = [], set(), False
+    for pos, l in enumerate(raw, 1):
+        ident = {f: _ticket_display(l.get(f)) if isinstance(l, dict) else '' for f in _TICKET_ID_FIELDS}
+        well = isinstance(l, dict) and all(isinstance(l.get(f), str) and l.get(f).strip()
+                                           and len(l.get(f)) <= _TICKET_ID_MAXLEN for f in _TICKET_ID_FIELDS)
+        srv = None
+        if not well:
+            reasons, malformed = ['MALFORMED_LEG'], True
+        else:
+            key = tuple(l.get(f) for f in _TICKET_ID_FIELDS)
+            if key in seen:
+                reasons, malformed = ['DUPLICATE_LEG'], True
+            else:
+                seen.add(key)
+                srv, reasons = index.get(key, (None, ['NOT_ON_BOARD']))
+                reasons = list(reasons)
+                if srv is not None:
+                    ident = {f: _ticket_display(srv.get(f)) for f in _TICKET_ID_FIELDS}
+        entries.append((srv, {'position': pos, **ident, 'executable': not reasons,
+                              'reasons': reasons, 'note': _ticket_reason_note(reasons) if reasons else ''}))
+    report = [e for _s, e in entries]
+    blocked = [e for e in report if not e['executable']]
+    if malformed:
+        n_b = len(blocked)
+        return 422, None, {'error': 'malformed_ticket', 'legs': report, 'n_blocked': n_b,
+                           'message': (f"{n_b} leg{'s' if n_b != 1 else ''} on this ticket could not be read. "
+                                       'Nothing was rendered — remove or rebuild the marked leg(s).')}
+    if blocked:
+        n_b = len(blocked)
+        started = [e['label'] for e in blocked if 'STARTED' in e['reasons']]
+        why = '; '.join(f"{e['label'] or 'leg ' + str(e['position'])} — {e['note']}" for e in blocked[:5])
+        return 409, None, {'error': 'ticket_not_executable', 'legs': report, 'n_blocked': n_b,
+                           'removed_started': started, 'server_now_utc': _utc_iso(now),
+                           'message': (f"{n_b} leg{'s' if n_b != 1 else ''} on this ticket "
+                                       f"{'is' if n_b == 1 else 'are'} not executable ({why}). Nothing was "
+                                       'rendered and nothing was removed for you — remove or rebuild the '
+                                       'marked leg(s), then save again.')}
+    legs = []
+    for srv, _e in entries:
+        legs.append({'label': str(srv['label'])[:60], 'price': int(srv['price']),
+                     'quote': srv['quote'], 'line': srv.get('line'),
+                     'tier': 'floor' if srv.get('tier') == 'floor' else 'swing',
+                     'sport': str(srv.get('sport') or '')[:4],
+                     'game': str(srv.get('game') or '')[:40],
+                     'reason': str(srv.get('reason') or '')[:110],
+                     'kickoff_utc': srv.get('kickoff_utc')})
+    return 200, legs, None
+
+
+def _log_ticket_rejection(surface, status, body):
+    """Sanitized rejection log: surface, status, counts and reason codes ONLY -- never the payload,
+    labels, prices or any user-supplied text."""
+    try:
+        codes = {}
+        for e in (body or {}).get('legs') or []:
+            for c in e.get('reasons') or []:
+                if c in TICKET_REASON_TEXT:
+                    codes[c] = codes.get(c, 0) + 1
+        app.logger.info('ticket_submission_rejected surface=%s status=%s error=%s n_legs=%d n_blocked=%d reasons=%s',
+                        surface, status, (body or {}).get('error'), len((body or {}).get('legs') or []),
+                        int((body or {}).get('n_blocked') or 0),
+                        ','.join(f'{k}:{v}' for k, v in sorted(codes.items())) or '-')
+    except Exception:
+        pass
+
+
 @app.route('/tools/daily-card.png', methods=['GET', 'POST'])
 def daily_card_image():
     """Render one Daily Card as a shareable Bankroll Kings PNG ticket, via the marketing card
@@ -34689,47 +34833,21 @@ def daily_card_image():
     from flask import send_file, abort
     n = request.args.get('n', type=int) or 3
     if request.method == 'POST':
-        payload = request.get_json(silent=True) or {}
-        raw = payload.get('legs') or []
-        # Never price what the browser sends: each leg is re-resolved against the server's current
-        # pool and kept only if it is executable there (verified, fresh single-book quote); the
-        # price is the server's quote price, not the client's number.
-        now = _now_utc()                               # one server clock for this ticket (D4)
+        # A USER-SUBMITTED ticket is atomic: rendered with exactly the submitted legs, or rejected whole
+        # (409 non-executable / 422 malformed) with per-leg reasons -- never a partial image (D4).
+        # Never price what the browser sends: each leg is re-resolved against the server's current pool
+        # on ONE server clock; the price is the server's quote price, not the client's number.
+        now = _now_utc()
         _f, _s = _card_pools('all', now=now)
-        live, started = {}, {}
-        for l in _f + _s:
-            k = (l.get('sport'), l.get('label'), l.get('game'))
-            _why = _leg_quote_failures(l, now)
-            if not _why:
-                live[k] = l
-            elif 'STARTED' in _why:
-                started[k] = l
-        # A ticket carrying a leg whose game has started is REJECTED whole -- visibly (409 + reason),
-        # never rendered with that leg silently dropped or replaced.
-        hit_started = [str(l.get('label'))[:60] for l in raw[:8] if isinstance(l, dict)
-                       and (l.get('sport'), l.get('label'), l.get('game')) in started]
-        if hit_started:
-            n_s = len(hit_started)
-            return jsonify({'error': 'started', 'removed_started': hit_started,
-                            'message': f"{n_s} leg{'s' if n_s != 1 else ''} removed — game started. "
-                                       "Remove the started leg and save again."}), 409
-        legs = []
-        for l in raw[:8]:
-            if not isinstance(l, dict) or not l.get('label'):
-                continue
-            srv = live.get((l.get('sport'), l.get('label'), l.get('game')))
-            if srv is None:
-                continue
-            legs.append({'label': str(srv['label'])[:60], 'price': int(srv['price']),
-                         'quote': srv['quote'], 'line': srv.get('line'),
-                         'tier': 'floor' if srv.get('tier') == 'floor' else 'swing',
-                         'sport': str(srv.get('sport') or '')[:4],
-                         'game': str(srv.get('game') or '')[:40],
-                         'reason': str(srv.get('reason') or '')[:110],
-                         'kickoff_utc': srv.get('kickoff_utc')})
-        if len(legs) < 3:
-            abort(400)
-        am, dec, pay = _card_price(legs, now)
+        status, legs, body = _judge_submitted_ticket(request.get_json(silent=True), now, _f + _s)
+        if status != 200:
+            _log_ticket_rejection('daily_card_image', status, body)
+            return jsonify(body), status
+        try:
+            am, dec, pay = _card_price(legs, now)
+        except ValueError:                             # unreachable when the judge passed; fail closed
+            return jsonify({'error': 'ticket_not_executable', 'legs': [],
+                            'message': 'This ticket could not be priced. Nothing was rendered.'}), 409
         card = {'n': len(legs), 'legs': legs, 'american': am, 'payout_5': pay}
         n = len(legs)
     else:
@@ -48016,16 +48134,53 @@ def _sgp_ticket_gate(selected, unresolved_ids, now):
     the browser). Every selected leg is re-judged here -- not trusted from an earlier annotation -- and a
     selected id that no longer resolves on this game's board counts as unknown kickoff (fail closed).
     Any started / unknown-kickoff leg => not executable: no export, copy, handoff or ticket build."""
-    started, missing = [], []
+    started, missing, blocked = [], [], []
     for lg in selected or []:
         why = _leg_kickoff_failure(lg, now)
         if why == 'STARTED':
             started.append(lg.get('label'))
         elif why:
             missing.append(lg.get('label'))
+        # Atomic export: the WHOLE ticket is judged; any leg that is not executable (kickoff, price,
+        # recorded sportsbook, line, quote freshness) blocks export -- nothing is dropped for the user.
+        reasons = ([why] if why else []) + _sgp_leg_quote_failures(lg, now)
+        if reasons:
+            blocked.append({'id': lg.get('id'), 'label': lg.get('label'), 'reasons': reasons,
+                            'note': _ticket_reason_note(reasons)})
     gone = list(unresolved_ids or [])
-    return {'executable': not (started or missing or gone), 'started': started,
-            'missing_kickoff': missing, 'unresolved': gone, 'server_now_utc': _utc_iso(now)}
+    blocked += [{'id': i, 'label': i, 'reasons': ['NOT_ON_BOARD'], 'note': _ticket_reason_note(['NOT_ON_BOARD'])}
+                for i in gone]
+    return {'executable': not (started or missing or gone or blocked), 'started': started,
+            'missing_kickoff': missing, 'unresolved': gone, 'not_executable': blocked,
+            'server_now_utc': _utc_iso(now)}
+
+
+def _sgp_leg_quote_failures(lg, now):
+    """The quote half of the executable-leg contract for ONE SGP Workbench leg (its own per-book facts;
+    the kickoff half is _leg_kickoff_failure): a real recorded sportsbook (never the 'book' placeholder
+    or a non-book source), a genuinely captured American price, a line, and a fresh provider update time
+    (_quote_freshness_failure). Reason codes from the shared vocabulary; [] = executable quote."""
+    out = []
+    book = str((lg or {}).get('book') or '').strip().lower()
+    if not book or book == 'book':
+        out.append('MISSING_BOOK')
+    elif book in _NON_BOOK_SOURCES:
+        out.append('NOT_A_SPORTSBOOK')
+    price = (lg or {}).get('price')
+    if price is None:
+        out.append('MISSING_PRICE')
+    else:
+        try:
+            if abs(int(price)) < 100:
+                out.append('INVALID_PRICE')
+        except (TypeError, ValueError):
+            out.append('INVALID_PRICE')
+    if (lg or {}).get('line') is None:
+        out.append('MISSING_LINE')
+    fresh = _quote_freshness_failure((lg or {}).get('timestamp'), now)
+    if fresh:
+        out.append(fresh)
+    return out
 
 
 def _nfl_sgp_leg_menu(away, home):
@@ -48202,7 +48357,16 @@ def _sgp_handoff_state(selected, gate=None):
             parts.append(f"{n_m} leg{'s' if n_m != 1 else ''} with kickoff unavailable")
         if n_u:
             parts.append(f"{n_u} leg{'s' if n_u != 1 else ''} no longer on the board")
-        return {'status': 'rejected', 'reason': 'kickoff_gate', 'gate': gate,
+        n_q = sum(1 for b in (gate.get('not_executable') or [])
+                  if not set(b.get('reasons') or []) & {'STARTED', 'MISSING_KICKOFF', 'NOT_ON_BOARD'})
+        if n_q:
+            parts.append(f"{n_q} leg{'s' if n_q != 1 else ''} without an executable quote "
+                         '(price, sportsbook, line or freshness)')
+        if not parts:
+            parts.append('a leg is not executable')
+        _kick = bool(n_s or n_m or n_u)
+        return {'status': 'rejected', 'reason': 'kickoff_gate' if _kick else 'quote_gate', 'gate': gate,
+                'legs': list(gate.get('not_executable') or []),
                 'message': ('This ticket cannot be exported, copied or handed off: ' + '; '.join(parts)
                             + '. Remove or rebuild the marked leg(s) -- nothing was removed for you.'),
                 'leg_count': len(selected or []) + n_u}

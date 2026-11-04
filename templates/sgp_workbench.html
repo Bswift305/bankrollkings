@@ -81,7 +81,8 @@
     {% for u in unresolved_selected %}
       <div class="sgp-leg sel ctx" data-unresolved="{{ u.id }}"><div class="meta"><div class="lab">{{ u.id }}</div><div class="sub"><span class="sgp-kick">{{ u.note }}</span></div></div><a class="sgp-btn rm" href="{{ u.remove_url }}">&minus;</a></div>
     {% endfor %}
-    {% if handoff and handoff.status == 'rejected' %}<div class="sgp-rejected" data-sgp-rejected="1"><b>Ticket not exportable.</b> {{ handoff.message }}</div>{% endif %}
+    {% if handoff and handoff.status == 'rejected' %}<div class="sgp-rejected" data-sgp-rejected="1"><b>Ticket not exportable.</b> {{ handoff.message }}
+      {% if handoff.legs %}<ul class="sgp-blocked" style="margin:6px 0 0 18px;padding:0;">{% for b in handoff.legs %}<li data-sgp-blocked="{{ b.id }}" data-reasons="{{ b.reasons|join(',') }}">{{ b.label }} &mdash; {{ b.note }}</li>{% endfor %}</ul>{% endif %}</div>{% endif %}
     </div>
   {% else %}
 
@@ -205,7 +206,8 @@
   <div class="sgp-sec">
     <h2>8 &middot; Hand off the ticket</h2>
     {% if handoff and handoff.status == 'rejected' %}
-    <div class="sgp-rejected" data-sgp-rejected="1"><b>Ticket not exportable &mdash; kickoff gate.</b> {{ handoff.message }}</div>
+    <div class="sgp-rejected" data-sgp-rejected="1"><b>Ticket not exportable &mdash; {{ 'kickoff gate' if handoff.reason == 'kickoff_gate' else 'quote gate' }}.</b> {{ handoff.message }}
+      {% if handoff.legs %}<ul class="sgp-blocked" style="margin:6px 0 0 18px;padding:0;">{% for b in handoff.legs %}<li data-sgp-blocked="{{ b.id }}" data-reasons="{{ b.reasons|join(',') }}">{{ b.label }} &mdash; {{ b.note }}</li>{% endfor %}</ul>{% endif %}</div>
     {% elif handoff and handoff.status == 'held' %}
     <div class="sgp-held">
       <b>Parlay Builder transfer held &mdash; contract mismatch.</b> {{ handoff.message }}

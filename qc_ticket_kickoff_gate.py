@@ -366,7 +366,9 @@ def surface_checks(fx_label=''):
         j = r.get_json(silent=True) or {}
         out['image_post_started'] = (calls['n'], EARLY_LABEL in [l['label'] for l in held] and r.status_code == 409
                                      and not captured and j.get('removed_started') == [EARLY_LABEL]
-                                     and 'removed — game started' in (j.get('message') or ''),
+                                     and 'game started' in (j.get('message') or '')
+                                     and [e.get('label') for e in j.get('legs') or [] if 'STARTED' in e.get('reasons', [])]
+                                     == [EARLY_LABEL],
                                      f'HTTP {r.status_code}, rendered={bool(captured)}, {j.get("message")}')
         clean = [b for b in body if b['label'] != EARLY_LABEL]
         clean += [dict(sport='NFL', label=f'{PLAYERS[5]} Receiving Yards 40.5+', game='G5A @ G5H', tier='floor',

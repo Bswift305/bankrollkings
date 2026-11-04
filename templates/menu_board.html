@@ -219,6 +219,9 @@
         var r=document.createElement('div'); r.className='mb-srow';
         r.innerHTML='<button class="x" data-i="'+i+'" aria-label="Remove">&times;</button>'+
           '<span class="sl">'+l.label+'</span><span class="sp">'+sgn(+l.price)+'</span>';
+        if(l._why){ var why=document.createElement('span'); why.className='mb-why';
+          why.style.cssText='display:block;flex-basis:100%;font-size:11px;color:#d9a441;';
+          why.textContent=l._why+' — remove this leg'; r.classList.add('mb-blocked'); r.appendChild(why); }
         rows.appendChild(r);
       });
       rows.querySelectorAll('.x').forEach(function(b){
@@ -257,17 +260,26 @@
     var st=slip.filter(function(l){ return !notStarted(l.kickoff); });
     if(st.length){ var w=document.getElementById('mb-warn'); w.textContent=st.length+' leg'+(st.length!==1?'s':'')+' removed — game started. Remove '+st.map(function(l){return l.label;}).join(', ')+' and save again.'; w.style.display='block'; return; }
     var orig=btn.innerHTML; btn.disabled=true; btn.textContent='⏳ Rendering…';
+    slip.forEach(function(l){ delete l._why; });
+    // The server accepts the slip WHOLE or rejects it WHOLE (409 not executable / 422 malformed) with a
+    // reason per leg -- it never drops a leg. Each blocked leg is marked in the slip for the user to remove.
+    var sent=slip.map(function(l){ return {label:l.label, price:l.price, tier:l.tier, sport:l.sport, game:l.game, reason:l.reason}; });
     fetch('/tools/daily-card.png', {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
-      body:JSON.stringify({legs:slip})})
-      .then(function(r){ if(r.status===409){ return r.json().then(function(j){ throw (j&&j.message)||'A leg on this ticket has started.'; }); } if(!r.ok) throw 0; return r.blob(); })
+      body:JSON.stringify({legs:sent})})
+      .then(function(r){ if(!r.ok){ if(r.status===409||r.status===422){ return r.json().then(function(j){ markRejected(j); throw null; }); } throw 0; } return r.blob(); })
       .then(function(blob){
         var url=URL.createObjectURL(blob), a=document.createElement('a');
-        a.href=url; a.download='bankrollkings_ticket_'+slip.length+'leg.png';
+        a.href=url; a.download='bankrollkings_ticket_'+sent.length+'leg.png';
         document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-        btn.disabled=false; btn.innerHTML=orig;
+        btn.disabled=false; btn.innerHTML=orig; render();
       })
-      .catch(function(e){ btn.disabled=false; btn.innerHTML=orig; alert(typeof e==='string'?e:'Could not render the ticket image.'); });
+      .catch(function(e){ btn.disabled=false; btn.innerHTML=orig; if(e!==null){ var w=document.getElementById('mb-warn'); w.textContent='Could not render the ticket image.'; w.style.display='block'; } });
   });
+  function markRejected(j){
+    ((j&&j.legs)||[]).forEach(function(e){ if(e && !e.executable && slip[(+e.position||0)-1]){ slip[e.position-1]._why=e.note||'not executable'; } });
+    render();
+    var w=document.getElementById('mb-warn'); w.textContent=(j&&j.message)||'This ticket could not be rendered. Nothing was removed.'; w.style.display='block';
+  }
   render();
 })();
 </script>

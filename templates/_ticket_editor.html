@@ -46,7 +46,8 @@
 <div class="bkn-note" style="margin-top:18px;"><b>How these are built &mdash; honestly:</b> every card is <b>{{ cards[0].n if cards }}&ndash;5 legs, one per game</b> (cross-game, so the legs aren&rsquo;t correlated), weighted toward <b>floors</b> &mdash; props a player clears a high % of the time from real game logs &mdash; with a single <b>plus-money swing</b> for upside. The payout assumes the legs are <b>independent</b>; a parlay still <b>compounds the vig</b>, so even strong legs stacked are a value-shaped swing, not a lock. Floor % is each leg&rsquo;s real historical hit rate at that number, not a projection. Shop the price &mdash; a half-point or a better book changes the math. 21+</div>
 
 <style>.dc-kickoff-note{margin:8px 0 2px;font-size:12px;color:var(--text-muted);border-left:3px solid #d9a441;padding:4px 8px;}
-.dc-leg.dc-started{opacity:.55;}.dc-leg.dc-started .pr{color:#d9a441;}</style>
+.dc-leg.dc-started{opacity:.55;}.dc-leg.dc-started .pr{color:#d9a441;}
+.dc-leg.dc-blocked{outline:1px solid #d9a441;outline-offset:2px;}.dc-blockednote{display:block;font-size:11.5px;color:#d9a441;margin-top:2px;}</style>
 <script id="dc-bench" type="application/json">{{ bench|tojson }}</script>
 <script>
 (function(){
@@ -78,6 +79,7 @@
     var m=card.querySelector('.dc-mix'); if(m) m.textContent=nf+' floor'+(nf!==1?'s':'')+' + '+ns+' swing'+(ns!==1?'s':'');
   }
   function writeLeg(leg, b){
+    leg.classList.remove('dc-blocked'); var bn=leg.querySelector('.dc-blockednote'); if(bn) bn.remove();
     leg.dataset.game=b.game; leg.dataset.price=b.price; leg.dataset.tier=b.tier;
     leg.dataset.sport=b.sport; leg.dataset.reason=b.reason||''; leg.dataset.label=b.label; leg.dataset.kickoff=b.kickoff_utc||'';
     var tag=leg.querySelector('.dc-tag'); tag.className='dc-tag '+tierClass(b.tier); tag.textContent=(b.tier==='floor'?'FLOOR':'SWING');
@@ -94,15 +96,34 @@
               sport:l.dataset.sport, game:l.dataset.game, reason:l.dataset.reason};
     });
     var orig=btn.innerHTML; btn.disabled=true; btn.textContent='⏳ Rendering…';
+    clearBlocked(card);
+    // The server accepts the ticket WHOLE or rejects it WHOLE (409 not executable / 422 malformed) with a
+    // reason per leg -- it never drops a leg. Mark each blocked leg; the user removes or swaps it.
     fetch('/tools/daily-card.png', {method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':CSRF}, body:JSON.stringify({legs:legs})})
-      .then(function(r){ if(r.status===409){ return r.json().then(function(j){ throw (j&&j.message)||'A leg on this ticket has started.'; }); } if(!r.ok) throw 0; return r.blob(); })
+      .then(function(r){ if(!r.ok){ if(r.status===409||r.status===422){ return r.json().then(function(j){ showRejection(card,j); throw null; }); } throw 0; } return r.blob(); })
       .then(function(blob){
         var url=URL.createObjectURL(blob), a=document.createElement('a');
         a.href=url; a.download='bankrollkings_ticket_'+legs.length+'leg.png';
         document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
         btn.disabled=false; btn.innerHTML=orig;
       })
-      .catch(function(e){ btn.disabled=false; btn.innerHTML=orig; alert(typeof e==='string'?e:'Could not render the ticket image.'); });
+      .catch(function(e){ btn.disabled=false; btn.innerHTML=orig; if(e!==null){ announce(card,'Could not render the ticket image.'); } });
+  }
+  function clearBlocked(card){
+    [].forEach.call(card.querySelectorAll('.dc-blockednote'), function(n){ n.remove(); });
+    [].forEach.call(card.querySelectorAll('.dc-leg.dc-blocked'), function(l){ l.classList.remove('dc-blocked'); });
+  }
+  function showRejection(card, j){
+    var els=cardLegs(card);
+    ((j&&j.legs)||[]).forEach(function(e){
+      if(!e || e.executable) return;
+      var l=els[(+e.position||0)-1]; if(!l) return;
+      l.classList.add('dc-blocked');
+      var n=document.createElement('span'); n.className='dc-blockednote';
+      n.textContent=(e.note||'not executable')+' — remove or swap this leg';
+      (l.querySelector('.bd')||l).appendChild(n);
+    });
+    announce(card, (j&&j.message)||'This ticket could not be rendered. Nothing was removed.');
   }
   function eligibleSwaps(leg, card){
     var onCard=[].filter.call(card.querySelectorAll('.dc-leg'), function(x){return x!==leg;})

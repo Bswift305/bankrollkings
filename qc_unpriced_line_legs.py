@@ -559,8 +559,12 @@ def check_leg_behavior():
             captured.clear()
             unpriced = [dict(sport='CFB', label='UCLA -23', game='Nevada @ UCLA', tier='swing', price=-105)]
             r = c.post('/tools/daily-card.png', json={'legs': forged[:2] + unpriced}, headers={'X-CSRFToken': token})
-            ok(r.status_code == 400 and not captured,
-               f'D: image endpoint drops an unpriced leg (HTTP {r.status_code}, fewer than 3 legs)')
+            j = r.get_json(silent=True) or {}
+            bad = [e for e in (j.get('legs') or []) if not e.get('executable')]
+            ok(r.status_code == 409 and not captured and len(j.get('legs') or []) == 3
+               and [e.get('position') for e in bad] == [3],
+               f'D: image endpoint REJECTS (never drops) a ticket carrying an unpriced leg '
+               f'(HTTP {r.status_code}, blocked positions {[e.get("position") for e in bad]})')
         finally:
             _wc.render_daily_card = orig_render
     finally:

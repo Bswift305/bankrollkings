@@ -21,7 +21,9 @@ def _leg(**k):
     k.setdefault('line', 250.5)
     k.setdefault('price', -110)  # synthetic-fixture
     k.setdefault('book', 'BookA')
-    k.setdefault('timestamp', '2026-01-01 00:00')
+    # a FRESH provider stamp: the export gate judges quote freshness too (D4 atomic export), and this QC
+    # tests the acceptance rules on an otherwise-executable ticket (qc_ticket_submission_atomic owns staleness)
+    k.setdefault('timestamp', (datetime.now(timezone.utc) - timedelta(minutes=30)).strftime('%Y-%m-%dT%H:%M:%SZ'))
     k.setdefault('tz', 't')
     k.setdefault('quote_scope', 'individual')
     k.setdefault('lineage', 'x')
