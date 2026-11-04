@@ -72,13 +72,15 @@ is recorded as `SCHEDULE_UNAVAILABLE` (exit 1, files untouched, verdict stored i
 
 ### Timer-enablement blocker
 
-**TIMER-ENABLEMENT BLOCKER:** the proposed 4-hourly NBA lines timer (`ops/bk-nba-lines.timer`,
-`OnCalendar=*-*-* 00/4:15:00` -> 00:15, 04:15, 08:15, 12:15, 16:15, 20:15 UTC; the 12:15 run leaves 45 min
-before bk-daily's 13:00 UTC start) **cannot be enabled** until an independent, legally approved NBA
-schedule source, or another reviewed no-game contract, exists. Until then every provider-empty answer
-(including a genuine no-game day) is `SCHEDULE_UNAVAILABLE`, and a 4h timer would raise that alert six
-times on every off-day. The `SCHEDULE_UNAVAILABLE` fail-closed behaviour is accepted in code and must
-**never** be replaced by a fabricated `NO_GAMES_SCHEDULED`. The unit files stay in `ops/`, uninstalled.
+**TIMER-ENABLEMENT BLOCKER:** the proposed 4-hourly NBA market orchestrator timer
+(`ops/bk-nba-market-refresh.timer`, v5 -- it replaces v4's separate `bk-nba-lines.*` / `bk-nba-props.*`
+proposals, which are removed; `OnCalendar=*-*-* 00/4:15:00` -> 00:15, 04:15, 08:15, 12:15, 16:15, 20:15 UTC;
+the 12:15 run finishes well before bk-daily's 13:00 UTC start) **cannot be enabled** until an independent,
+legally approved NBA schedule source, or another reviewed no-game contract, exists, and production activation
+is separately authorized. Until then every provider-empty answer (including a genuine no-game day) is
+`SCHEDULE_UNAVAILABLE`, and a 4h timer would raise that alert six times on every off-day. The
+`SCHEDULE_UNAVAILABLE` fail-closed behaviour is accepted in code and must **never** be replaced by a
+fabricated `NO_GAMES_SCHEDULED`. The unit files stay in `ops/`, uninstalled.
 
 Needed before `NO_GAMES_SCHEDULED` may exist: a licensed, provider-independent NBA season schedule with
 provider game ids, UTC tip times, `fetched_at` + source provenance and an explicit Eastern service date,
@@ -98,7 +100,7 @@ Every NBA lines publish goes through `services/nba_lines_publisher.publish` (ent
 | Permissions (POSIX) | Lock dir created `0700`, lock file `0600`. An existing looser dir/file **owned by this euid** is repaired (`chmod 0700` / `fchmod 0600`) and re-verified; one owned by another uid, or still loose, is refused (`LOCK_UNAVAILABLE`). Every job that takes the lock must run as the same user (`ubuntu`). Windows has no POSIX modes; those checks are skipped there (dev only) and the QC reports them as `[SKIP]`, not as passes. |
 | Order | lock **before** any paid request -> reuse decided **under** the lock -> the one validation + atomic 3-file publish -> publisher receipt `data/tracking/_last_nba_lines_publish.json` (written only by the holder). |
 | Contention | `SKIPPED_LOCKED`, exit 75: no paid request, no receipt, no write, never `OK`/`PASS`. Unopenable or rejected lock location: `LOCK_UNAVAILABLE`, exit 76, same guarantees. |
-| Reuse | bk-daily (`--allow-reuse --lock-wait-seconds 120`, step timeout 240 s) reuses a publish from the last **90 minutes** (`REUSE_WINDOW_MINUTES`) when the fetch receipt is `UPDATED` / exit 0 / `game_lines_event_v1`, its UTC time is valid and not in the future, and every output's sha256 on disk equals the receipt's `sha256_after`. Zero credits. **The 90-minute window is duplicate-fetch suppression only; the executable boundary stays the 6h CLOCK-A rule** (a reused file ages exactly like a fetched one). |
+| Reuse | bk-daily and the orchestrator (both via `services/nba_market.ensure_nba_lines`: `--allow-reuse --lock-wait-seconds 30 --no-fetch-after-lock`, stage timeout 60 s -- see "Timeout contract") reuse a publish from the last **90 minutes** (`REUSE_WINDOW_MINUTES`) when the fetch receipt is `UPDATED` / exit 0 / `game_lines_event_v1`, its UTC time is valid and not in the future, and every output's sha256 on disk equals the receipt's `sha256_after`. Zero credits. **The 90-minute window is duplicate-fetch suppression only; the executable boundary stays the 6h CLOCK-A rule** (a reused file ages exactly like a fetched one). |
 
 ### Lock state machine
 
@@ -110,7 +112,7 @@ Every NBA lines publish goes through `services/nba_lines_publisher.publish` (ent
 | S2b | acquired **after waiting** for another holder, `--allow-reuse`, receipt + hashes **re-read under the lock** and valid | `REUSED_FRESH_AFTER_LOCK` | 0 | benign | none |
 | S2b' | acquired after waiting, `--allow-reuse --no-fetch-after-lock`, no valid fresh publish | `NO_FRESH_AFTER_LOCK` | 1 | alerting | none |
 | S2b'' | acquired after waiting, `--allow-reuse` (default), no valid fresh publish | fetch normally under the lock (S3) | | | one |
-| S2c | no `--allow-reuse` (4-hourly job, manual run): it is the refresh | S3 | | | one |
+| S2c | no `--allow-reuse` (a manual run): it is the refresh | S3 | | | one |
 | S3 | fetch + event validation + atomic publish | `UPDATED` / `PROVIDER_ERROR` / `VALIDATION_FAILED` / `SCHEDULE_UNAVAILABLE` | 0 / 1 | benign / alerting | one |
 
 Another process holding the lock is never a success by itself: success after a wait requires the
@@ -171,14 +173,90 @@ Code facts (this branch):
 - Ordering: props validate against `NBA_Odds.csv` (`fetch_player_props.SPORT_EVENT_MANIFESTS`), so props run
   **after** lines and check the lines publish by receipt + sha (above), never by taking the lines lock.
 
-Proposal (owner decisions: full five-day window, ~8k credits/month props + ~540/month lines under the 100k
-plan): `ops/bk-nba-props.{service,timer}`, `OnCalendar=*-*-* 00/4:45:00` -> 00:45, 04:45, 08:45, 12:45,
-16:45, 20:45 UTC, 30 minutes after each proposed lines tick (00/4:15). Props then validate against a lines
-list at most 30 minutes old and stay inside the 6h rule with about 2h headroom; bk-daily at 13:00 UTC reuses
-both the 12:15 lines and the 12:45 props publishes. A failed lines tick makes the following props tick
-`SKIPPED_BLOCKED_BY_LINES` (no spend). **Not installed or enabled**: activation stays blocked by the
-independent no-game schedule requirement (see "Timer-enablement blocker") and needs separate production
-authorization; enable only together with, and after, `bk-nba-lines.timer`.
+v4's two-timer proposal (`bk-nba-lines.*` at 00/4:15 and `bk-nba-props.*` at 00/4:45, plus
+`refresh_nba_lines.py`) is **removed** in v5 and replaced by one sequential orchestrator (next section).
+Owner decisions kept: full five-day window, ~8k credits/month props + ~540/month lines under the 100k plan.
+
+## NBA market orchestrator (v5; proposal, not installed)
+
+One entrypoint, `refresh_nba_market.py` -> `services/nba_market.run_market_refresh`, proposed unit
+`ops/bk-nba-market-refresh.{service,timer}` (`OnCalendar=*-*-* 00/4:15:00` UTC, `Persistent=false`,
+`TimeoutStartSec=180`). Blocked by the "Timer-enablement blocker" above; not installed or enabled.
+
+**Shared ensure API.** `services/nba_market.ensure_nba_lines()` / `ensure_nba_props()` are the ONLY way either
+caller gets NBA market data. bk-daily's `game_lines` / `player_props` steps (`refresh_nba_daily.py`, caller
+`nba_daily`) and the orchestrator (caller `nba_market_4h`) run the same canonical stage command
+(`nba_market.stage_command`: `--sport basketball_nba --bookmakers draftkings,caesars,fanduel,betmgm --days 5
+--allow-reuse --lock-wait-seconds 30 --no-fetch-after-lock`) through the existing publishers, with the same
+timeouts and the same classifier (`classify_lines` / `classify_props_publisher` / shape receipt).
+
+| State | Condition | Result |
+|---|---|---|
+| R0 | orchestrator run lock (`<runtime>/locks/nba_market_refresh.lock`, no wait) held by another orchestrator run | `SKIPPED_LOCKED` exit 75: no stage, no request, shared receipt untouched |
+| L | `ensure_nba_lines` outcome in `LINES_READY` (`UPDATED` / `REUSED_FRESH` / `REUSED_FRESH_AFTER_LOCK`) | go to P |
+| L' | any other lines outcome (75 / 76 / `NO_FRESH_AFTER_LOCK` / `SCHEDULE_UNAVAILABLE` / `PROVIDER_ERROR` / `VALIDATION_FAILED` / timeout 124) | props **not attempted** (`SKIPPED_BLOCKED_BY_LINES`, zero props requests); `FAILED_AT_LINES`, exit = lines exit |
+| P | `ensure_nba_props` benign (`UPDATED` / `REUSED_*` / `NO_MARKETS_POSTED` / `NO_ACTIVE_EVENTS`) | `COMPLETE`, exit 0 |
+| P' | props alerting | `FAILED_AT_PROPS`, exit = props exit |
+| R | every path after R0 | ONE receipt, atomically written (temp + fsync + `os.replace`, dir 0700) |
+
+Receipt `<runtime root>/nba_market/last_nba_market_refresh.json` (`$BK_RUNTIME_DIR`, default
+`/opt/bankrollkings-runtime`), schema `nba_market_refresh_v1`: `run_id`, `caller`, `pid`, `started_at_utc`,
+`ended_at_utc`, `seconds`, `result`, `exit_code`, `timeouts` (the table below) and `stages[]`, each with
+`stage`, `ran`, `outcome`, `detail`, `ok`, `alerting`, `exit_code`, `timed_out`, start/end/seconds,
+`timeout_seconds`, `lock_wait_seconds`, `credits` (from the Odds API quota ledger lines that stage appended:
+`x_requests_last_sum`, `x_requests_remaining`, `ledger_entries`, `status`; never guessed) and
+`publisher_receipt` / `fetch_receipt` (`{path, sha256}` only when that stage wrote it this run, else null).
+
+**No double fetch between bk-daily and the orchestrator.** Both enter the same publisher locks. Whichever
+gets a lock second waits (bounded) and re-reads the receipt + sha under the lock: a valid fresh publish ->
+`REUSED_FRESH_AFTER_LOCK` (zero requests, no data write); the holder failed -> `NO_FRESH_AFTER_LOCK`, exit 1,
+zero requests (never OK, no immediate re-spend; v4's bk-daily fetched again here -- v5 does not); still held
+-> `SKIPPED_LOCKED`. Props are only attempted after verified lines, and the props publisher re-verifies the
+lines receipt + sha under its own lock regardless.
+
+**Reboot / missed runs.** `Persistent=false`: a tick missed while the box was down or rebooting is **not**
+caught up; the next run is the next calendar tick. Data simply ages meanwhile and the 6h CLOCK-A gate
+withholds stale prices honestly (never served as current). No catch-up burst, and never a catch-up run
+alongside a bk-daily catch-up. systemd runs at most one instance of a service unit (a tick while the oneshot
+is still active does not start a second copy); a manual second orchestrator is refused by the run lock
+(R0). bk-daily's own timer is not in the repo -- if it is `Persistent=true` its boot catch-up runs alone and
+is serialized by the publisher locks if it ever overlaps.
+
+### Timeout contract
+
+One table, `services/nba_market_budget.py` (`TIMEOUT_TABLE`); bk-daily's step timeouts, the stage command's
+lock wait, the orchestrator's stage timeouts and the unit's `TimeoutStartSec` all derive from it.
+
+| Constant | Value | Derivation |
+|---|---|---|
+| `lock_wait_seconds` | 30 s | the other holder's critical section is at most one lines+props cycle (~5 s observed) |
+| `lines_execution_seconds` | 30 s | ~16x observed max (1.8 s) |
+| `props_execution_seconds` | 60 s | ~20x observed max (2.8 s); covers the per-market fallback (up to 6 single-market calls per event) on a full slate |
+| `orchestrator_overhead_seconds` | 30 s | orchestrator process outside both stages |
+| lines stage / bk-daily `game_lines` step | 60 s | lock wait + lines execution |
+| props stage / bk-daily `player_props` step | 90 s | lock wait + props execution |
+| orchestrator `TimeoutStartSec` | 180 s | 60 + 90 + 30 |
+
+Source: **measured**, coordinator-derived from a read-only audit of every prod `daily_operator` log (NBA section,
+step `seconds=`), audit date 2026-11-04 -- NBA `game_lines` n=40, min 0.7, p50 0.9, p90 1.5, p95 1.7, max 1.8 s;
+NBA `player_props` n=38, min 0.7, p50 0.9, p90 1.8, p95 2.0, max 2.8 s (the 15-event five-day refresh on
+2026-11-02 took 2.0 s; samples include some fast validation-reject runs). **Owner-approved 2026-11-04** (exactly as listed). These
+replace v4's provisional 120 s wait / 240 s steps. Invariant asserted by `qc_nba_market_orchestrator.py`:
+`step_timeout >= lock_wait + exec_budget` for both stages, service timeout >= both stages + overhead, unit
+`TimeoutStartSec` == `SERVICE_TIMEOUT_SECONDS`, every execution budget >= the audited max. A stage that
+overruns is killed (`PROVIDER_ERROR`, exit 124); the kernel releases its lock and the atomic publish never
+half-lands. Do not inflate the numbers to silence a timeout; change them only from a new audit.
+
+QC: `qc_nba_market_orchestrator.py` (real processes, stub provider counting calls via a file, temp runtime dir).
+
+### WNBA props locking (mandatory before the next active WNBA season)
+
+WNBA props (`fetch_wnba_player_props.py`, from `run_daily.py` and `refresh_wnba_daily.py`) have **no**
+publisher lock, no reuse-under-lock and no cadence contract. Before the next active WNBA season a WNBA props
+lock + cadence contract (the NBA design: kernel lock before any request, receipt+sha reuse under the lock,
+lines-first prerequisite, one sequential orchestrator, measured timeout table, QC) is **MANDATORY**, and **no
+WNBA timer may be enabled without it**. Its absence does not block this NBA-only code while bk-daily remains
+the sole WNBA writer (one writer cannot race itself).
 
 ## Stale NBA/WNBA props: central enforcement
 
@@ -273,3 +351,21 @@ Props may run without lines **only** after an independent NBA props event adapte
 3. Started/unknown-kickoff events fail closed exactly as in this contract.
 4. It has its own written contract and QC before `STEP_LINES_DEPENDENCY["player_props"]` changes from
    `True`. Until then the skip stays.
+
+## Elite alert history (v5 owner decision 6)
+
+`/elite` "Recent Alerts", `grade_elite_line_move_alerts` / `persist_elite_line_move_alerts` and
+`/elite/alerts/export` treat a persisted line-move alert as a **record**, never a current executable quote.
+
+| Row has | Shows |
+|---|---|
+| a tz-aware UTC `CapturedAtUTC` (offset zero, parseable, not > 5 min in the future) **and** a recorded `SourceProvenance` (`props_feed:<SPORT>:data/props/<file>`) | player, recorded line, recorded book, capture time (ET display) and source -- under exactly `Historical alert — not a current executable quote` |
+| either missing / naive / non-UTC / future / unparseable / unrecognised | player only; book and line **withheld**: "Book and line withheld — provenance unavailable (no trustworthy capture time and source recorded)" |
+
+Every history row: the exact label, muted text (no accent/price styling), no action label (`ACT` /
+`WINDOW CLOSING` never shown), no link of any kind (no player link, no add/parlay/ticket path). The CSV export
+adds `HistoryLabel` + `ProvenanceStatus`, blanks `Book`, `OpenLine`, `CurrentLine`, `LineMove`, `OverMove`,
+`UnderMove` for rows without provenance, and never exports `Urgency`. New alerts record `CapturedAtUTC` (aware
+UTC at persist) and `SourceProvenance` (stamped by the scanner); rows persisted before this change have
+neither, so their book/line are withheld. The Elite runtime snapshot key moved to `elite_dashboard_v4_*` so a
+pre-rule payload is never served. QC: `qc_elite_alert_history.py`.
