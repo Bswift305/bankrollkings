@@ -336,6 +336,32 @@ gate.
 separately; (4) deploy code before changing cadence; (5) validate the ordinary daily path; (6) separately authorize and
 enable the 4-hour timer. **D12 and the remaining daily failures stay open.**
 
+#### 2i. Integrity + D4 rebuilt on master — `integration/integrity-d4-6bdb73f` @ `e1e33dc32777e2a9ec69f04293dbbc546eb00faf` (pushed; IN REVIEW; no Linux gate)
+
+- On exact `6bdb73f`: four re-made merges (`8d9189a` F1, `ef1dcb1` qc-wnba-nba-self-contained, `2fda677`
+  daily-card-no-fabricated-price, `cbef5bb` F7 — second parents are the original feature SHAs) + six D4 commits
+  (`4005e2f`, `25b13a7`, `17e35e1`, `03e4f83`, `e7692dc`, `e1e33dc`). 55 files, +4422/−334 — same totals as
+  `a5de400..a086764`. `range-diff` all 16 commits `=`.
+- **One overlapping line (only `app.py`):** `build_nfl_game_board_context` Totals `cands.append` — D1 added
+  weather/roof fields + the WIND flag, Integrity added `line_source`/`updated_utc`. Resolved as the **union** (coordinator
+  inspected: D1's `wind`, `weather_label`, `roof`, `roof_label`, `flag` lines kept verbatim; Integrity's
+  `line_source`/`updated_utc` appended). The F7 merge reproduces `672480d`'s amended resolution (incl. `KNOWN_PENDING`
+  emptied). Invariants 1 and 2 hold except that single hunk (both sides edit it); a 3-way merge of `app.py`
+  (a5de400 / 6bdb73f / a086764) has exactly that one conflict and HEAD equals it resolved as the union — no other byte
+  differs. All 9 D1-only files blob-identical to `6bdb73f`; all 54 Integrity/D4-only files blob-identical to `a086764`.
+- **Offline gate (builder, worktree + clean export, all through `qc_offline.py`):** compile 0 on 46 files; all 34
+  Integrity QCs rc 0 (`unpriced_line_legs` 172/172, `route_qc_harness` 8/8, `decision_journal` 18/18,
+  `props_slate_turnover` 77/77, single-writer/source-time QCs fail=0, …); `ticket_kickoff_gate` 119/119;
+  `sgp_kickoff_gate` 53/53; D1 `nfl_weather_venue_integrity` 275/275 + `nfl_board`/`cfb_board`/`football_board`/
+  `nfl_visual_trust` rc 0; `qc_odds_feed` NOT RUN exit 3. Blocked connections: 5 per run, all inside
+  `qc_unpriced_line_legs`' own guard self-tests (expected). Tracked tree clean before/after. Export note: three QCs call
+  `git ls-files`, so the export was given a throwaway index whose tree equals HEAD's (`822290e`).
+- **Coordinator re-run (rc 0):** compile; `ticket_kickoff_gate` 119/119; `sgp_kickoff_gate` 53/53;
+  `nfl_weather_venue_integrity` 275/275; `nfl_board`; `unpriced_line_legs` 172/172; `props_slate_turnover` 77/77;
+  `game_lines_freshness`; `qc_offline.py qc_odds_feed.py` → NOT RUN, exit 3; clean tree.
+- Cosmetic: the four merge commits carry no `Co-Authored-By` trailer (as the originals) and two carry a
+  `# Conflicts: app.py` note; rewriting would change all ten SHAs.
+
 ## 3. Read-only audits (code at exact `a5de400`)
 
 ### NFL props cadence and quota
