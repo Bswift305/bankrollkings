@@ -43456,49 +43456,171 @@ def parlay_tickets():
     )
 
 
+# /parlay/save -- the legacy (NBA-centric) Parlay Builder REVIEW RECORD. Not an executable ticket: it stores
+# the user's selected props for later review / grading and computes no payout ('Payout' stays 0 until a
+# result is recorded). FROZEN RANGE (D4, owner decision 2): 1..20 picks -- the builder's own save button
+# requires >= 1 selected prop (parlay_formula.html saveParlayTicket) and 20 is the historical server cap
+# (formerly a SILENT `picks[:20]` truncation). Outside the range -> 422, nothing saved, never truncated.
+# Any malformed / invalid pick -> 422 with an indexed reason (0-based index into `picks` + reason code; no
+# payload echo), nothing saved -- an invalid pick is never silently dropped. The stored PicksJson is exactly
+# the accepted submitted selection set, in submitted order (each pick in the sanitized record schema).
+PARLAY_REVIEW_MIN_PICKS = 1
+PARLAY_REVIEW_MAX_PICKS = 20
+_PARLAY_REVIEW_DIRECTIONS = ('OVER', 'UNDER')
+PARLAY_REVIEW_REASON_TEXT = {
+    'PICK_NOT_OBJECT': 'pick is not an object',
+    'MISSING_PLAYER': 'player is missing',
+    'MISSING_STAT': 'stat is missing',
+    'MISSING_DIRECTION': 'direction is missing',
+    'INVALID_DIRECTION': 'direction must be OVER or UNDER',
+    'MISSING_LINE': 'line is missing',
+    'INVALID_LINE': 'line is not a number',
+    'INVALID_TEXT_FIELD': 'a text field is not text',
+    'INVALID_NUMBER_FIELD': 'a numeric field is not a number',
+    'INVALID_TAGS': 'calibration tags are not a list of text',
+    'INVALID_METHOD_LABELS': 'method labels are not a list of text',
+    'DUPLICATE_PICK': 'pick appears twice',
+}
+
+
+def _parlay_review_number(v, *, required=False, integer=False):
+    """(ok, value): a finite number (or numeric string) passes as itself; None / '' pass only when not
+    required. Bool, NaN/inf, text and containers fail."""
+    import math
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return (not required), v
+    if isinstance(v, bool):
+        return False, v
+    try:
+        f = float(v) if isinstance(v, (int, float, str)) else None
+    except (TypeError, ValueError):
+        return False, v
+    if f is None or not math.isfinite(f) or (integer and f != int(f)):
+        return False, v
+    return True, v
+
+
+def _validate_parlay_review_picks(picks):
+    """(sanitized, invalid): every submitted pick validated IN ORDER. `invalid` = [{'index', 'reasons'}]
+    (0-based index, reason codes only). `sanitized` is the full record set only when nothing is invalid."""
+    text_fields = ('sport', 'Sport', 'player', 'team', 'stat', 'direction', 'matchup', 'tier',
+                   'market_calibration_note', 'book', 'historical_reliability')
+    out, invalid, seen = [], [], set()
+    for k, pick in enumerate(picks):
+        if not isinstance(pick, dict):
+            invalid.append({'index': k, 'reasons': ['PICK_NOT_OBJECT']})
+            continue
+        reasons = []
+        if any(pick.get(f) is not None and not isinstance(pick.get(f), str) for f in text_fields):
+            reasons.append('INVALID_TEXT_FIELD')
+        player = str(pick.get('player') or '').strip() if isinstance(pick.get('player'), str) else ''
+        stat = str(pick.get('stat') or '').strip() if isinstance(pick.get('stat'), str) else ''
+        direction = str(pick.get('direction') or '').strip() if isinstance(pick.get('direction'), str) else ''
+        if not player:
+            reasons.append('MISSING_PLAYER')
+        if not stat:
+            reasons.append('MISSING_STAT')
+        if not direction:
+            reasons.append('MISSING_DIRECTION')
+        elif direction.upper() not in _PARLAY_REVIEW_DIRECTIONS:
+            reasons.append('INVALID_DIRECTION')
+        line_ok, _ = _parlay_review_number(pick.get('line'), required=True)
+        if not line_ok:
+            reasons.append('MISSING_LINE' if pick.get('line') in (None, '') else 'INVALID_LINE')
+        nums = [('confidence', False), ('raw_confidence', False), ('book_count', True),
+                ('market_price', False), ('marketPrice', False), ('model_prob', False), ('modelProb', False),
+                ('ev_pct', False), ('evPct', False)]
+        if not all(_parlay_review_number(pick.get(f), integer=i)[0] for f, i in nums):
+            reasons.append('INVALID_NUMBER_FIELD')
+        tags = pick.get('market_calibration_tags')
+        if tags is not None and not (isinstance(tags, list) and all(isinstance(t, str) for t in tags)):
+            reasons.append('INVALID_TAGS')
+        if not all(pick.get(f) is None or (isinstance(pick.get(f), list) and all(
+                       isinstance(t, str) or (isinstance(t, dict) and isinstance(t.get('label', ''), str))
+                       for t in pick.get(f)))
+                   for f in ('method_supports', 'method_labels')):
+            reasons.append('INVALID_METHOD_LABELS')
+        ml = pick.get('method_supports') or pick.get('method_labels') or []
+        if not reasons:
+            key = (player.casefold(), stat.casefold(), float(pick.get('line')), direction.upper())
+            if key in seen:
+                reasons.append('DUPLICATE_PICK')
+            seen.add(key)
+        if reasons:
+            invalid.append({'index': k, 'reasons': reasons})
+            continue
+        sport = pick.get('sport') if pick.get('sport') is not None else pick.get('Sport')
+        out.append({
+            'sport': str(sport if sport is not None else 'NBA').strip().upper() or 'NBA',
+            'player': player,
+            'team': str(pick.get('team') or '').strip(),
+            'stat': stat,
+            'line': pick.get('line'),
+            'direction': direction,
+            'confidence': float(pick.get('confidence', 0) or 0),
+            'raw_confidence': float(pick.get('raw_confidence', pick.get('confidence', 0)) or 0),
+            'matchup': str(pick.get('matchup') or '').strip(),
+            'tier': str(pick.get('tier') or '').strip(),
+            'method_labels': normalize_method_labels(ml or []),
+            'market_calibration_note': str(pick.get('market_calibration_note') or '').strip(),
+            'market_calibration_tags': [t.strip() for t in (tags or []) if t.strip()],
+            'book_count': int(float(pick.get('book_count', 0) or 0)),
+            'book': str(pick.get('book') or '').strip(),
+            'market_price': pick.get('market_price', pick.get('marketPrice')),
+            'model_prob': pick.get('model_prob', pick.get('modelProb')),
+            'ev_pct': pick.get('ev_pct', pick.get('evPct')),
+            'historical_reliability': str(pick.get('historical_reliability') or '').strip(),
+        })
+    return (out if not invalid else None), invalid
+
+
+def _parlay_review_reject(code, message, **extra):
+    """Sanitized 422 for /parlay/save: codes, counts and indexes only -- never the payload."""
+    try:
+        app.logger.info('parlay_review_save_rejected code=%s n_submitted=%s n_invalid=%s', code,
+                        extra.get('n_submitted'), len(extra.get('invalid') or []))
+    except Exception:
+        pass
+    return jsonify({'ok': False, 'code': code, 'error': message, 'saved': False,
+                    'min_picks': PARLAY_REVIEW_MIN_PICKS, 'max_picks': PARLAY_REVIEW_MAX_PICKS, **extra}), 422
+
+
 @app.route('/parlay/save', methods=['POST'])
 def save_parlay():
     current_user = get_current_user()
     if not current_user:
         return jsonify({'ok': False, 'error': 'Sign in to save tickets.'}), 401
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not isinstance(payload.get('picks', []), list):
+        return _parlay_review_reject('MALFORMED_REQUEST', 'This ticket could not be read. Nothing was saved.')
     picks = payload.get('picks') or []
-    if not picks:
-        return jsonify({'ok': False, 'error': 'No picks selected.'}), 400
-
-    sanitized_picks = []
-    for pick in picks[:20]:
-        method_labels = normalize_method_labels(pick.get('method_supports') or pick.get('method_labels') or [])
-        sanitized_picks.append({
-            'sport': str(pick.get('sport', pick.get('Sport', 'NBA'))).strip().upper() or 'NBA',
-            'player': str(pick.get('player', '')).strip(),
-            'team': str(pick.get('team', '')).strip(),
-            'stat': str(pick.get('stat', '')).strip(),
-            'line': pick.get('line'),
-            'direction': str(pick.get('direction', '')).strip(),
-            'confidence': float(pick.get('confidence', 0) or 0),
-            'raw_confidence': float(pick.get('raw_confidence', pick.get('confidence', 0)) or 0),
-            'matchup': str(pick.get('matchup', '')).strip(),
-            'tier': str(pick.get('tier', '')).strip(),
-            'method_labels': method_labels,
-            'market_calibration_note': str(pick.get('market_calibration_note', '')).strip(),
-            'market_calibration_tags': [str(tag).strip() for tag in (pick.get('market_calibration_tags') or []) if str(tag).strip()],
-            'book_count': int(pick.get('book_count', 0) or 0),
-            'book': str(pick.get('book', '')).strip(),
-            'market_price': pick.get('market_price', pick.get('marketPrice')),
-            'model_prob': pick.get('model_prob', pick.get('modelProb')),
-            'ev_pct': pick.get('ev_pct', pick.get('evPct')),
-            'historical_reliability': str(pick.get('historical_reliability', '')).strip(),
-        })
-
-    valid_picks = [pick for pick in sanitized_picks if pick['player'] and pick['stat'] and pick['direction']]
-    if not valid_picks:
-        return jsonify({'ok': False, 'error': 'No valid picks to save.'}), 400
+    n = len(picks)
+    if n < PARLAY_REVIEW_MIN_PICKS:
+        return _parlay_review_reject('TOO_FEW_PICKS', 'No picks selected. Nothing was saved.', n_submitted=n)
+    if n > PARLAY_REVIEW_MAX_PICKS:
+        return _parlay_review_reject(
+            'TOO_MANY_PICKS', f'A saved ticket holds at most {PARLAY_REVIEW_MAX_PICKS} picks; this one has {n}. '
+            'Nothing was saved and nothing was trimmed — remove picks and save again.', n_submitted=n)
+    valid_picks, invalid = _validate_parlay_review_picks(picks)
+    if invalid:
+        listed = ', '.join(f"#{e['index'] + 1} ({'; '.join(PARLAY_REVIEW_REASON_TEXT.get(c, c) for c in e['reasons'])})"
+                           for e in invalid[:5])
+        return _parlay_review_reject(
+            'INVALID_PICKS', f"{len(invalid)} pick{'s' if len(invalid) != 1 else ''} could not be saved: {listed}. "
+            'Nothing was saved and nothing was dropped for you — fix or remove the marked pick(s).',
+            n_submitted=n, invalid=invalid)
+    tops = {}
+    for f in ('bankroll', 'risk_pct', 'slate_budget', 'stake'):
+        ok_, _v = _parlay_review_number(payload.get(f))
+        if not ok_:
+            return _parlay_review_reject('INVALID_FIELD', f'{f} is not a number. Nothing was saved.',
+                                         n_submitted=n, field=f)
+        tops[f] = float(payload.get(f) or 0)
 
     saved_at = datetime.now().strftime('%Y-%m-%d %I:%M %p')
-    bankroll = float(payload.get('bankroll', 0) or 0)
-    risk_pct = float(payload.get('risk_pct', 0) or 0)
-    slate_budget = float(payload.get('slate_budget', 0) or 0)
+    bankroll = tops['bankroll']
+    risk_pct = tops['risk_pct']
+    slate_budget = tops['slate_budget']
     stake = float(payload.get('stake', slate_budget) or slate_budget or 0)
     avg_confidence = round(sum(pick['confidence'] for pick in valid_picks) / len(valid_picks), 1)
     tier1_count = sum(1 for pick in valid_picks if pick.get('tier') == 'Tier 1')
