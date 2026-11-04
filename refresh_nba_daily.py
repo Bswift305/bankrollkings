@@ -7,8 +7,8 @@ from datetime import datetime
 from pathlib import Path
 
 from services.run_outcomes import (
-    PROVIDER_ERROR, SKIPPED_BLOCKED_BY_LINES, UPDATED, VALIDATION_FAILED,
-    props_step_outcome, record_child_outcomes,
+    NO_ACTIVE_EVENTS, PROVIDER_ERROR, SCHEDULE_UNAVAILABLE, SKIPPED_BLOCKED_BY_LINES, UPDATED,
+    VALIDATION_FAILED, props_step_outcome, record_child_outcomes,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -60,15 +60,53 @@ def _mtime(path: Path) -> float:
         return 0.0
 
 
+def _lines_receipt_path() -> Path:
+    return Path(BASE_DIR) / "data" / "tracking" / f"_last_game_lines_fetch_{LINES_SPORT_SLUG}.json"
+
+
 def _lines_receipt_detail() -> str:
     """Best-effort one-liner from fetch_game_lines' receipt (outcome + reason code)."""
-    path = Path(BASE_DIR) / "data" / "tracking" / f"_last_game_lines_fetch_{LINES_SPORT_SLUG}.json"
     try:
-        r = json.loads(path.read_text(encoding="utf-8"))
+        r = json.loads(_lines_receipt_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return "no game-lines receipt"
     v = r.get("validation") or {}
     return f"outcome={r.get('outcome')} reason={v.get('reason_code')} run={str(r.get('run_id'))[:8]}"
+
+
+# Receipt outcomes passed through verbatim for a FAILED lines step; anything else is VALIDATION_FAILED.
+_LINES_FAILURE_OUTCOMES = frozenset({PROVIDER_ERROR, VALIDATION_FAILED, SCHEDULE_UNAVAILABLE})
+
+
+def classify_lines_step(returncode: int | None, timed_out: bool, receipt_mtime_before: float) -> tuple[str, str]:
+    """(outcome, detail) for the game-lines step, from the exit code AND the receipt THIS run wrote.
+
+    An exit code alone never proves a benign non-publish, and an old receipt can never excuse a new
+    failure (only a receipt whose mtime advanced during the step is read). Never VALIDATION_FAILED for a
+    provider-empty answer: that is SCHEDULE_UNAVAILABLE (no authoritative schedule) per the receipt."""
+    if timed_out:
+        return PROVIDER_ERROR, "game-lines step timed out"
+    receipt = None
+    path = _lines_receipt_path()
+    if _mtime(path) > receipt_mtime_before:
+        try:
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            receipt = None
+    got = str((receipt or {}).get("outcome") or "")
+    if returncode == 0:
+        if receipt is not None and got and got != UPDATED:
+            # exit 0 with a fresh receipt that says something else: trust neither as success.
+            return VALIDATION_FAILED, f"exit 0 but this run's receipt says outcome={got}"
+        return UPDATED, "published" if receipt is not None else "published (no fresh receipt)"
+    if receipt is None:
+        return VALIDATION_FAILED, f"exit {returncode} and no receipt from this run proving a cause"
+    if got == NO_ACTIVE_EVENTS:
+        # An NBA receipt can no longer say this; an empty provider answer is not a no-game proof.
+        return SCHEDULE_UNAVAILABLE, "provider returned zero events; no authoritative schedule confirms a no-game day"
+    if got in _LINES_FAILURE_OUTCOMES:
+        return got, f"exit {returncode}, receipt outcome={got}"
+    return VALIDATION_FAILED, f"exit {returncode}, receipt outcome={got or 'missing'}"
 
 
 STEPS = [
@@ -120,6 +158,7 @@ def main() -> int:
         started = datetime.now()
         print(f"[STEP] {label} timeout={timeout}s", flush=True)
         props_mtime_before = _mtime(PROPS_ARTIFACT) if label == PROPS_STEP else 0.0
+        lines_receipt_before = _mtime(_lines_receipt_path()) if label == LINES_STEP else 0.0
         try:
             result = subprocess.run(command, timeout=timeout)
             timed_out = False
@@ -148,25 +187,23 @@ def main() -> int:
 
         if label == LINES_STEP:
             # Isolated: a failed lines publish never aborts independent work; dependents skip honestly.
-            if timed_out or result.returncode != 0:
+            outcome, detail = classify_lines_step(None if timed_out else result.returncode, timed_out,
+                                                  lines_receipt_before)
+            child_outcomes["game_lines"] = outcome
+            step_results[label] = outcome
+            record_child_outcomes(BASE_DIR, "nba_daily", child_outcomes)
+            if outcome != UPDATED:
                 lines_ok = False
-                lines_exit = 124 if timed_out else int(result.returncode)
+                lines_exit = 124 if timed_out else (int(result.returncode) or 1)
                 degraded = True
-                outcome = PROVIDER_ERROR if timed_out else VALIDATION_FAILED
-                child_outcomes["game_lines"] = outcome
-                step_results[label] = outcome
-                record_child_outcomes(BASE_DIR, "nba_daily", child_outcomes)
                 print()
-                print(f"[FAIL] {label} {'timed out' if timed_out else f'exited with code {result.returncode}'} "
-                      f"after {elapsed:.1f}s ({_lines_receipt_detail()}). Previous lines files preserved; "
-                      "lines-dependent steps will be SKIPPED_BLOCKED_BY_LINES, independent steps continue.",
-                      flush=True)
+                print(f"[{outcome}] {label} {'timed out' if timed_out else f'exited with code {result.returncode}'} "
+                      f"after {elapsed:.1f}s: {detail} ({_lines_receipt_detail()}). Previous lines files "
+                      "preserved; lines-dependent steps will be SKIPPED_BLOCKED_BY_LINES, independent steps "
+                      "continue.", flush=True)
                 print()
                 continue
-            child_outcomes["game_lines"] = UPDATED
-            step_results[label] = UPDATED
-            record_child_outcomes(BASE_DIR, "nba_daily", child_outcomes)
-            print(f"[PASS] {label} seconds={elapsed:.1f}", flush=True)
+            print(f"[PASS] {label} seconds={elapsed:.1f} outcome={outcome}", flush=True)
             print()
             continue
 
