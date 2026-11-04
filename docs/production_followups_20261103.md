@@ -241,6 +241,65 @@ skip the 12:00Z tick) so two writers never validate against the same prior concu
 carry NBA depends on the code-side facts (pending from the rebuild): today it fetches MLB/WNBA only and its exit-code
 semantics are what this branch fixes.
 
+Code-side facts (v2 build, file:line at `f06e568`): one refresh = one `GET /v4/sports/basketball_nba/odds`
+(`fetch_game_lines.py:290-303`; `/events` defined `:180` but unused), repo formula `calls × markets × regions` =
+1×3×1 = 3 (`services/odds_quota.py:26-36`), matching the production receipt. **`bk-linemove` cannot carry NBA as-is**:
+it runs only MLB/WNBA (`refresh_line_movement_snapshots.py:26-29`) through the old whole-file validator, and has no
+props/snapshot sequencing — a governed NBA cadence needs its own step/unit. No locking in either path (repo `flock`
+only in deploy/backup/nfl-games scripts); WNBA is fetched by both `run_daily.py:200` and the linemove job (shared
+files + receipt; `os.replace` atomicity only). **No-game days:** linemove treats a fresh `NO_ACTIVE_EVENTS` receipt as
+benign (`:61-63`), but `refresh_nba_daily` records it as `VALIDATION_FAILED` → DEGRADED (`:149-155`, `:197`) — a
+mislabel to fix before cadence goes live.
+
+#### 2e. NBA v2 review package — `fix/nba-game-lines-event-aware-v2` @ `f06e568c96fd8ce5753d9b79fffbc74405ff200d` (pushed; IN REVIEW; no Linux gate)
+
+- On exact `6bdb73f`. Commits: `08aef8a`, `44ff9aa`, `2be0f78`, `97ef6bc`, `b99b7cd`, `f522b06` (the six `c9bc374`
+  commits, all clean cherry-picks, `range-diff` all `=`), `d7ab7ee` (qc_nba_market_only self-contained), `f06e568`
+  (migration matrix + independent-props-adapter item). 17 files, +2142/−111.
+- **D1 preserved:** normalized `diff a5de400 6bdb73f` ≡ `diff c9bc374 f522b06`; overlapping files only `app.py`
+  and `run_all_scorecards.py`, non-overlapping hunks; the 8 D1-only files identical to `6bdb73f` (coordinator
+  re-checked: none differ).
+- **`qc_nba_market_only`:** private owner-row lookup removed; `services/qc_auth.py` gains `isolated_member_client`
+  (non-owner synthetic member, refuses to resolve as owner). Proves signed-out 401, free member 403 + upgrade gate,
+  paid member + owner 200 on NBA and WNBA, no writes under `data/tracking|user_prefs|live_scores` (sha/mtime +
+  `save_user`/`update_user_membership` tripwires), stale 10h lines fixture → `/game-lines` withheld, stale props →
+  `require_fresh` empty. Mutations (no plan gate / loosened 6h / file write) each fail it.
+- **Gate (builder):** 25 QCs rc 0, 0 network attempts, worktree **and** clean `git archive` export; compile 0 on 13
+  files; clean tree. **Coordinator re-run:** `qc_nba_market_only` (Market-only board verified),
+  `qc_game_lines_event_slate` 59/59, `qc_odds_age_timezone` 19/19, `qc_nfl_weather_venue_integrity` 275/275 — all rc
+  0, 0 network attempts.
+- **New finding (not fixed, outside scope):** the market-only NBA/WNBA props boards call the feed with
+  `require_fresh=False` (`build_market_only_board`, `app.py` ~41380), so a > 6h props file renders as current
+  quotes — conflicts with the stale-price rule. Needs an owner decision.
+
+#### 2f. D4 v2 review package — `fix/d4-kickoff-gate-v2` @ `a0867647d217366c675f98242f2c59309d984ef8` (pushed; HELD)
+
+- Six commits on the Integrity rebuild `672480d` (i.e. on the **old `a5de400` base**): `63721b7` single predicate +
+  `_leg_kickoff_failure` wrapper, `34aab19` server-side gate on Daily Card / King's Tickets / Green Light ticket / Menu
+  / Featured Parlay / image POST (409), `2b0b8ac` editor + Menu mirror on a server-anchored clock, `66ac33a`
+  "Kickoff unavailable — context only" labels (Green Light no longer drops them silently), `5bdc996` SGP Workbench
+  gate, `a086764` QCs. 12 files, +1479/−94.
+- SGP: started/unknown-kickoff legs never addable (browsable as "Started — live/historical market, not addable", no
+  price); held leg crossing kickoff → "Started — remove or rebuild"; vanished leg kept and named "No longer on the
+  board — kickoff unavailable; remove or rebuild"; `_sgp_ticket_gate` re-checks every leg server-side and rejects
+  export/handoff; forged client clock ignored; kickoff == now excluded, now−1s offered. NFL game-line/spread/team-total
+  legs are context-only (no governed kickoff) — a possible `GameID`↔`EventId` join is an owner decision.
+- Builder gate: 34 Integrity QCs + `qc_ticket_kickoff_gate` 119/119 + new `qc_sgp_kickoff_gate` 53/53, all rc 0;
+  `qc_odds_feed` refused exit 3 via `qc_offline.py`; mutations M1/M2 caught. Coordinator re-run (0 network attempts):
+  `qc_ticket_kickoff_gate` 119/119, `qc_sgp_kickoff_gate` 53/53, `qc_sgp_workbench`, `qc_unpriced_line_legs` 172/172,
+  `qc_ticket_editor_shared`, `qc_green_light_workspace` all rc 0.
+- **Next per release order:** rebuild Integrity + D4 v2 on master `6bdb73f`, full offline gate, then (after review) a
+  scoped Linux gate. Not browser-rendered; not deployed.
+
+#### 2g. Coordinator incident — `qc_odds_feed.py` run directly (2026-11-03 15:48/15:49 local)
+
+While re-verifying D4 v2 the coordinator ran `py -3 qc_odds_feed.py` directly (twice) instead of through
+`qc_offline.py`, violating the standing rule. Effect: two Odds API requests from the dev box with the **local** key,
+both **HTTP 401 Unauthorized** (key rejected → no credit could be charged; the endpoint is the free `/v4/sports`), and
+two rows appended to the gitignored local `d4-v2/data/tracking/QC_Run_Log.csv` (left in place as evidence). No
+production or tracked file touched. Through the runner it is refused correctly (`NOT RUN … REQUIRES_NETWORK`, exit
+3). Side observation: the local dev Odds API key is rejected (prod key unaffected — prod receipts show HTTP 200).
+
 ## 3. Read-only audits (code at exact `a5de400`)
 
 ### NFL props cadence and quota
