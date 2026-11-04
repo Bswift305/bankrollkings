@@ -1,0 +1,55 @@
+[Unit]
+Description=Bankroll Kings - NBA market refresh every 4h: lines, then props only after verified lines (one receipt)
+After=network-online.target
+Wants=network-online.target
+
+# PROPOSAL ONLY -- NOT installed or enabled by the repo. Replaces the v4 proposals bk-nba-lines.* and
+# bk-nba-props.* (removed): ONE sequential orchestrator instead of two timers.
+#
+# TIMER-ENABLEMENT BLOCKER: do NOT enable bk-nba-market-refresh.timer until (1) an independent, legally
+# approved NBA schedule source (or another reviewed no-game contract) exists and (2) production activation is
+# separately authorized. Without (1) every provider-empty answer, a genuine NBA off-day included, is
+# SCHEDULE_UNAVAILABLE (alerting, fail closed) and the props stage is then not attempted
+# (SKIPPED_BLOCKED_BY_LINES) -- six alerts on every off-day. That fail-closed behaviour is accepted in code and
+# must NEVER be replaced by a fabricated NO_GAMES_SCHEDULED. See docs/game_lines_event_contract.md
+# "Timer-enablement blocker" and "NBA market orchestrator".
+#
+# What it runs (refresh_nba_market.py -> services/nba_market.run_market_refresh):
+#   1. ensure_nba_lines   -- the same canonical stage as bk-daily's game_lines step (nba_lines_publisher lock
+#                            before any request; reuse a receipt+sha-verified publish under the lock; else
+#                            one /odds call = 3 credits + validation + atomic publish)
+#   2. ensure_nba_props   -- ONLY after lines are verified ready; the same stage as bk-daily's player_props
+#                            step (own props lock; lines receipt+sha re-verified; free /events + one
+#                            /events/{id}/odds per event in the five-day window)
+#   3. ONE receipt for both stages, written atomically to
+#      <runtime root>/nba_market/last_nba_market_refresh.json
+#      ($BK_RUNTIME_DIR, default /opt/bankrollkings-runtime).
+#
+# Concurrency: systemd never runs two instances of one service unit -- a timer firing while this oneshot is
+# still active does not start a second copy. bk-daily overlapping it is serialized by the publisher kernel
+# locks and the reuse-under-lock contract (no duplicate paid request, no duplicate write).
+#
+# Install (via SSM as root, only after the blocker is cleared, activation is authorized, and the branch is
+# merged + deployed to /opt/bankrollkings):
+#   sudo install -d -o ubuntu -g ubuntu -m 700 /opt/bankrollkings-runtime/locks
+#   sudo install -d -o ubuntu -g ubuntu -m 700 /opt/bankrollkings-runtime/nba_market
+#   sudo cp ops/bk-nba-market-refresh.service /etc/systemd/system/bk-nba-market-refresh.service
+#   sudo cp ops/bk-nba-market-refresh.timer   /etc/systemd/system/bk-nba-market-refresh.timer
+#   sudo systemctl daemon-reload && sudo systemctl enable --now bk-nba-market-refresh.timer
+# Verify: journalctl -u bk-nba-market-refresh.service -n 40 --no-pager
+#         cat /opt/bankrollkings-runtime/nba_market/last_nba_market_refresh.json
+# Remove: sudo systemctl disable --now bk-nba-market-refresh.timer && sudo rm /etc/systemd/system/bk-nba-market-refresh.*
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/bankrollkings
+EnvironmentFile=/opt/bankrollkings/.env
+ExecStart=/opt/bankrollkings/venv/bin/python refresh_nba_market.py
+# = services/nba_market_budget.SERVICE_TIMEOUT_SECONDS (lock wait 30 + lines 30 + lock wait 30 + props 60 +
+# overhead 30), from the 2026-11-04 production duration audit, owner-approved 2026-11-04; asserted equal by
+# qc_nba_market_orchestrator.py.
+TimeoutStartSec=180
+# Exit codes are honest and NOT masked: 0 both stages benign; 1 failed / NO_FRESH_AFTER_LOCK /
+# SKIPPED_BLOCKED_BY_LINES; 75 SKIPPED_LOCKED; 76 LOCK_UNAVAILABLE; 124 stage timeout. Each non-zero marks the
+# unit failed so it is visible; the timer keeps firing.
