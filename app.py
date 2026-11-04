@@ -980,9 +980,21 @@ def _get_path_mtime_token(path_like):
 APP_CACHE_VERSION = '2026-10-20.1'
 
 
+_PROPS_EXEC_TOKEN_FILES = {'NBA_Props.csv': 'nba', 'WNBA_Props.csv': 'wnba'}
+
+
 def _build_file_token(*paths):
     # Lead with the schema version so a deploy that bumps it invalidates every cache keyed on this token.
-    return (APP_CACHE_VERSION,) + tuple(_get_path_mtime_token(path) for path in paths)
+    token = (APP_CACHE_VERSION,) + tuple(_get_path_mtime_token(path) for path in paths)
+    # 2026-11 v3: an NBA/WNBA props input also contributes its EXECUTABLE state (6h CLOCK A). A file that
+    # simply stops being rewritten keeps its mtime, so without this a build made while fresh would be served
+    # for the cache's full TTL after the feed went stale.
+    sports = []
+    for path in paths:
+        sport = _PROPS_EXEC_TOKEN_FILES.get(Path(str(path)).name)
+        if sport and sport not in sports:
+            sports.append(sport)
+    return token + tuple(_props_executable_token(s) for s in sports)
 
 
 def _get_ttl_cache_build_lock(cache_key):
@@ -1238,6 +1250,41 @@ def write_runtime_snapshot(snapshot_key, payload, meta=None):
     return path
 
 
+def _snapshot_props_sports(snapshot_key):
+    """NBA/WNBA props feeds a pre-rendered snapshot can embed (prop rows / prices)."""
+    key = str(snapshot_key or '').lower()
+    if 'wnba' in key:
+        return ('wnba',)
+    if 'nba' in key:
+        return ('nba',)
+    if key.startswith('elite_dashboard'):
+        return ('nba', 'wnba')   # the Elite cockpit scans every sport's props
+    return ()
+
+
+def _snapshot_props_servable(snapshot_key, generated_at):
+    """v3 central gate for snapshots (served up to 72h): refuse an NBA/WNBA-bearing snapshot when that
+    sport's props feed holds rows that are not executable now (stale / unverifiable), or when the snapshot
+    predates the feed's current freshest update (it was rendered from an older feed). The caller then
+    builds live, through the gated loaders."""
+    for sport in _snapshot_props_sports(snapshot_key):
+        try:
+            st = props_feed_status(sport)
+        except Exception:
+            return False
+        if st.get('prices_withheld'):
+            return False
+        lu = st.get('last_updated_utc')
+        if st.get('executable') and lu:
+            try:
+                fresh_at = datetime.strptime(lu, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+            except ValueError:
+                return False
+            if generated_at < fresh_at:
+                return False
+    return True
+
+
 def load_runtime_snapshot(snapshot_key, max_age_minutes=30, allow_stale=False, stale_max_age_minutes=None):
     # Legal/IP NBA.com data-rights gate (docs/legal_ip_audit.md): a pre-rendered NBA/WNBA snapshot can
     # contain NBA.com-derived (stats.nba.com) values and would otherwise bypass the live load_gamelogs
@@ -1254,6 +1301,8 @@ def load_runtime_snapshot(snapshot_key, max_age_minutes=30, allow_stale=False, s
         return None
     generated_at = pd.to_datetime(document.get('generated_at'), errors='coerce', utc=True)
     if pd.isna(generated_at):
+        return None
+    if not _snapshot_props_servable(snapshot_key, generated_at.to_pydatetime()):
         return None
     age_seconds = (datetime.now(timezone.utc) - generated_at.to_pydatetime()).total_seconds()
     fresh_seconds = max(int(max_age_minutes or 0), 1) * 60
@@ -2580,7 +2629,9 @@ def load_nba_review_gamelogs():
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True, sort=False)
 
-def load_props():
+def _load_props_raw():
+    """NBA_Props.csv exactly as published, INCLUDING stale rows. Never customer-facing: only the central
+    executable gate (_executable_props_frame / props_feed_status) reads it, to report the honest state."""
     path = DATA_DIR / 'props' / 'NBA_Props.csv'
     if path.exists():
         df = _load_cached_csv(path, transform=_format_props)
@@ -2589,13 +2640,28 @@ def load_props():
     return pd.DataFrame()
 
 
-def load_wnba_props():
+def _load_wnba_props_raw():
+    """WNBA_Props.csv exactly as published (see _load_props_raw). Never customer-facing."""
     path = DATA_DIR / 'props' / 'WNBA_Props.csv'
     if path.exists():
         df = _load_cached_csv(path, transform=_format_props)
         if not df.empty:
             return df
     return pd.DataFrame()
+
+
+def load_props():
+    """CENTRAL NBA props loader (2026-11 v3, Gap 2): returns ONLY executable rows. When the feed's freshest
+    provider LastUpdated is older than LIVE_LINES_MAX_AGE_HOURS (6h, CLOCK A, timezone-aware UTC), has no
+    verifiable time, or is future-dated, it returns an EMPTY frame (same columns), so no route, builder,
+    cache, snapshot, ticket, image or calculator downstream can treat a stale line as current. The honest
+    state + actual update time come from props_feed_status('nba')."""
+    return _executable_props_frame('nba', _load_props_raw())[0]
+
+
+def load_wnba_props():
+    """CENTRAL WNBA props loader: executable rows only (see load_props)."""
+    return _executable_props_frame('wnba', _load_wnba_props_raw())[0]
 
 
 def load_mlb_props():
@@ -3739,22 +3805,94 @@ def get_lines_refresh_meta(odds_df, max_age_hours=LIVE_LINES_MAX_AGE_HOURS, now=
             'has_lines': True}
 
 
+# ---------------------------------------------------------------------------------------------------------
+# CENTRAL NBA/WNBA executable-props gate (2026-11 v3, Gap 2). The 6h rule (LIVE_LINES_MAX_AGE_HOURS, CLOCK
+# A, an owner decision) is enforced HERE, in the loaders every NBA/WNBA prop surface reads -- not per page
+# or template. A caller can only tighten the window, never loosen it, and `require_fresh=False` no longer
+# returns stale rows (it was how the market-only board exposed them at f06e568). Executable means: rows
+# exist AND the freshest provider LastUpdated parses to a timezone-aware UTC instant (naive = Eastern wall
+# clock, services/timeutils) AND it is not more than 5 minutes in the future AND it is <= 6h old.
+# ---------------------------------------------------------------------------------------------------------
+PROPS_FUTURE_TOLERANCE_HOURS = 5.0 / 60.0
+_EXECUTABLE_PROPS_SPORTS = ('nba', 'wnba')
+
+
+def props_executable_meta(raw_df, max_age_hours=None, now=None):
+    """get_props_refresh_meta + the executable verdict for one props frame. Never loosens the 6h rule."""
+    limit = float(LIVE_LINES_MAX_AGE_HOURS)
+    try:
+        if max_age_hours is not None:
+            limit = min(limit, float(max_age_hours))
+    except (TypeError, ValueError):
+        pass
+    meta = get_props_refresh_meta(raw_df, max_age_hours=limit, now=now)
+    age = meta.get('age_hours')
+    if not meta.get('has_live_props'):
+        reason = 'empty'
+    elif age is None:
+        reason = 'no_timestamp'
+    elif age < -PROPS_FUTURE_TOLERANCE_HOURS:
+        reason = 'future_timestamp'
+    elif meta.get('is_stale'):
+        reason = 'stale'
+    else:
+        reason = None
+    executable = reason is None
+    if reason in ('no_timestamp', 'future_timestamp'):
+        meta['status'] = 'unavailable'
+        meta['warning'] = ('Player-prop prices are withheld: the feed has no verifiable update time '
+                           f'({reason.replace("_", " ")}).')
+    elif reason == 'stale':
+        meta['warning'] = (f"Player-prop prices are withheld: the feed was last updated {meta.get('last_updated')} "
+                           f"({age:.1f}h ago), past the {limit:g}-hour limit for a current price.")
+    meta.update({
+        'executable': executable,
+        'unavailable_reason': reason,
+        'max_age_hours': limit,
+        'prices_withheld': bool(not executable and reason != 'empty'),
+        'executable_row_count': int(meta.get('row_count') or 0) if executable else 0,
+    })
+    return meta
+
+
+def _executable_props_frame(sport, raw_df, max_age_hours=None, now=None):
+    """(frame, meta): the raw frame when executable, else an EMPTY frame with the same columns."""
+    meta = props_executable_meta(raw_df, max_age_hours=max_age_hours, now=now)
+    meta['sport'] = sport
+    if meta['executable']:
+        return raw_df, meta
+    cols = list(raw_df.columns) if raw_df is not None and hasattr(raw_df, 'columns') else []
+    return pd.DataFrame(columns=cols), meta
+
+
+def props_feed_status(sport, now=None):
+    """Honest NBA/WNBA props feed state for display: actual update time (Eastern display + UTC), age,
+    executable flag and unavailable reason. Reads the raw file so a stale feed still shows WHEN it was last
+    updated -- but the rows themselves are never returned from here."""
+    sport = str(sport or '').strip().lower()
+    raw = {'nba': _load_props_raw, 'wnba': _load_wnba_props_raw}[sport]()
+    return _executable_props_frame(sport, raw, now=now)[1]
+
+
+def _props_executable_token(sport):
+    """Cache-version component: flips when the feed crosses the 6h boundary even though the file (and so
+    its mtime) did not change, so no mtime-keyed cache can keep serving a build made while it was fresh."""
+    try:
+        st = props_feed_status(sport)
+    except Exception:
+        return f'props_exec:{sport}:error'
+    return f"props_exec:{sport}:{int(bool(st.get('executable')))}:{st.get('last_updated_utc') or ''}"
+
+
 def load_live_props_feed(max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS, require_fresh=False):
-    props_df = load_props()
-    refresh_meta = get_props_refresh_meta(props_df, max_age_hours=max_age_hours)
-    if require_fresh and refresh_meta.get('is_stale'):
-        empty_columns = list(props_df.columns) if props_df is not None and not props_df.empty else []
-        return pd.DataFrame(columns=empty_columns), refresh_meta
-    return props_df, refresh_meta
+    """(executable NBA rows, honest meta). `require_fresh` is accepted for compatibility but cannot loosen
+    the gate: stale/unverifiable rows are never returned; the meta still carries the actual update time."""
+    return _executable_props_frame('nba', _load_props_raw(), max_age_hours=max_age_hours)
 
 
 def load_wnba_live_props_feed(max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS, require_fresh=False):
-    props_df = load_wnba_props()
-    refresh_meta = get_props_refresh_meta(props_df, max_age_hours=max_age_hours)
-    if require_fresh and refresh_meta.get('is_stale'):
-        empty_columns = list(props_df.columns) if props_df is not None and not props_df.empty else []
-        return pd.DataFrame(columns=empty_columns), refresh_meta
-    return props_df, refresh_meta
+    """WNBA twin of load_live_props_feed (same central gate)."""
+    return _executable_props_frame('wnba', _load_wnba_props_raw(), max_age_hours=max_age_hours)
 
 
 def load_mlb_live_props_feed(max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS, require_fresh=False):
@@ -17949,8 +18087,19 @@ def build_market_player_page(sport, name):
     name = str(name or '').strip()
     label = {'nba': 'NBA', 'wnba': 'WNBA'}.get(sport, sport.upper())
     out = {'sport': sport, 'sport_label': label, 'player': name, 'found': False, 'team': '',
-           'markets': [], 'source': 'The Odds API (licensed) player props', 'data_through': ''}
+           'markets': [], 'source': 'The Odds API (licensed) player props', 'data_through': '',
+           'props_status': None}
     if sport not in _entity_links.MARKET_PLAYER_SPORTS or not name:
+        return out
+    # v3 central gate: a feed holding stale / unverifiable rows shows its ACTUAL update time and withholds
+    # every price -- it neither lists markets nor claims the player "doesn't resolve".
+    try:
+        status = props_feed_status(sport)
+    except Exception:
+        status = None
+    if status and status.get('prices_withheld'):
+        out['props_status'] = status
+        out['data_through'] = status.get('last_updated') or ''
         return out
     # Resolve to exactly one current player in the licensed props feed (ambiguous -> not found).
     if not _entity_player_known(sport, name):
@@ -17990,6 +18139,11 @@ def build_market_player_page(sport, name):
         # Stable, readable order: by stat then line.
         markets.sort(key=lambda m: (m['stat'], m['line']))
         out['markets'] = markets[:80]
+    if status and status.get('executable') and status.get('last_updated') not in (None, '', 'Unknown'):
+        # v3: "data through" is the feed's provider update time (timezone-aware), not the file mtime.
+        out['props_status'] = status
+        out['data_through'] = status['last_updated']
+        return out
     try:
         fn = {'nba': 'NBA_Props.csv', 'wnba': 'WNBA_Props.csv'}[sport]
         p = DATA_DIR / 'props' / fn
@@ -19779,7 +19933,8 @@ def build_slate_pulse_context():
         except Exception:
             schedule_today = 0
         props_df = _load(props_name)
-        meta = get_props_refresh_meta(props_df)
+        # NBA/WNBA: honest state from the central gate (a stale feed reads 'stale' with its real age).
+        meta = props_feed_status(key) if key in _EXECUTABLE_PROPS_SPORTS else get_props_refresh_meta(props_df)
         lines = _slate_count_games(_load(odds_name))
         # Games with live game-market lines is the actionable count and more reliable than a
         # possibly-stale schedule file; fall back to the schedule when no lines have posted.
@@ -19788,14 +19943,15 @@ def build_slate_pulse_context():
             injuries = int(len(load_sport_injuries(key)))
         except Exception:
             injuries = 0
-        state, note = _slate_state(games, lines, meta.get('has_live_props'), injuries, meta.get('is_stale'))
+        state, note = _slate_state(games, lines, meta.get('has_live_props'), injuries,
+                                   bool(meta.get('is_stale') or meta.get('prices_withheld')))
         rows.append({
             'key': key,
             'label': label,
             'href': href,
             'games': games,
             'lines': lines,
-            'props': int(meta.get('row_count') or 0),
+            'props': int(meta.get('executable_row_count', meta.get('row_count')) or 0),
             'books': int(meta.get('book_count') or 0),
             'book_names': meta.get('books') or [],
             'injuries': injuries,
@@ -19999,11 +20155,14 @@ def _build_best_lines_snapshot():
             props = loader()
         except Exception:
             props = pd.DataFrame()
-        meta = get_props_refresh_meta(props, max_age_hours=6)
+        # NBA/WNBA: the loader returned executable rows only; the honest state + actual update time come
+        # from the central gate (a stale feed shows its real last-update, with zero rows offered).
+        meta = (props_feed_status(league) if league in _EXECUTABLE_PROPS_SPORTS
+                else get_props_refresh_meta(props, max_age_hours=6))
         feed_states.append({
             'key': league,
             'label': label,
-            'rows': int(meta.get('row_count') or 0),
+            'rows': int(meta.get('executable_row_count', meta.get('row_count')) or 0),
             'books': int(meta.get('book_count') or 0),
             'updated': str(meta.get('last_updated') or 'Unknown'),
             'status': str(meta.get('status') or 'unavailable'),
@@ -20112,6 +20271,8 @@ def build_best_lines_context(league_filter='', direction_filter='', stat_filter=
         'best_lines_snapshot',
         60,
         _build_best_lines_snapshot,
+        # v3: flips when an NBA/WNBA props feed crosses the 6h executable boundary (no 60s stale window).
+        version=(_props_executable_token('nba'), _props_executable_token('wnba')),
     )
     all_rows = list(cached_rows or [])
     feed_states = [dict(item) for item in (cached_feed_states or [])]
@@ -20301,10 +20462,16 @@ def _build_risk_radar_snapshot():
             props = loader()
         except Exception:
             props = pd.DataFrame()
-        meta = get_props_refresh_meta(props, max_age_hours=6)
+        if league in _EXECUTABLE_PROPS_SPORTS:
+            # Central gate: `props` holds executable rows only; report a withheld feed with its real age.
+            meta = props_feed_status(league)
+            if meta.get('prices_withheld'):
+                stale_feeds.append({'label': label, 'age_hours': meta.get('age_hours')})
+        else:
+            meta = get_props_refresh_meta(props, max_age_hours=6)
         if props is None or props.empty or not {'Player', 'Stat', 'Game', 'Book'}.issubset(props.columns):
             continue
-        if meta.get('is_stale'):
+        if league not in _EXECUTABLE_PROPS_SPORTS and meta.get('is_stale'):
             stale_feeds.append({'label': label, 'age_hours': meta.get('age_hours')})
 
         injured = {}
@@ -20374,7 +20541,9 @@ def _build_risk_radar_snapshot():
 def build_risk_radar_context(league_filter='', flag_filter='', page=1, per_page=200):
     """Aggregate observable per-market warnings across current prop feeds. Reports
     'N verified warnings' by type -- never a single universal risk score."""
-    cached_rows, stale_feeds = _get_ttl_cached_value('risk_radar_markets', 120, _build_risk_radar_snapshot)
+    cached_rows, stale_feeds = _get_ttl_cached_value(
+        'risk_radar_markets', 120, _build_risk_radar_snapshot,
+        version=(_props_executable_token('nba'), _props_executable_token('wnba')))
     all_rows = list(cached_rows or [])
     rows = all_rows
     league_filter = str(league_filter or '').strip().lower()
@@ -22444,6 +22613,9 @@ def build_cross_sport_dashboard_snapshots(postseason_only=False):
     for config in sport_configs:
         schedule = _load_cached_csv(config['schedule'])
         props = _load_cached_csv(config['props'])
+        if config['key'] in _EXECUTABLE_PROPS_SPORTS:
+            # v3 central gate: a stale/unverifiable NBA/WNBA props file contributes NO best-prop row.
+            props = _executable_props_frame(config['key'], props)[0]
         today_games = pd.DataFrame()
         if not schedule.empty and 'Date' in schedule.columns:
             today_games = schedule[schedule['Date'].astype(str).str[:10] == today].copy()
@@ -22718,6 +22890,10 @@ def build_free_sport_prop_rows(sport_key, limit=6):
         props = _load_cached_csv(path)
     except Exception:
         return []
+    _gate_sport = _PROPS_EXEC_TOKEN_FILES.get(path.name)
+    if _gate_sport:
+        # v3 central gate: free-tier NBA/WNBA sample rows only from an executable (<= 6h) feed.
+        props = _executable_props_frame(_gate_sport, props)[0]
     if props.empty:
         return []
 
@@ -23051,6 +23227,9 @@ def build_today_playable_hot_hands(sport_snapshots, limit=3):
             continue
         schedule = _load_cached_csv(config['schedule'])
         props = _load_cached_csv(config['props'])
+        if key in _EXECUTABLE_PROPS_SPORTS:
+            # v3 central gate: "playable" needs an executable NBA/WNBA props feed.
+            props = _executable_props_frame(key, props)[0]
         if schedule.empty or props.empty or 'Player' not in props.columns:
             continue
         today_games = schedule[schedule.get('Date', pd.Series(dtype=str)).astype(str).str[:10] == today].copy()
@@ -25433,9 +25612,9 @@ def build_featured_nba_top_plays(live_props, limit=20, min_confidence=70):
             if row_gap > current_gap:
                 deduped_top_plays[key] = row
     featured_rows = sorted(deduped_top_plays.values(), key=lambda x: x['hit_rate'], reverse=True)
-    props_refresh_meta = get_props_refresh_meta(load_props())
-    refresh_age_hours = props_refresh_meta.get('age_hours')
-    if refresh_age_hours is not None and refresh_age_hours > 6:
+    # v3 central gate: featured rows only from an EXECUTABLE feed. The old check let an unknown age through
+    # and read the (now gated, so always fresh-or-empty) frame; read the honest status instead.
+    if not props_feed_status('nba').get('executable'):
         return []
     runtime = {
         'injury_context_age_hours': build_injury_context_age(load_injuries(), load_return_overrides()),
@@ -36116,7 +36295,8 @@ def wnba_props_page():
     if not _nba_source_gate.nba_stats_enabled():
         board = build_market_only_board(load_wnba_live_props_feed)
         return render_template('market_only_board.html', sport_label='WNBA', sport_key='wnba',
-                               rows=board['rows'], as_of=board['as_of'], books=board['books'])
+                               rows=board['rows'], as_of=board['as_of'], books=board['books'],
+                               props_status=board['props_status'])
     date_filter = request.args.get('date', 'today').strip().lower() or 'today'
     stat_filter = request.args.get('stat', '').strip().upper()
     direction_filter = request.args.get('direction', 'all').strip().lower() or 'all'
@@ -41712,6 +41892,9 @@ def _load_derivative_prop_rows(sport_filter=''):
             df = pd.read_csv(path)
         except Exception:
             continue
+        if sport.lower() in _EXECUTABLE_PROPS_SPORTS:
+            # v3 central gate: no NBA/WNBA derivative row from a stale / unverifiable props feed.
+            df = _executable_props_frame(sport.lower(), df)[0]
         if df.empty:
             continue
         for _, row in df.iterrows():
@@ -42416,9 +42599,25 @@ def build_market_only_board(feed_loader):
         # LastUpdated has none, so we mark tz unknown rather than silently interpreting a local time.
         return bool(s) and bool(re.search(r'(Z|[+-]\d{2}:?\d{2})\s*$', str(s)))
     try:
-        df, meta = feed_loader(require_fresh=False)
+        # v3: require_fresh=True states intent; the central loader enforces the 6h rule regardless.
+        df, meta = feed_loader(require_fresh=True)
     except Exception:
         df, meta = None, {}
+    meta = dict(meta or {})
+    # Defense in depth: re-verify whatever frame the loader handed back (an injected/legacy loader cannot
+    # smuggle stale rows onto the board). A non-empty frame is judged on its OWN LastUpdated; an empty one
+    # keeps the loader's honest meta (which carries the real last-update time of a withheld feed).
+    if df is not None and not getattr(df, 'empty', True):
+        check = props_executable_meta(df)
+        if not check['executable']:
+            df = None
+            meta.update({k: check[k] for k in ('executable', 'unavailable_reason', 'prices_withheld', 'last_updated',
+                                               'last_updated_utc', 'age_hours', 'max_age_hours', 'warning')
+                         if k in check})
+        else:
+            meta.setdefault('executable', True)
+    elif 'executable' not in meta:
+        meta.update(props_executable_meta(df if df is not None else pd.DataFrame()))
     rows = []
     if df is not None and not getattr(df, 'empty', True):
         for _, r in df.iterrows():
@@ -42438,8 +42637,18 @@ def build_market_only_board(feed_loader):
                 'source': 'Odds API (licensed)',
             })
     rows.sort(key=lambda x: (x['game'], x['player'], x['stat']))  # neutral; no model ranking
-    return {'rows': rows, 'as_of': (meta or {}).get('as_of') or (meta or {}).get('generated_at'),
-            'books': (meta or {}).get('books') or []}
+    props_status = {
+        'executable': bool(meta.get('executable')) and bool(rows),
+        'unavailable_reason': meta.get('unavailable_reason'),
+        'prices_withheld': bool(meta.get('prices_withheld')),
+        'last_updated': meta.get('last_updated') or 'Unknown',
+        'last_updated_utc': meta.get('last_updated_utc'),
+        'age_hours': meta.get('age_hours'),
+        'max_age_hours': meta.get('max_age_hours') or LIVE_LINES_MAX_AGE_HOURS,
+        'warning': meta.get('warning') or '',
+    }
+    return {'rows': rows, 'as_of': meta.get('as_of') or meta.get('generated_at'),
+            'books': (meta.get('books') or []) if rows else [], 'props_status': props_status}
 
 
 def render_nba_props_page(filter_type=None):
@@ -42447,7 +42656,8 @@ def render_nba_props_page(filter_type=None):
     if not _nba_source_gate.nba_stats_enabled():
         board = build_market_only_board(load_live_props_feed)
         return render_template('market_only_board.html', sport_label='NBA', sport_key='nba',
-                               rows=board['rows'], as_of=board['as_of'], books=board['books'])
+                               rows=board['rows'], as_of=board['as_of'], books=board['books'],
+                               props_status=board['props_status'])
     # NBA P0 Commit C (1c): the Locks filter is removed. The /sports/nba/props/locks route still
     # resolves, so coerce it to the ordinary all-props board -- no lock filtering, no lock framing
     # -- rather than leave an orphaned authority surface reachable by URL.

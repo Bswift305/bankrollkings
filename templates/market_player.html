@@ -21,7 +21,9 @@
   <h1 class="mp-h">{{ player }} <span style="font:600 12px/1 'Helvetica Neue',Arial;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">· {{ sport_label }}{% if team %} · {{ team }}{% endif %}</span></h1>
   <p class="mp-sub">Source: {{ source }}{% if data_through %} · data through {{ data_through }}{% endif %}.</p>
 
-  {% if not found %}
+  {% if props_status and props_status.prices_withheld %}
+    {% include "_props_feed_status.html" %}
+  {% elif not found %}
     <div class="mp-empty"><b>{{ player }}</b> doesn&rsquo;t resolve to a current {{ sport_label }} player with live
       markets, so no page is shown. Browse the <a href="/sports/{{ sport }}/props" style="color:#4ed48a;">{{ sport_label }} props</a>.</div>
   {% else %}

@@ -13,7 +13,10 @@ Access + containment (2026-11, self-contained -- no user store, no untracked dat
       user store NBA_Users.csv, per-user files, the activity heartbeat) is byte/mtime identical before and
       after, the account writers are tripwired, and the heartbeat path is redirected to a temp dir;
   (10) stale still bites: a > 6h (LIVE_LINES_MAX_AGE_HOURS) NBA lines fixture renders /game-lines as
-      STALE / not executable with NO price; a stale props fixture is withheld by the require_fresh gate.
+      STALE / not executable with NO price; a stale NBA AND WNBA props feed puts ZERO rows on the
+      market-only BOARD and its rendered page (actual update time shown), through the REAL central loader
+      -- v3 fixes v2's contradiction, which tested the loader with require_fresh=True while the board
+      called require_fresh=False. Future-dated / timestamp-less feeds and injected loaders are withheld too.
 Principals come from services.qc_auth (in-memory one-row store), never a real account.
 
 Uses controlled fixtures (no production data). Exits 0 on success, 1 otherwise.
@@ -40,6 +43,7 @@ BOARD_PATHS = (('/sports/nba/props', 'NBA'), ('/sports/wnba/props', 'WNBA'))
 USER_STATE_DIRS = ('tracking', 'user_prefs', 'live_scores')
 # The REAL feed loader (run_qc swaps app.load_live_props_feed for a fixture lambda during the body).
 _REAL_LOAD_LIVE_PROPS_FEED = app.load_live_props_feed
+_REAL_LOAD_WNBA_LIVE_PROPS_FEED = app.load_wnba_live_props_feed
 
 AUTHORITY = ['>Confidence<', '>Tier<', '>Edge<', '>EV<', '>Fair<', '>Model<', 'PropScore', 'Hit Rate',
              'Recommend', 'Best Over', 'Best Under']
@@ -54,13 +58,17 @@ def qc_source_parser_no_merge():
     import fetch_player_props as fpp
     issues = []
     mk = 'player_points'
+    # v3: book update times are RELATIVE (fresh) -- the board now re-verifies the 6h executable rule, so a
+    # far-future stamp (formerly 2099) would correctly be withheld as unverifiable.
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    z = lambda dt: dt.strftime('%Y-%m-%dT%H:%M:%SZ')  # noqa: E731
     event = {'id': 'evt1', 'home_team': 'Celtics', 'away_team': 'Lakers',
-             'commence_time': '2099-01-01T23:00:00Z'}
-    book_a = {'key': 'draftkings', 'title': 'DraftKings', 'last_update': '2099-01-01T12:00:00Z',
+             'commence_time': z(now + timedelta(days=1))}
+    book_a = {'key': 'draftkings', 'title': 'DraftKings', 'last_update': z(now - timedelta(minutes=60)),
               'markets': [{'key': mk, 'outcomes': [
                   {'name': 'Over', 'description': 'A. Player', 'point': 24.5, 'price': -110},  # synthetic-fixture
                   {'name': 'Under', 'description': 'A. Player', 'point': 24.5, 'price': -108}]}]}
-    book_b = {'key': 'fanduel', 'title': 'FanDuel', 'last_update': '2099-01-01T12:07:00Z',
+    book_b = {'key': 'fanduel', 'title': 'FanDuel', 'last_update': z(now - timedelta(minutes=53)),
               'markets': [{'key': mk, 'outcomes': [
                   {'name': 'Over', 'description': 'A. Player', 'point': 25.5, 'price': -120}]}]}  # no Under
     src = fpp.parse_market_rows(event, book_a, [mk]) + fpp.parse_market_rows(event, book_b, [mk])
@@ -82,13 +90,23 @@ def qc_source_parser_no_merge():
     return issues
 
 
-def _fixture(sport):
+def _et(dt):
+    from services.timeutils import DISPLAY_TZ
+    return dt.astimezone(DISPLAY_TZ).strftime('%Y-%m-%d %H:%M')
+
+
+def _fixture(sport, age_hours=1.0):
+    """Two quotes whose freshest LastUpdated (Eastern wall clock, as the fetcher writes it) is age_hours old.
+    v3: relative times -- the old fixed 2099 stamps are future-dated, which the central gate now withholds."""
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     base = {c: '' for c in ['Player', 'Team', 'Stat', 'MarketKey', 'Line', 'Game', 'Book', 'LastUpdated',
                             'OverOdds', 'UnderOdds']}
     r1 = dict(base, Player=f'{sport} PLAYER ONE', Team='LAL', Stat='Points', Line=24.5, Game='LAL @ BOS',
-              Book='DraftKings', OverOdds=-110, UnderOdds=-110, LastUpdated='2099-01-01 12:00')  # synthetic-fixture
+              Book='DraftKings', OverOdds=-110, UnderOdds=-110,  # synthetic-fixture
+              LastUpdated=_et(now - timedelta(hours=age_hours, minutes=5)))
     r2 = dict(base, Player=f'{sport} GUARD TWO', Team='MIA', Stat='Assists', Line=6.5, Game='MIA @ NYK',
-              Book='FanDuel', OverOdds=-115, UnderOdds='', LastUpdated='2099-01-01 12:05')  # missing under
+              Book='FanDuel', OverOdds=-115, UnderOdds='',
+              LastUpdated=_et(now - timedelta(hours=age_hours)))  # missing under
     return pd.DataFrame([r1, r2])
 
 
@@ -174,20 +192,75 @@ def qc_stale_bites(issues, notes):
             if len(issues) == n0:
                 notes.append(f'stale bites: lines > {app.LIVE_LINES_MAX_AGE_HOURS}h -> /game-lines STALE, '
                              'not executable, no price rendered; fresh control prices normally')
-        # stale props: the require_fresh gate withholds every row of a > 6h props feed
-        stale_props = _fixture('NBA')
-        from services.timeutils import DISPLAY_TZ
-        stale_props['LastUpdated'] = (now - timedelta(hours=app.LIVE_LINES_MAX_AGE_HOURS + 4)
-                                      ).astimezone(DISPLAY_TZ).strftime('%Y-%m-%d %H:%M')
-        app.load_props = lambda: stale_props.copy()
-        df_held, meta = _REAL_LOAD_LIVE_PROPS_FEED(require_fresh=True)
-        if not meta.get('is_stale') or not df_held.empty:
-            issues.append(f'stale props fixture not withheld by require_fresh (is_stale={meta.get("is_stale")}, '
-                          f'rows={len(df_held)})')
-        else:
-            notes.append('stale bites: a > 6h props feed is flagged stale and require_fresh returns zero rows')
     finally:
         app.load_game_market_odds, app.load_schedule, app.load_props = saved
+    qc_stale_props_board(issues, notes)
+
+
+def qc_stale_props_board(issues, notes):
+    """v3 contradiction fix. v2 asserted 'stale props -> require_fresh returns zero rows' by calling the
+    LOADER with require_fresh=True, while build_market_only_board called it with require_fresh=False -- so
+    the QC passed while the board rendered stale rows. Now the BOARD and the rendered PAGE are tested,
+    through the REAL central loaders (only the raw file read is swapped), with the board's own call."""
+    saved = (app._load_props_raw, app._load_wnba_props_raw, app.load_live_props_feed, app.load_wnba_live_props_feed)
+    stale_h = app.LIVE_LINES_MAX_AGE_HOURS + 4
+    try:
+        app.load_live_props_feed, app.load_wnba_live_props_feed = _REAL_LOAD_LIVE_PROPS_FEED, _REAL_LOAD_WNBA_LIVE_PROPS_FEED
+        for sport, label, raw_name, path in (('nba', 'NBA', '_load_props_raw', '/sports/nba/props'),
+                                             ('wnba', 'WNBA', '_load_wnba_props_raw', '/sports/wnba/props')):
+            loader = app.load_live_props_feed if sport == 'nba' else app.load_wnba_live_props_feed
+            for state, age in (('stale', stale_h), ('fresh', 1.0)):
+                fx = _fixture(label, age_hours=age)
+                setattr(app, raw_name, lambda f=fx: f.copy())
+                board = app.build_market_only_board(loader)   # the board's OWN loader call
+                df_default, meta = loader()                   # default arguments (formerly stale-leaking)
+                with isolated_member_client(plan='all_access') as c:
+                    r = c.get(path)
+                h = r.get_data(as_text=True)
+                st = board.get('props_status') or {}
+                if state == 'stale':
+                    ok = (not board['rows'] and df_default.empty and st.get('prices_withheld')
+                          and st.get('unavailable_reason') == 'stale' and not st.get('executable')
+                          and r.status_code == 200 and f'{label} PLAYER ONE' not in h and '-110' not in h  # synthetic-fixture
+                          and 'data-props-executable="0"' in h and 'data-props-state="stale"' in h
+                          and str(meta.get('last_updated')) in h and meta.get('last_updated') != 'Unknown')
+                    if ok:
+                        notes.append(f'{label} stale props (> {app.LIVE_LINES_MAX_AGE_HOURS}h): board 0 rows, loader '
+                                     f'default call 0 rows, {path} shows NO quote/price + actual update time '
+                                     f'{meta.get("last_updated")} ({meta.get("age_hours")}h, UTC-aware)')
+                    else:
+                        issues.append(f'{label} stale props leaked or state dishonest: rows={len(board["rows"])} '
+                                      f'loader_rows={len(df_default)} status={st} http={r.status_code}')
+                else:
+                    ok = (len(board['rows']) == 2 and st.get('executable') and r.status_code == 200
+                          and f'{label} PLAYER ONE' in h and 'data-props-executable="0"' not in h)
+                    if ok:
+                        notes.append(f'{label} fresh props control: board renders 2 rows (the stale result above is the gate biting)')
+                    else:
+                        issues.append(f'{label} fresh props control did not render (stale proof vacuous): {st}')
+        # future-dated / no-timestamp feeds are unverifiable -> withheld (never treated as current)
+        fx = _fixture('NBA')
+        fx['LastUpdated'] = '2099-01-01 12:00'
+        app._load_props_raw = lambda f=fx: f.copy()
+        b_future = app.build_market_only_board(app.load_live_props_feed)
+        fx2 = _fixture('NBA')
+        fx2['LastUpdated'] = ''
+        app._load_props_raw = lambda f=fx2: f.copy()
+        b_none = app.build_market_only_board(app.load_live_props_feed)
+        if b_future['rows'] or b_none['rows'] or b_future['props_status'].get('unavailable_reason') != 'future_timestamp' \
+                or b_none['props_status'].get('unavailable_reason') != 'no_timestamp':
+            issues.append('a future-dated or timestamp-less props feed was not withheld')
+        else:
+            notes.append('future-dated and timestamp-less props feeds are withheld (unverifiable, never current)')
+        # an injected loader that ignores require_fresh cannot smuggle stale rows onto the board
+        stale = _fixture('NBA', age_hours=stale_h)
+        b_inj = app.build_market_only_board(lambda **k: (stale.copy(), {'books': ['DraftKings']}))
+        if b_inj['rows']:
+            issues.append('an injected stale-returning loader put rows on the market-only board')
+        else:
+            notes.append('defense in depth: the board re-verifies the frame an injected loader returns (0 rows)')
+    finally:
+        app._load_props_raw, app._load_wnba_props_raw, app.load_live_props_feed, app.load_wnba_live_props_feed = saved
 
 
 def run_qc():
