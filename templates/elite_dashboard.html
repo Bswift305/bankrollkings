@@ -500,13 +500,20 @@
             <div>
                 <div class="page-kicker" style="margin-bottom:8px;">Recent Alerts</div>
                 <div style="display:grid; gap:8px;">
+                    {# History rule (v5): a past alert is never a current quote -- exact label, plain text, no price
+                       styling, no action, no link into a ticket/parlay; book + line only with recorded provenance. #}
                     {% for row in alert_history.recent %}
-                    <div class="parlay-surface-soft" style="padding:10px;">
-                        <div style="display:flex; justify-content:space-between; gap:10px;">
-                        {{ entity_anchor('player', row.sport, row.Player, css_class='player-link') }}
-                            <span class="badge">{{ row.OutcomeState or 'Pending' }}</span>
+                    <div class="parlay-surface-soft elite-alert-history" data-alert-history="1" style="padding:10px;">
+                        <div class="cell-meta" data-history-label="1">{{ row.history_label }}</div>
+                        <div style="display:flex; justify-content:space-between; gap:10px; margin-top:4px;">
+                            <span>{{ row.player }}</span>
+                            <span class="badge">{{ row.outcome_state }}</span>
                         </div>
-                        <div class="cell-meta" style="margin-top:5px;">{{ row.Sport }} | {{ row.SharpSide }} {{ row.Stat }} {{ row.CurrentLine }} | {{ row.Alignment }} | {{ row.Book }}</div>
+                        {% if row.provenance_ok %}
+                        <div class="cell-meta" style="margin-top:5px;" data-provenance="recorded">{{ row.sport }} | {{ row.side }} {{ row.stat }} | recorded line {{ row.line or '-' }} at {{ row.book or '-' }} | captured {{ row.captured_display }} | source {{ row.source }}</div>
+                        {% else %}
+                        <div class="cell-meta" style="margin-top:5px;" data-provenance="unavailable">{{ row.sport }} | {{ row.side }} {{ row.stat }} | {{ row.provenance_note }}</div>
+                        {% endif %}
                     </div>
                     {% else %}
                     <div class="cell-meta">No persisted alerts yet. Refresh the Elite cockpit after prop books update.</div>
