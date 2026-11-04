@@ -203,9 +203,24 @@ Receipt `<runtime root>/nba_market/last_nba_market_refresh.json` (`$BK_RUNTIME_D
 `/opt/bankrollkings-runtime`), schema `nba_market_refresh_v1`: `run_id`, `caller`, `pid`, `started_at_utc`,
 `ended_at_utc`, `seconds`, `result`, `exit_code`, `timeouts` (the table below) and `stages[]`, each with
 `stage`, `ran`, `outcome`, `detail`, `ok`, `alerting`, `exit_code`, `timed_out`, start/end/seconds,
-`timeout_seconds`, `lock_wait_seconds`, `credits` (from the Odds API quota ledger lines that stage appended:
-`x_requests_last_sum`, `x_requests_remaining`, `ledger_entries`, `status`; never guessed) and
+`timeout_seconds`, `lock_wait_seconds`, `credits` and
 `publisher_receipt` / `fetch_receipt` (`{path, sha256}` only when that stage wrote it this run, else null).
+
+**Credits are operation-scoped (2026-11 precision fix).** Each stage run gets an unguessable attribution
+token (`uuid4().hex`) passed to its child ONLY via `BK_ODDS_ATTRIBUTION_ID`; `services/odds_quota.write_ledger`
+stamps it as `attribution_id` on every quota-ledger row that child appends (additive field; rows from any
+writer without the env var carry no token). `credits.x_requests_last_sum` = the sum of `x-requests-last`
+over the rows carrying **this** stage's token -- the whole ledger is scanned, no positional slice, no global
+before/after delta -- so another sport, a manual `fetch_player_props.py --sport basketball_nba`, the other
+caller's stage, or a ledger rotation cannot change it. An attributed row without an integer `x-requests-last`
+-> `x_requests_last_sum: null`, status `UNAVAILABLE` (never guessed). Zero attributed rows -> `0`, status
+`NO_ATTRIBUTED_ENTRIES`. Remaining quota is a SEPARATE field, `credits.account_remaining_snapshot`
+(`{value, scope: "ACCOUNT_GLOBAL", label}`), taken from this operation's last attributed response and labelled
+as the whole account's balance -- never this operation's cost, never added to it. Fields: `source`,
+`attribution`, `attribution_id`, `ledger_entries`, `sports`, `x_requests_last_sum`,
+`account_remaining_snapshot`, `status`. Residual: the ledger write is best-effort; if it fails, the stage
+reads `NO_ATTRIBUTED_ENTRIES` even though the child's own printed QUOTA RECEIPT shows the cost.
+QC `qc_nba_credit_attribution.py`.
 
 **No double fetch between bk-daily and the orchestrator.** Both enter the same publisher locks. Whichever
 gets a lock second waits (bounded) and re-reads the receipt + sha under the lock: a valid fresh publish ->

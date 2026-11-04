@@ -123,6 +123,11 @@ SCORECARDS = [
     # runtime dir: ordering, lines-failure blocks props, reuse, contention with/without a valid receipt,
     # no concurrent catch-up (Persistent=false + run lock), stage timeout, measured timeout contract.
     ("NBA Market Orchestrator QC", "qc_nba_market_orchestrator.py", 600),
+    # NBA v5 credit precision: each stage's `credits` = sum of x-requests-last over quota-ledger rows stamped
+    # with THAT stage's attribution token (BK_ODDS_ATTRIBUTION_ID) -- unrelated sports, untokened/other-token
+    # NBA writers, a real concurrent thread + process, and a rotated ledger cannot inflate it; missing header
+    # -> UNAVAILABLE; remaining quota reported separately as an account-global snapshot. Offline, temp dirs.
+    ("NBA Credit Attribution QC", "qc_nba_credit_attribution.py", 300),
     # Elite alert HISTORY (v5): exact "Historical alert" label, book/line only with an aware-UTC capture time +
     # recorded source, no action/price styling/ticket path; /elite/alerts/export obeys the same rule.
     ("Elite Alert History QC", "qc_elite_alert_history.py", 300),
