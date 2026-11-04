@@ -1,6 +1,21 @@
 # Integrity + D4 scoped Linux gate receipt — 2026-11-04
 
-## SUPERSEDING RESULT — successor `86b6aae` (atomic submission + Matchup Center cache isolation)
+> **Owner decision 2026-11-04 (after the `86b6aae` gate): deployment stays ON HOLD; `86b6aae` is Linux-gate-passed
+> but NOT the final candidate.** Two more silent-mutation paths must close in narrowly scoped successor commits:
+> (1) **quote-change atomicity** — at final submission compare user-confirmed sportsbook/event/market/selection/line/
+> price with the current canonical server quote (canonicalize formatting first); any changed book/line/price — even a
+> better price — or a stale/missing quote rejects the whole ticket with sanitized 409 (`BOOK_CHANGED`,
+> `LINE_CHANGED`, `PRICE_CHANGED`, `QUOTE_STALE`, `QUOTE_UNAVAILABLE`) and current safe display terms; no payout,
+> image, export, handoff or partial save; forged client values never control execution. (2) **`/parlay/save`** — no
+> truncation to 20 and no silent drops; frozen documented review-record range; over-limit or invalid pick → 422 with
+> indexed safe reasons, no save; stored record exactly equals the accepted set. (3) **Executable ticket range frozen at
+> 2–8 legs** across editor, Green Light, Menu, images, exports and handoffs (1 → clear minimum message; 9+ → rejected,
+> never truncated). Then the complete offline gate and full exact-SHA Linux gate (43 QCs + quote-change + parlay-save
+> exactness + `qc_odds_feed` exit 3 + isolation + clean tree). If green, the approved deploy plan proceeds, no purge.
+> **NBA timeout contract approved:** lines 30 s, props 60 s, lock wait 30 s, daily lines 60 s, daily props 90 s,
+> orchestrator 180 s.
+
+## SUPERSEDED RESULT — successor `86b6aae` (atomic submission + Matchup Center cache isolation)
 
 **Verdict: PASS for exact `86b6aae902d8f0ff938c4f538bdc5601f120d948`** — the current deployment candidate.
 `e1e33dc` (below) is superseded and must not be deployed on its own. Gate only; nothing deployed; `master` and
