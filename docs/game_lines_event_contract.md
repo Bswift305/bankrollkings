@@ -90,6 +90,27 @@ Every NBA lines publish goes through `services/nba_lines_publisher.publish` (ent
 
 QC: `qc_nba_lines_lock.py` (real two-process contention, crash release, reuse rules).
 
+## Stale NBA/WNBA props: central enforcement
+
+The 6h rule is enforced in the **loaders**, not per page: `load_props` / `load_wnba_props` /
+`load_live_props_feed` / `load_wnba_live_props_feed` return only executable rows
+(`_executable_props_frame`): rows exist, the freshest provider `LastUpdated` is a timezone-aware UTC
+instant (naive = Eastern wall clock), not > 5 min in the future, and <= `LIVE_LINES_MAX_AGE_HOURS`. A caller
+may tighten the window but never loosen it, and `require_fresh=False` no longer returns stale rows.
+`props_feed_status(sport)` reads the raw file only to report the honest state (actual update time, age,
+reason). The three raw-CSV readers (cross-sport dashboard, free previews, derivatives) and the hot-hands
+"playable" filter go through the same gate. Caches: `_build_file_token` adds an executable-state token for
+any NBA/WNBA props input (a file that stops being rewritten keeps its mtime, so a fresh-era build would
+otherwise be served for the full TTL); Best Lines / Risk Radar carry the token as their version; NBA/WNBA/
+Elite runtime snapshots are refused when the feed is withheld or the snapshot predates the feed.
+
+**v2 contradiction, resolved:** `qc_nba_market_only` asserted "stale props -> zero rows" by calling the
+loader with `require_fresh=True`, but `build_market_only_board` called it with `require_fresh=False`, and the
+QC's board/page checks used future-dated (2099) fixtures through a stubbed loader. The QC tested the loader,
+not the board. Now the board passes `require_fresh=True`, the loader ignores any loosening, the board
+re-verifies whatever frame it receives, and the QC renders the board + page through the real loader.
+Route-by-route proof: `qc_nba_wnba_props_stale.py`.
+
 ## Required before any stronger coverage rule
 
 A per-event book minimum or a book-retention ratio must **not** be added from intuition. A read-only

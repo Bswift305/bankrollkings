@@ -1,0 +1,20 @@
+{# v3 central props gate (app.props_executable_meta): honest NBA/WNBA player-prop feed state. Rendered when
+   a feed HAS rows that are not executable (stale past LIVE_LINES_MAX_AGE_HOURS, no verifiable update time,
+   or future-dated): the actual update time is shown and every price is withheld. Expects `props_status`. #}
+{% if props_status and props_status.prices_withheld %}
+<div class="bk-props-status" data-props-executable="0"
+     data-props-state="{{ 'stale' if props_status.unavailable_reason == 'stale' else 'unavailable' }}"
+     style="margin:0 0 16px;padding:12px 16px;border-radius:12px;border:1px solid rgba(255,107,107,.40);
+            background:rgba(255,107,107,.08);font:600 12.5px/1.6 'Helvetica Neue',Arial,sans-serif;color:var(--text);">
+  <b>Player-prop prices are withheld.</b>
+  {% if props_status.unavailable_reason == 'stale' %}
+    The licensed props feed was last updated <b data-props-last-updated>{{ props_status.last_updated }}</b>{% if props_status.age_hours is not none %} ({{ '%.1f'|format(props_status.age_hours) }}h ago){% endif %},
+    past the {{ '%g'|format(props_status.max_age_hours) }}-hour limit for a current price.
+  {% else %}
+    The licensed props feed has no verifiable update time (last recorded: <b data-props-last-updated>{{ props_status.last_updated }}</b>).
+  {% endif %}
+  No line on this page is shown as current until the feed refreshes.
+</div>
+{% elif props_status and props_status.executable %}
+<div class="mob-meta" data-props-executable="1">Feed updated {{ props_status.last_updated }}{% if props_status.age_hours is not none %} ({{ '%.1f'|format(props_status.age_hours) }}h ago){% endif %}.</div>
+{% endif %}

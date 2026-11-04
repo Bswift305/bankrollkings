@@ -47,7 +47,11 @@ FEED_ROWS = [
 def _feed(rows, meta=None):
     df = pd.DataFrame([dict(zip(COLS, r)) for r in rows])
     if not df.empty:
-        df['LastUpdated'] = '2026-10-25 13:05'
+        # v3: a FRESH (1h-old, Eastern wall clock) stamp. The board now re-verifies the 6h executable rule,
+        # so the former fixed '2026-10-25 13:05' would correctly be withheld as stale.
+        from datetime import datetime, timedelta, timezone
+        from services.timeutils import DISPLAY_TZ
+        df['LastUpdated'] = (datetime.now(timezone.utc) - timedelta(hours=1)).astimezone(DISPLAY_TZ).strftime('%Y-%m-%d %H:%M')
     return lambda require_fresh=False: (df, (meta or {}))
 
 
