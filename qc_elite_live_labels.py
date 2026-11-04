@@ -107,7 +107,7 @@ def qc_pure():
         "line NaN": ({"current_line": float("nan")}, ell.NO_EXECUTABLE_QUOTE),
         "side price missing": ({"over_price": None}, ell.NO_EXECUTABLE_QUOTE),
         "side price sub-100": ({"over_price": -50.0}, ell.NO_EXECUTABLE_QUOTE),
-        "only other-side price": ({"over_price": None, "under_price": -110.0}, ell.NO_EXECUTABLE_QUOTE),
+        "only other-side price": ({"over_price": None, "under_price": -110.0}, ell.NO_EXECUTABLE_QUOTE),  # synthetic-fixture
         "move side unknown": ({"move_side": ""}, ell.NO_EXECUTABLE_QUOTE),
     }
     for name, (over, code) in cases.items():
@@ -173,27 +173,27 @@ def qc_move_states():
           "(M) thresholds are per unit: line 0.5 points, price 10 American-odds cents")
     check(ell.MOVE_STATES == ("LINE_MOVED", "PRICE_MOVED", "LINE_AND_PRICE_MOVED", "NO_QUALIFYING_MOVE", "INSUFFICIENT_DATA"),
           "(M) exact factual state vocabulary")
-    check([ell.american_cents(x) for x in (-110, -150, 105, 120, -100, 100, 50, None)] == [-10.0, -50.0, 5.0, 20.0, 0.0, 0.0, None, None],
+    check([ell.american_cents(x) for x in (-110, -150, 105, 120, -100, 100, 50, None)] == [-10.0, -50.0, 5.0, 20.0, 0.0, 0.0, None, None],  # synthetic-fixture
           "(M) American-odds cents scale (-105 -> +105 is 10 cents; |odds|<100 invalid)")
-    m = c(20.5, 22.5, -110, -110, -110, -110)
+    m = c(20.5, 22.5, -110, -110, -110, -110)  # synthetic-fixture
     check(m["move_state"] == "LINE_MOVED" and m["line_delta"] == 2.0 and m["over_price_delta_cents"] == 0.0
           and m["move_side"] == "OVER", "(M) line 20.5 -> 22.5, prices flat: LINE_MOVED, line_delta +2.0, side OVER")
-    m = c(20.5, 20.5, -110, -125, -110, 105)
+    m = c(20.5, 20.5, -110, -125, -110, 105)  # synthetic-fixture
     check(m["move_state"] == "PRICE_MOVED" and m["line_delta"] == 0.0 and m["over_price_delta_cents"] == -15.0
           and m["under_price_delta_cents"] == 15.0 and m["move_side"] == "OVER",
           "(M) line flat, over -110 -> -125 (-15c), under -110 -> +105 (+15c): PRICE_MOVED, side OVER (over got pricier)")
-    m = c(20.5, 20.0, -110, -150, -110, 120)
+    m = c(20.5, 20.0, -110, -150, -110, 120)  # synthetic-fixture
     check(m["move_state"] == "LINE_AND_PRICE_MOVED" and m["line_delta"] == -0.5 and m["move_side"] == "UNDER",
           "(M) both qualify: LINE_AND_PRICE_MOVED; side follows the line (down -> UNDER), each delta kept in its own unit")
-    m = c(20.5, 20.5, -110, -115, -110, -105)
+    m = c(20.5, 20.5, -110, -115, -110, -105)  # synthetic-fixture
     check(m["move_state"] == "NO_QUALIFYING_MOVE" and m["move_side"] is None,
           "(M) 5-cent price change, flat line: NO_QUALIFYING_MOVE")
-    m = c(20.5, 20.9, -110, -119, None, None)
+    m = c(20.5, 20.9, -110, -119, None, None)  # synthetic-fixture
     check(m["move_state"] == "NO_QUALIFYING_MOVE", "(M) 0.4 pt + 9 cents never combine into a qualifying move")
-    m = c(None, 21.5, None, -110, "", None)
+    m = c(None, 21.5, None, -110, "", None)  # synthetic-fixture
     check(m["move_state"] == "INSUFFICIENT_DATA" and m["line_delta"] is None and m["over_price_delta_cents"] is None,
           "(M) no open line and no open prices: INSUFFICIENT_DATA (never zero-filled)")
-    m = c(20.5, 20.5, -110, -125, -110, -125)
+    m = c(20.5, 20.5, -110, -125, -110, -125)  # synthetic-fixture
     check(m["move_state"] == "PRICE_MOVED" and m["move_side"] is None,
           "(M) both sides got pricier equally: PRICE_MOVED with no single side (never guessed)")
     lab = ell.start_facts(dict(_base(datetime(2026, 11, 4, 18, tzinfo=timezone.utc)), move_side=""),
@@ -205,7 +205,7 @@ def qc_move_states():
 def _props_frame(now):
     def r(player, **over):
         base = {"Player": player, "Stat": "PTS", "Book": "DraftKings", "Game": "Away L@Home L", "OpenLine": 20.5,
-                "CurrentLine": 22.5, "Line": 22.5, "OpenOverOdds": -110, "OverOdds": -150, "OpenUnderOdds": -110,
+                "CurrentLine": 22.5, "Line": 22.5, "OpenOverOdds": -110, "OverOdds": -150, "OpenUnderOdds": -110,  # synthetic-fixture
                 "UnderOdds": 120, "EventId": "evtlive",
                 "EventCommenceAtUTC": _z(now + timedelta(minutes=24, seconds=50)),
                 "SourceUpdatedAtUTC": _z(now - timedelta(minutes=5))}
@@ -220,10 +220,10 @@ def _props_frame(now):
         r("Qclive Noevent", EventId=""),
         r("Qclive Noprice", OverOdds=None),
         r("Qclive Started", EventCommenceAtUTC=_z(now - timedelta(minutes=15))),
-        r("Qclive Conflict", OpenOverOdds=-150, OverOdds=-110, OpenUnderOdds=120, UnderOdds=-130),
-        r("Qclive Priceonly", OpenLine=22.5, CurrentLine=22.5, OpenOverOdds=-110, OverOdds=-125, OpenUnderOdds=-110,
+        r("Qclive Conflict", OpenOverOdds=-150, OverOdds=-110, OpenUnderOdds=120, UnderOdds=-130),  # synthetic-fixture
+        r("Qclive Priceonly", OpenLine=22.5, CurrentLine=22.5, OpenOverOdds=-110, OverOdds=-125, OpenUnderOdds=-110,  # synthetic-fixture
           UnderOdds=-105),
-        r("Qclive Flat", OpenLine=22.5, CurrentLine=22.5, OpenOverOdds=-110, OverOdds=-115, OpenUnderOdds=-110,
+        r("Qclive Flat", OpenLine=22.5, CurrentLine=22.5, OpenOverOdds=-110, OverOdds=-115, OpenUnderOdds=-110,  # synthetic-fixture
           UnderOdds=-105),
         r("Qclive Nodata", OpenLine=None, OpenOverOdds=None, OpenUnderOdds=None),
     ])

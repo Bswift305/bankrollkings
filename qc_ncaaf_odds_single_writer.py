@@ -2,7 +2,7 @@
 price (F7, docs/f7_ncaaf_odds_writers_proposal.md; owner decisions Q-B / fabricated-price removal).
 
 Governed artifacts and their sole approved producer:
-  Odds API (fetch_game_lines.py:main)            data/odds/NCAAF_Odds.csv, data/schedules/NCAAF_Odds.csv,
+  Odds API (fetch_game_lines.py:run_fetch)          data/odds/NCAAF_Odds.csv, data/schedules/NCAAF_Odds.csv,
                                                  data/schedules/NCAAF_Schedule.csv
   CFBD (fetch_ncaaf_slate_cfbd.py:publish)       data/odds/NCAAF_CFBD_Lines.csv,
                                                  data/schedules/NCAAF_CFBD_Schedule.csv,
@@ -54,7 +54,9 @@ REPO = Path(__file__).resolve().parent
 LABEL = "CFBD consensus — no book price"
 GROUPS = {
     "odds_api": {"names": ("NCAAF_Odds.csv", "NCAAF_Schedule.csv"),
-                 "approved": {("fetch_game_lines.py", "main")}},
+                 # NBA v5/v6: the lines fetch body moved from main() into run_fetch() (main() calls it directly for
+                 # every non-NBA sport; the NBA publisher calls it under its lock) -- same single writer.
+                 "approved": {("fetch_game_lines.py", "run_fetch")}},
     "cfbd": {"names": ("NCAAF_CFBD_Lines.csv", "NCAAF_CFBD_Schedule.csv", "NCAAF_CFBD_publish.json"),
              "approved": {("fetch_ncaaf_slate_cfbd.py", "publish")}},
 }
@@ -79,7 +81,7 @@ def ok(cond, label):
 # ---- a. static writer inventory (extended scanner) ----------------------------------------------------
 _WRITE_FUNCS = {"urlretrieve", "to_parquet", "to_csv", "to_json", "replace", "rename", "copy", "copy2",
                 "copyfile", "copyfileobj", "move", "write_bytes", "write_text", "symlink", "link", "truncate",
-                "touch", "atomic_write_csv", "publish_json", "DictWriter", "writer", "dump"}
+                "touch", "atomic_write_csv", "atomic_write_csv_set", "publish_json", "DictWriter", "writer", "dump"}
 _PATH_METHODS = {"write_bytes", "write_text", "replace", "rename", "touch", "truncate", "symlink_to",
                  "hardlink_to"}
 

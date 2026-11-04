@@ -389,7 +389,7 @@ def _write_wnba_odds(root: Path):
     et = now.astimezone(DISPLAY_TZ)
     pd.DataFrame([{"GameID": "qcw1", "Date": et.strftime("%Y-%m-%d"), "Time": et.strftime("%H:%M"), "Away": "QCA",
                    "Home": "QCB", "Book": "DraftKings", "AwayML": 120, "HomeML": -140, "Spread": -2.5,
-                   "SpreadOdds": -110, "Total": 160.5, "OverOdds": -110, "UnderOdds": -110,
+                   "SpreadOdds": -110, "Total": 160.5, "OverOdds": -110, "UnderOdds": -110,  # synthetic-fixture
                    "LastUpdated": _et(datetime.now(timezone.utc))}]).to_csv(root / "odds" / "WNBA_Odds.csv", index=False)
 
 
