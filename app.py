@@ -2500,7 +2500,9 @@ def _format_mlb_gamelogs(df):
 
 
 def _format_schedule(df):
-    df = df.copy()
+    # The schedule mirrors (data/schedules/*_Odds.csv) carry the game-line writer's columns: their
+    # SpreadOdds is the home side's own price, or unavailable for a legacy file (G4, _truthful_spread_odds).
+    df = _truthful_spread_odds(df).copy()
     if 'Date' in df.columns:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         df = df.dropna(subset=['Date'])
@@ -3679,35 +3681,155 @@ def get_props_refresh_meta(props_df, max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS):
 LIVE_LINES_MAX_AGE_HOURS = _LIVE_MARKET_MAX_AGE_HOURS
 
 
-def get_lines_refresh_meta(odds_df, max_age_hours=LIVE_LINES_MAX_AGE_HOURS):
-    """Freshness of a game-LINES (odds) feed -- the game-lines analogue of get_props_refresh_meta. Reads
-    the `LastUpdated` column the Odds fetch writes; flags is_stale past max_age_hours (the documented
-    live-market window). Callers FAIL CLOSED on is_stale (suppress current-line rows), not merely warn.
-    Self-contained: never mutates or depends on the props path."""
+# ---- L1 game-line truthful time (2026-11-04; docs/game_lines_correction_proposal_20261104.md) --------------
+# Two zone-explicit clocks per game-line row, written by fetch_game_lines.py:
+#   FetchedAtUTC        when BK observed the quote. THE freshness clock: observed within the live window ->
+#                       current, however long ago the book last changed it.
+#   SourceUpdatedAtUTC  when the book/market last changed it. Display only ("Book updated"); an old source
+#                       time never makes a recently observed, unchanged quote stale.
+# LEGACY files (written before L1, neither column present) carry only the zone-less Eastern `LastUpdated`.
+# That is parsed EXPLICITLY as America/New_York (DST-aware; the ambiguous fall-back hour and the
+# nonexistent spring-forward hour are dropped, never guessed) and labelled DERIVED_LEGACY_SOURCE_TIME.
+# Nothing here reads the process time zone: `now` is an aware UTC instant (`_now_utc()`, injectable).
+GAME_LINE_TIME_FETCHED = 'FETCHED_AT_UTC'
+GAME_LINE_TIME_LEGACY = 'DERIVED_LEGACY_SOURCE_TIME'
+GAME_LINE_TIME_NONE = 'NONE'          # frame carries no time column at all (formatted loader output; L2)
+GAME_LINE_OBSERVED_PREFIX = 'Observed by BK'
+GAME_LINE_BOOK_UPDATED_PREFIX = 'Book updated'
+
+
+def _game_line_time_basis(columns):
+    cols = set(columns) if columns is not None else set()
+    if 'FetchedAtUTC' in cols:
+        return GAME_LINE_TIME_FETCHED
+    if 'LastUpdated' in cols:
+        return GAME_LINE_TIME_LEGACY
+    return GAME_LINE_TIME_NONE
+
+
+def _game_line_row_clock(row, now, max_age_hours=None, basis=None):
+    """Freshness of ONE game-line row against the aware-UTC `now`.
+
+    Returns {'state': 'CURRENT' | 'STALE' | 'FROM_FUTURE' | 'MISSING_TIME', 'basis', 'age_seconds',
+             'clock_utc' (the instant aged), 'source_utc' (book update instant or None), 'notes'}.
+      - FETCHED basis: ages FetchedAtUTC. Missing/blank/unparseable/zone-less -> MISSING_TIME (fail closed).
+        Up to QUOTE_CLOCK_SKEW_TOLERANCE_SECONDS ahead of `now` -> accepted, age clamped to 0
+        (CLOCK_SKEW_TOLERATED); further ahead -> FROM_FUTURE (fail closed). Age > max_age_hours -> STALE.
+        SourceUpdatedAtUTC is carried for display only; a source time later than the observation
+        (beyond the same skew) is incoherent and is not shown (SOURCE_AFTER_OBSERVATION).
+      - LEGACY basis: ages LastUpdated read as America/New_York (`_feed_stamp_to_utc`); same skew/age rules.
+    """
+    if max_age_hours is None:
+        max_age_hours = LIVE_LINES_MAX_AGE_HOURS
+    get = row.get if hasattr(row, 'get') else (lambda k, d=None: d)
+    if basis is None:
+        basis = GAME_LINE_TIME_FETCHED if 'FetchedAtUTC' in row else (
+            GAME_LINE_TIME_LEGACY if 'LastUpdated' in row else GAME_LINE_TIME_NONE)
+    notes = []
+    source_utc = None
+    if basis == GAME_LINE_TIME_FETCHED:
+        clock = _canonical_kickoff_utc(get('FetchedAtUTC'))
+        source_utc = _canonical_kickoff_utc(get('SourceUpdatedAtUTC'))
+    elif basis == GAME_LINE_TIME_LEGACY:
+        clock = _feed_stamp_to_utc(get('LastUpdated'))
+        source_utc = clock          # the legacy stamp IS the (derived) book update time
+    else:
+        clock = None
+    out = {'state': 'MISSING_TIME', 'basis': basis, 'age_seconds': None, 'clock_utc': None,
+           'source_utc': None, 'notes': notes}
+    if clock is None:
+        return out
+    skew = timedelta(seconds=QUOTE_CLOCK_SKEW_TOLERANCE_SECONDS)
+    if source_utc is not None and source_utc > clock + skew:
+        notes.append('SOURCE_AFTER_OBSERVATION')
+        source_utc = None
+    out['source_utc'] = source_utc
+    age_s = (now - clock).total_seconds()
+    if age_s < 0:
+        if -age_s > QUOTE_CLOCK_SKEW_TOLERANCE_SECONDS:
+            out['state'] = 'FROM_FUTURE'
+            return out
+        notes.append('CLOCK_SKEW_TOLERATED')
+        age_s = 0.0
+    out['clock_utc'] = clock
+    out['age_seconds'] = age_s
+    out['state'] = 'STALE' if (max_age_hours is not None and age_s / 3600.0 > max_age_hours) else 'CURRENT'
+    return out
+
+
+def _game_line_time_labels(clock):
+    """Customer display for one row clock: ('Observed by BK <ET>' | '', 'Book updated <ET>' | ...).
+    Times are explicit America/New_York via _source_time_label (never the process zone)."""
+    if not clock or clock.get('clock_utc') is None:
+        return '', ''
+    if clock.get('basis') == GAME_LINE_TIME_FETCHED:
+        observed = f"{GAME_LINE_OBSERVED_PREFIX} {_source_time_label(clock['clock_utc'])}"
+        src = clock.get('source_utc')
+        book = (f"{GAME_LINE_BOOK_UPDATED_PREFIX} {_source_time_label(src)}" if src is not None
+                else f"{GAME_LINE_BOOK_UPDATED_PREFIX}: not recorded")
+        return observed, book
+    if clock.get('basis') == GAME_LINE_TIME_LEGACY:
+        return '', (f"{GAME_LINE_BOOK_UPDATED_PREFIX} {_source_time_label(clock['clock_utc'])} "
+                    "(derived from legacy Eastern feed time; BK observation time not recorded)")
+    return '', ''
+
+
+def _game_line_time_label(clock):
+    """One-line display: 'Observed by BK … · Book updated …' (or the legacy derived label)."""
+    return ' · '.join(p for p in _game_line_time_labels(clock) if p)
+
+
+def get_lines_refresh_meta(odds_df, max_age_hours=LIVE_LINES_MAX_AGE_HOURS, now=None):
+    """Freshness of a game-LINES (odds) feed -- the game-lines analogue of get_props_refresh_meta.
+    Callers FAIL CLOSED on is_stale (suppress current-line rows), not merely warn. Keys on the FRESHEST
+    valid row (a wholesale-stale feed is suppressed; a feed with any recent observation is not).
+
+    `now` is an aware UTC instant (default `_now_utc()`); the process time zone is never consulted.
+    Time basis (see _game_line_row_clock):
+      FETCHED_AT_UTC  -- FetchedAtUTC present: freshness = when BK observed it. No valid observation time
+                         (missing / unparseable / zone-less / beyond the 5-min future skew) -> status
+                         'unavailable' and is_stale True (fail closed).
+      DERIVED_LEGACY_SOURCE_TIME -- legacy file (no FetchedAtUTC): LastUpdated read as America/New_York;
+                         no parseable stamp -> 'unavailable', fail closed.
+      NONE            -- no time column at all (the formatted load_*_game_market_odds output): age unknown,
+                         not suppressed. Unchanged pre-L1 behaviour; making that gate real is L2.
+    """
+    base = {'last_updated': 'Unknown', 'age_hours': None, 'is_stale': False, 'status': 'unavailable',
+            'warning': '', 'has_lines': False, 'time_basis': GAME_LINE_TIME_NONE, 'is_current': False,
+            'observed_label': '', 'book_updated_label': '', 'reason': 'NO_LINES'}
     if odds_df is None or getattr(odds_df, 'empty', True):
-        return {'last_updated': 'Unknown', 'age_hours': None, 'is_stale': False,
-                'status': 'unavailable', 'warning': '', 'has_lines': False}
-    last_updated, age_hours = 'Unknown', None
-    if 'LastUpdated' in odds_df.columns:
-        parsed = pd.to_datetime(odds_df['LastUpdated'], errors='coerce').dropna()
-        if not parsed.empty:
-            freshest = parsed.max()
-            try:
-                last_updated = freshest.strftime('%b %d, %Y %I:%M %p')
-            except Exception:
-                last_updated = str(freshest)
-            try:
-                now_ts = pd.Timestamp.now(tz=freshest.tz) if getattr(freshest, 'tzinfo', None) else pd.Timestamp.now()
-                age_hours = round(float((now_ts - freshest).total_seconds()) / 3600.0, 2)
-            except Exception:
-                age_hours = None
-    is_stale = bool(age_hours is not None and max_age_hours is not None and age_hours > max_age_hours)
+        return base
+    basis = _game_line_time_basis(odds_df.columns)
+    if basis == GAME_LINE_TIME_NONE:
+        return {**base, 'status': 'live', 'has_lines': True, 'is_current': True, 'reason': 'NO_TIME_COLUMN'}
+    now = now or _now_utc()
+    clocks = [_game_line_row_clock(r, now, max_age_hours, basis)
+              for r in odds_df[[c for c in ('FetchedAtUTC', 'SourceUpdatedAtUTC', 'LastUpdated')
+                                if c in odds_df.columns]].to_dict('records')]
+    usable = [c for c in clocks if c['clock_utc'] is not None]
+    if not usable:
+        reason = 'FROM_FUTURE' if any(c['state'] == 'FROM_FUTURE' for c in clocks) else 'MISSING_TIME'
+        return {**base, 'has_lines': True, 'is_stale': True, 'time_basis': basis, 'reason': reason,
+                'last_updated': 'Update time not recorded',
+                'warning': ('These game lines carry no usable observation time — '
+                            'not shown as current.')}
+    freshest = max(usable, key=lambda c: c['clock_utc'])
+    srcs = [c['source_utc'] for c in usable if c['source_utc'] is not None]
+    if srcs:
+        freshest = {**freshest, 'source_utc': max(srcs)}
+    age_hours = round(freshest['age_seconds'] / 3600.0, 2)
+    is_stale = freshest['state'] == 'STALE'
+    observed_label, book_label = _game_line_time_labels(freshest)
+    last_updated = _source_time_label(freshest['clock_utc'])
     warning = ''
     if is_stale:
-        warning = (f"These game lines are {age_hours:.0f}h old (last updated {last_updated}). "
+        what = 'last observed by BK' if basis == GAME_LINE_TIME_FETCHED else 'book last updated'
+        warning = (f"These game lines are {age_hours:.0f}h old ({what} {last_updated}). "
                    "They may not reflect the current market — shown as stale, not live.")
-    return {'last_updated': last_updated, 'age_hours': age_hours, 'is_stale': is_stale,
-            'status': 'stale' if is_stale else 'live', 'warning': warning, 'has_lines': True}
+    return {**base, 'last_updated': last_updated, 'age_hours': age_hours, 'is_stale': is_stale,
+            'status': 'stale' if is_stale else 'live', 'warning': warning, 'has_lines': True,
+            'time_basis': basis, 'is_current': not is_stale, 'observed_label': observed_label,
+            'book_updated_label': book_label, 'reason': 'STALE' if is_stale else 'CURRENT'}
 
 
 def load_live_props_feed(max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS, require_fresh=False):
@@ -6578,6 +6700,8 @@ def build_live_game_lookup(odds_df, schedule_df):
             # F7 provenance: '' for frames without a Source column; 'CFBD' only ever comes from
             # load_ncaaf_context_slate (context surfaces), whose CFBD rows carry no price.
             'source': _first_team_name(row.get('Source')),
+            # L1: 'Observed by BK … · Book updated …' -- only the context composer supplies it.
+            'line_time_label': _first_team_name(row.get('LineTimeLabel')),
         }
         lookup[slug] = lookup[game_key]
     return lookup
@@ -6746,6 +6870,8 @@ def build_football_live_games(odds_df, schedule_df, date_filter='all', day_filte
             # F7: per-row line provenance. line_label is non-empty ONLY for a CFBD context line.
             'line_source': _src,
             'line_label': NCAAF_CFBD_CONTEXT_LABEL if _is_cfbd else '',
+            # L1: book-line observation/update times ('' for CFBD lines and frames without them).
+            'line_time_label': '' if _is_cfbd else (market.get('line_time_label') or ''),
         })
     # Collapse case-variant duplicates: the schedule keeps proper case ('Wyoming')
     # while the odds feed normalizes known CFB names to abbreviations ('WYOMING'),
@@ -18075,8 +18201,38 @@ def ou_rate_color(value):
     return '#FF6B6B'
 
 
+def _truthful_spread_odds(df):
+    """G4 (2026-11-04): the legacy wide `SpreadOdds` is read as the price of the side `Spread` displays --
+    the HOME side (`Spread` is home-perspective). Since L1 the writer stores each side's own price
+    (HomeSpreadOdds / AwaySpreadOdds, matched by outcome NAME), so SpreadOdds := HomeSpreadOdds. A LEGACY
+    file (no HomeSpreadOdds column) stored whichever outcome the provider listed first, so its side is
+    unknown -> price unavailable (NaN), never possibly the other side's price. Values only; no column
+    is added or removed. Returns a new frame (or `df` untouched when it has no SpreadOdds)."""
+    if df is None or 'SpreadOdds' not in getattr(df, 'columns', ()):
+        return df
+    out = df.copy()
+    if 'HomeSpreadOdds' in out.columns:
+        out['SpreadOdds'] = pd.to_numeric(out['HomeSpreadOdds'], errors='coerce')
+    else:
+        out['SpreadOdds'] = float('nan')
+    return out
+
+
+def _row_home_spread_odds(row):
+    """Row-level form of _truthful_spread_odds for raw-CSV readers: the HOME side's own spread price, or
+    None (legacy row / home side not quoted) -> 'price unavailable'."""
+    try:
+        has = 'HomeSpreadOdds' in row
+    except TypeError:
+        has = False
+    if not has:
+        return None
+    v = pd.to_numeric(pd.Series([row.get('HomeSpreadOdds')]), errors='coerce').iloc[0]
+    return None if pd.isna(v) else float(v)
+
+
 def _format_game_market_odds(df):
-    working = df.copy()
+    working = _truthful_spread_odds(df).copy()
     rename_map = {}
     if 'ML_Home' in working.columns:
         rename_map['ML_Home'] = 'HomeML'
@@ -18184,8 +18340,9 @@ def _format_ncaaf_game_market_odds(df):
 
 
 def _ncaaf_market_raw(df):
-    """Odds-API rows with ALL columns kept (AwayFull/HomeFull/LastUpdated) for the context composer."""
-    out = _ncaaf_market_only(df)
+    """Odds-API rows with ALL columns kept (AwayFull/HomeFull/LastUpdated/FetchedAtUTC/SourceUpdatedAtUTC)
+    for the context composer. SpreadOdds is the home side's own price (or unavailable; G4)."""
+    out = _truthful_spread_odds(_ncaaf_market_only(df))
     if not out.empty and 'Date' in out.columns:
         out['Date'] = pd.to_datetime(out['Date'], errors='coerce').dt.strftime('%Y-%m-%d')
     for col in ('Spread', 'Total') + _NCAAF_PRICE_COLS:
@@ -18264,16 +18421,17 @@ def _ncaaf_cfbd_consensus(provider_rows):
     return _one('Spread'), _one('Total'), len(rows)
 
 
-def _ncaaf_cfbd_fresh(df, max_age_hours=NCAAF_CFBD_CONTEXT_MAX_AGE_HOURS):
+def _ncaaf_cfbd_fresh(df, max_age_hours=NCAAF_CFBD_CONTEXT_MAX_AGE_HOURS, now=None):
     if df is None or df.empty or 'FetchedAtUTC' not in df.columns:
         return False
     ts = pd.to_datetime(df['FetchedAtUTC'], errors='coerce', utc=True).dropna()
     if ts.empty:
         return False
-    return (pd.Timestamp.now(tz='UTC') - ts.max()).total_seconds() / 3600.0 <= max_age_hours
+    now_ts = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz='UTC')
+    return (now_ts - ts.max()).total_seconds() / 3600.0 <= max_age_hours
 
 
-def load_ncaaf_context_slate():
+def load_ncaaf_context_slate(now=None):
     """F7 read-time composer -- CONTEXT surfaces ONLY (Best Spots, Big Favorites, totals pace, CFB matchup
     card). Never call this from a market/play surface. Never written to disk.
 
@@ -18283,29 +18441,47 @@ def load_ncaaf_context_slate():
       - line: the Odds API book row matched by date + longest-prefix school name (Source='odds_api', real
         Book and prices); else the CFBD provider consensus (Source='CFBD', Book=NCAAF_CFBD_CONTEXT_LABEL,
         EVERY price field None); else no line (schedule-only game).
-    Stale Odds API rows (wholesale-stale feed) and CFBD retrievals older than
-    NCAAF_CFBD_CONTEXT_MAX_AGE_HOURS are not used."""
-    line_cols = ['Date', 'Time', 'Away', 'Home', 'Spread', 'Total', *_NCAAF_PRICE_COLS, 'Book', 'GameID', 'Source']
+    Odds API rows are kept PER ROW only when currently observed (L1 truthful time, _game_line_row_clock
+    against the aware-UTC `now`): FetchedAtUTC within LIVE_LINES_MAX_AGE_HOURS, or -- legacy file only --
+    LastUpdated read as America/New_York (DERIVED_LEGACY_SOURCE_TIME). A missing/invalid/future
+    observation time drops the row (fail closed). An old SourceUpdatedAtUTC alone never drops a recently
+    observed quote. Each kept Odds API line carries `LineTimeLabel` ('Observed by BK … · Book updated …').
+    CFBD retrievals older than NCAAF_CFBD_CONTEXT_MAX_AGE_HOURS are not used."""
+    line_cols = ['Date', 'Time', 'Away', 'Home', 'Spread', 'Total', *_NCAAF_PRICE_COLS, 'Book', 'GameID', 'Source',
+                 'LineTimeLabel']
+    now = now or _now_utc()
     w1 = pd.DataFrame()
     for p in (DATA_DIR / 'odds' / 'NCAAF_Odds.csv', DATA_DIR / 'schedules' / 'NCAAF_Odds.csv'):
         if p.exists():
             w1 = _load_cached_csv(p, transform=_ncaaf_market_raw, default=pd.DataFrame())
             break
-    try:
-        if not w1.empty and get_lines_refresh_meta(w1).get('is_stale'):
-            w1 = w1.iloc[0:0]
-    except Exception:
-        pass
+    w1_labels = {}
+    if w1 is not None and not w1.empty:
+        basis = _game_line_time_basis(w1.columns)
+        keep = []
+        for idx, rec in zip(w1.index, w1.to_dict('records')):
+            clk = _game_line_row_clock(rec, now, LIVE_LINES_MAX_AGE_HOURS, basis)
+            if clk['state'] == 'CURRENT':
+                keep.append(idx)
+                w1_labels[idx] = _game_line_time_label(clk)
+        w1 = w1.loc[keep]
+        w1 = w1.assign(LineTimeLabel=pd.Series(w1_labels, dtype=object).reindex(w1.index)) if not w1.empty \
+            else w1.assign(LineTimeLabel=pd.Series(dtype=object))
+    elif w1 is None:
+        w1 = pd.DataFrame()
 
     sched = load_ncaaf_cfbd_schedule()
     if sched is None or sched.empty:
-        odds = load_ncaaf_game_market_odds()
-        if odds is not None and not odds.empty:
-            odds = odds.assign(Source='odds_api')
+        # No CFBD universe: the Odds-API rows themselves, formatted exactly like the market binding
+        # (load_ncaaf_game_market_odds) but only the currently-observed ones, each with its time label.
+        if w1.empty:
+            return pd.DataFrame(columns=line_cols), load_ncaaf_schedule()
+        odds = _format_game_market_odds(w1)
+        odds = odds.assign(Source='odds_api', LineTimeLabel=w1['LineTimeLabel'].reindex(odds.index).fillna(''))
         return odds, load_ncaaf_schedule()
 
     lines = load_ncaaf_cfbd_lines()
-    if not _ncaaf_cfbd_fresh(lines):
+    if not _ncaaf_cfbd_fresh(lines, now=now):
         lines = pd.DataFrame()
     by_game = {}
     if not lines.empty and 'CfbdGameId' in lines.columns:
@@ -18333,13 +18509,14 @@ def load_ncaaf_context_slate():
         if m is not None:
             rows.append({**base, 'Spread': m.get('Spread'), 'Total': m.get('Total'),
                          **{c: m.get(c) for c in _NCAAF_PRICE_COLS},
-                         'Book': m.get('Book'), 'GameID': m.get('GameID'), 'Source': 'odds_api'})
+                         'Book': m.get('Book'), 'GameID': m.get('GameID'), 'Source': 'odds_api',
+                         'LineTimeLabel': m.get('LineTimeLabel') or ''})
             continue
         spread, total, n = _ncaaf_cfbd_consensus(by_game.get(str(g.get('CfbdGameId')), []))
         if spread is None and total is None:
             continue   # no line from either source -> schedule-only game (abstain)
         rows.append({**base, 'Spread': spread, 'Total': total, **{c: None for c in _NCAAF_PRICE_COLS},
-                     'Book': NCAAF_CFBD_CONTEXT_LABEL, 'GameID': '', 'Source': 'CFBD'})
+                     'Book': NCAAF_CFBD_CONTEXT_LABEL, 'GameID': '', 'Source': 'CFBD', 'LineTimeLabel': ''})
     odds = pd.DataFrame(rows, columns=line_cols)
     return odds, sched[['Date', 'Time', 'Away', 'Home']].copy()
 
@@ -28647,7 +28824,9 @@ def build_live_prop_runtime_context(postseason_only=False):
     props_path = DATA_DIR / 'props' / 'NBA_Props.csv'
     odds_path = DATA_DIR / 'odds' / 'NBA_Odds.csv'
     playoffs_path = DATA_DIR / 'gamelogs' / 'NBA_Playoff_GameLogs.csv'
-    cache_version = _build_file_token(schedule_path, gamelog_path, props_path, odds_path, playoffs_path)
+    # 'g4sp1': the cached market dicts carry spread_odds, which since L1 (2026-11-04) is the home side's own
+    # price or unavailable (G4) -- pre-L1 entries are never served.
+    cache_version = _build_file_token(schedule_path, gamelog_path, props_path, odds_path, playoffs_path) + ('g4sp1',)
 
     def _build_runtime():
         gamelogs, schedule = load_gamelogs(), load_schedule()
@@ -30808,7 +30987,7 @@ def build_nba_command_center_context(postseason_only):
         DATA_DIR / 'props' / 'NBA_Props.csv',
         DATA_DIR / 'odds' / 'NBA_Odds.csv',
         DATA_DIR / 'injuries' / 'NBA_Injuries.csv',
-    )
+    ) + ('g4sp1',)   # market dicts carry spread_odds (G4 home-side price, L1 2026-11-04)
     cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
     if cached_entry:
         cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
@@ -41243,7 +41422,7 @@ def build_live_props_board(filter_type=None, postseason_only=False, date_filter=
         DATA_DIR / 'props' / 'NBA_Props.csv',
         DATA_DIR / 'odds' / 'NBA_Odds.csv',
         DATA_DIR / 'injuries' / 'NBA_Injuries.csv',
-    )
+    ) + ('g4sp1',)   # embeds the NBA runtime market dicts (spread_odds, G4; L1 2026-11-04)
     cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
     if cached_entry:
         cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
@@ -41367,7 +41546,7 @@ def build_market_edge_board(postseason_only=False, date_filter=None, direction_f
         DATA_DIR / 'props' / 'NBA_Props.csv',
         DATA_DIR / 'odds' / 'NBA_Odds.csv',
         DATA_DIR / 'injuries' / 'NBA_Injuries.csv',
-    )
+    ) + ('g4sp1',)   # embeds the NBA runtime market dicts (spread_odds, G4; L1 2026-11-04)
     cached_entry = RUNTIME_TTL_CACHE.get(cache_key)
     if cached_entry:
         cached_age = (datetime.now(timezone.utc) - cached_entry['created_at']).total_seconds()
@@ -47634,6 +47813,7 @@ def build_cfb_matchup_context():
                     'spread': _format_signed_line(g.get('spread')),
                     'total': g.get('total'), 'date': g.get('date'), 'time': g.get('time'),
                     'line_label': g.get('line_label', ''),
+                    'line_time_label': g.get('line_time_label', ''),
                 }
                 # Current-season form + common-opponent read (this year's games, not
                 # last year's ATS) -- the "think like this" layer.
@@ -48843,11 +49023,12 @@ def _nfl_sgp_leg_menu(away, home):
                 home_ab = str(r.get('Home') or 'Home').strip().upper()
                 away_ab = str(r.get('Away') or 'Away').strip().upper()
                 # Opposing SIDES of one spread -> encoded OVER (home) / UNDER (away) so the engine's
-                # "same game side opposing" rule fires if both are selected. The price (SpreadOdds) is the
-                # quoted home side's; the away side's price is not separately captured -> unavailable.
+                # "same game side opposing" rule fires if both are selected. The home leg's price is the HOME
+                # side's own price (HomeSpreadOdds, matched by outcome name; G4) -- a legacy row, whose
+                # SpreadOdds may be either side's, shows price unavailable. The away price stays unavailable.
                 legs.append({
                     'kind': 'game', 'category': 'Game Line', 'player': None, 'team': home_ab,
-                    'stat': 'Spread', 'direction': 'OVER', 'line': sp, 'price': _sgp_price(r.get('SpreadOdds')),
+                    'stat': 'Spread', 'direction': 'OVER', 'line': sp, 'price': _sgp_price(_row_home_spread_odds(r)),
                     'book': book, 'timestamp': ts, 'tz': _SGP_TZ_NOTE, 'quote_scope': 'individual',
                     'lineage': 'Odds API game lines (NFL_Odds.csv)',
                     'label': f"{home_ab} spread {sp:+g}",
@@ -50672,6 +50853,7 @@ def build_cfb_totals_context():
                 'gap': (round(proj - float(posted), 1) if pd.notna(posted) else None),
                 'read': read,
                 'line_label': g.get('line_label', ''),
+                'line_time_label': g.get('line_time_label', ''),
             })
         to_week.sort(key=lambda r: -r['pace'])
     except Exception:
@@ -50981,6 +51163,7 @@ def build_cfb_best_spots_context(date_filter='week'):
                 'spread': _format_signed_line(g.get('spread')), 'total': g.get('total'),
                 'headline': headline, 'bullets': bullets, 'strength': strength,
                 'line_label': g.get('line_label', ''),
+                'line_time_label': g.get('line_time_label', ''),
             })
     live_cards.sort(key=lambda c: -c['strength'])
     live_cards = live_cards[:10]
@@ -51101,6 +51284,7 @@ def build_cfb_big_favorites_context(date_filter='today', threshold=30):
             'team_rec': (tr[1] if tr else ''), 'team_avg': (tr[2] if tr else None),
             'read': read, 'huge': line >= 48,
             'line_label': g.get('line_label', ''),
+            'line_time_label': g.get('line_time_label', ''),
         })
     rows.sort(key=lambda r: -r['line'])
     return {

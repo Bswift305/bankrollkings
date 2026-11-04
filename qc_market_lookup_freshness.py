@@ -9,21 +9,33 @@ Pure; no network. Exit 0 / 1.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
 import app
+from services.timeutils import to_eastern_datetime_str
+
+TIME_COLS = ["LastUpdated", "SourceUpdatedAtUTC", "FetchedAtUTC"]
 
 
-def _df(age_hours, extra_recent=False):
-    ts = (datetime.now() - timedelta(hours=age_hours)).strftime("%Y-%m-%dT%H:%M:%S")
+def _stamps(observed, source=None):
+    """The writer's L1 time columns from AWARE UTC instants (never the process-local naive clock)."""
+    source = source or observed
+    return {"LastUpdated": to_eastern_datetime_str(source.strftime("%Y-%m-%dT%H:%M:%SZ")),
+            "SourceUpdatedAtUTC": source.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "FetchedAtUTC": observed.strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
+def _df(age_hours, extra_recent=False, source_age_hours=None):
+    now = datetime.now(timezone.utc)
+    obs = now - timedelta(hours=age_hours)
+    src = now - timedelta(hours=source_age_hours) if source_age_hours is not None else obs
     rows = [{"Away": "Boston Celtics", "Home": "Los Angeles Lakers", "Date": "2026-11-01",
              "Spread": -3.5, "Total": 220.5, "AwayML": 120, "HomeML": -140, "Book": "DraftKings",
-             "LastUpdated": ts}]
+             **_stamps(obs, src)}]
     if extra_recent:
-        rows.append({**rows[0], "Home": "Miami Heat",
-                     "LastUpdated": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")})
+        rows.append({**rows[0], "Home": "Miami Heat", **_stamps(now)})
     return pd.DataFrame(rows)
 
 
@@ -48,7 +60,14 @@ def run_qc():
     else:
         notes.append("feed with ANY recent update -> not suppressed (feed not wholesale-stale)")
 
-    nocol = app.build_game_market_lookup(_df(55).drop(columns=["LastUpdated"]))
+    # recently OBSERVED by BK, but the book last changed the market 55h ago -> still current
+    observed = app.build_game_market_lookup(_df(1, source_age_hours=55))
+    if not observed:
+        issues.append("recently observed quote with an old book source time wrongly suppressed")
+    else:
+        notes.append("recently observed quote with a 55h-old book source time -> not suppressed (freshness = observation)")
+
+    nocol = app.build_game_market_lookup(_df(55).drop(columns=TIME_COLS))
     if not nocol:
         issues.append("feed with no LastUpdated wrongly suppressed (age unknowable -> must not suppress)")
     else:

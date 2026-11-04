@@ -54,7 +54,7 @@
     {% for r in cfb_fades %}
     <div class="wk-row">
       <a class="tm" href="/tools/cfb-matchup?away={{ r.away|urlencode }}&amp;home={{ r.home|urlencode }}">{{ r.fav }}</a>
-      <span class="wk-num">-{{ r.line }}</span>
+      <span class="wk-num">-{{ r.line }}</span>{% if r.line_time_label %}<small class="wk-ts" style="color:var(--text-muted);font-size:11px;">{{ r.line_time_label }}</small>{% endif %}
       <span class="wk-why">{{ r.coach }} covers <b class="wk-cold">{{ r.coach_pct if r.coach_pct is not none else '—' }}%</b> as a big favorite{% if r.team_pct is not none %}, the program <b class="wk-cold">{{ r.team_pct }}%</b>{% endif %} — {{ r.line }} is a lot to lay.</span>
     </div>
     {% endfor %}
@@ -67,7 +67,7 @@
     {% for r in cfb_covers %}
     <div class="wk-row">
       <a class="tm" href="/tools/cfb-matchup?away={{ r.away|urlencode }}&amp;home={{ r.home|urlencode }}">{{ r.fav }}</a>
-      <span class="wk-num">-{{ r.line }}</span>
+      <span class="wk-num">-{{ r.line }}</span>{% if r.line_time_label %}<small class="wk-ts" style="color:var(--text-muted);font-size:11px;">{{ r.line_time_label }}</small>{% endif %}
       <span class="wk-why">{{ r.coach }} <b class="wk-hot">{{ r.coach_pct if r.coach_pct is not none else '—' }}%</b> / program <b class="wk-hot">{{ r.team_pct if r.team_pct is not none else '—' }}%</b> as a big favorite — they bury the number.</span>
     </div>
     {% endfor %}
@@ -79,7 +79,7 @@
     <div class="wk-ch spot">💡 Other angles on the slate</div>
     {% for c in cfb_spots %}
     <div class="wk-row">
-      <span class="tm" style="font-size:13.5px;">{{ c.matchup }}</span><span class="wk-num" style="font-size:12.5px;">{{ c.spread }}</span>
+      <span class="tm" style="font-size:13.5px;">{{ c.matchup }}</span><span class="wk-num" style="font-size:12.5px;">{{ c.spread }}</span>{% if c.line_time_label %}<small class="wk-ts" style="color:var(--text-muted);font-size:11px;">{{ c.line_time_label }}</small>{% endif %}
       <span class="wk-why">{{ c.headline }}{% if c.bullets %} — {{ c.bullets[0]|striptags }}{% endif %}</span>
     </div>
     {% endfor %}

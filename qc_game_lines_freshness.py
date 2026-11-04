@@ -12,22 +12,30 @@ Deterministic; the odds loader is monkeypatched so no data/network is needed. Ex
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
 import app
+from services.timeutils import to_eastern_datetime_str
 
 BANNER_MARK = "Current Lines Unavailable"
 
 
 def _odds_fixture(age_hours):
-    ts = (datetime.now() - timedelta(hours=age_hours)).strftime("%Y-%m-%dT%H:%M:%S")
+    # The writer's L1 format: zone-explicit FetchedAtUTC (BK observation, THE freshness clock) and
+    # SourceUpdatedAtUTC, built from the aware UTC clock -- never the process-local naive clock, which made
+    # the old fixture self-consistent with the bug in every zone. LastUpdated is the legacy Eastern display.
+    obs = datetime.now(timezone.utc) - timedelta(hours=age_hours)
     return pd.DataFrame([{
         "Date": "2026-10-26", "Time": "1:00 PM", "Away": "Dallas Cowboys", "Home": "Philadelphia Eagles",
         "AwayML": 120, "HomeML": -140, "Spread": -2.5, "SpreadOdds": -110, "Total": 47.5,  # synthetic-fixture
         "OverOdds": -110, "UnderOdds": -110, "Book": "DraftKings", "GameID": "DALPHI",  # synthetic-fixture
-        "LastUpdated": ts,
+        "LastUpdated": to_eastern_datetime_str(obs.strftime("%Y-%m-%dT%H:%M:%SZ")),
+        "HomeSpread": -2.5, "HomeSpreadOdds": -110, "AwaySpread": 2.5, "AwaySpreadOdds": -110,  # synthetic-fixture
+        "EventId": "DALPHI", "EventCommenceAtUTC": "2026-10-26T17:00:00Z",
+        "SourceUpdatedAtUTC": obs.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "FetchedAtUTC": obs.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }])
 
 
@@ -66,6 +74,11 @@ def run_qc():
         issues.append(f"empty odds df not handled as unavailable: {empty}")
     if nocol["is_stale"]:
         issues.append(f"odds df with no LastUpdated wrongly flagged stale: {nocol}")
+    # the REAL 6h window (not a lax 24h) at true ages, asserted, not just the boolean
+    for age, want_stale in ((5.5, False), (6.5, True)):
+        m = app.get_lines_refresh_meta(_odds_fixture(age))
+        if m["is_stale"] is not want_stale or m["age_hours"] is None or abs(m["age_hours"] - age) > 0.02:
+            issues.append(f"6h window at true age {age}h: is_stale={m['is_stale']} age={m['age_hours']}")
     if not issues:
         notes.append("get_lines_refresh_meta handles stale/fresh/empty/no-column correctly")
 

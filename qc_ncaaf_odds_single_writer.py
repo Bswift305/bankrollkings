@@ -508,14 +508,21 @@ R = Path(tempfile.mkdtemp(prefix="qc_f7_app_"))
 for d in ("odds", "schedules"):
     (R / d).mkdir(parents=True)
 fresh = datetime.now(_ET).strftime("%Y-%m-%dT%H:%M:%S")
+# The writer's L1 format (fetch_game_lines.build_dataframe): legacy columns + each spread side as its own
+# selection + zone-explicit SourceUpdatedAtUTC / FetchedAtUTC. Freshness is the BK observation time.
+_obs_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 W1_COLS = ["Date", "Time", "Away", "Home", "AwayFull", "HomeFull", "AwayML", "HomeML", "Spread", "SpreadOdds",
-           "Total", "OverOdds", "UnderOdds", "Book", "GameID", "LastUpdated"]
+           "Total", "OverOdds", "UnderOdds", "Book", "GameID", "LastUpdated",
+           "HomeSpread", "HomeSpreadOdds", "AwaySpread", "AwaySpreadOdds", "EventId", "EventCommenceAtUTC",
+           "SourceUpdatedAtUTC", "FetchedAtUTC"]
 legacy = pd.DataFrame([
     [DAY, "19:30", "Georgia Bulldogs", "Alabama Crimson Tide", "Georgia Bulldogs", "Alabama Crimson Tide",
-     135, -155, -3.0, -108, 51.0, -112, -108, "DraftKings", "abc123def", fresh],
+     135, -155, -3.0, -108, 51.0, -112, -108, "DraftKings", "abc123def", fresh,
+     -3.0, -108, 3.0, -112, "abc123def", "", _obs_utc, _obs_utc],
     # pre-F7 residue: the old CFBD writer's row for a game the Odds API does not cover
     [DAY, "12:00 PM", "Troy", "Army", "Troy", "Army", 150, -170, -4.0, -110, 44.5, -110, -110,  # synthetic-fixture
-     "CFBD consensus", "402", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")],
+     "CFBD consensus", "402", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+     -4.0, -110, 4.0, -110, "402", "", _obs_utc, _obs_utc],  # synthetic-fixture
 ], columns=W1_COLS)
 for p in ("odds/NCAAF_Odds.csv", "schedules/NCAAF_Odds.csv"):
     legacy.to_csv(R / p, index=False)

@@ -146,6 +146,32 @@ def fetch_events(api_key: str, days: int, sport: str = DEFAULT_SPORT) -> list[di
     return filtered
 
 
+def utc_iso_z(value) -> str:
+    """A provider timestamp -> canonical ISO-8601 UTC 'YYYY-MM-DDTHH:MM:SSZ', or '' when missing,
+    unparseable or ZONE-LESS (an unknown zone is unknown, never assumed -- never the process zone).
+    Accepts an aware datetime or an ISO string with an explicit offset ('Z', '+00:00', '-05:00')."""
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        s = str(value).strip()
+        if not s or s.lower() in ("nan", "nat", "none", "<na>", "null"):
+            return ""
+        try:
+            dt = datetime.fromisoformat(s[:-1] + "+00:00" if s[-1:] in ("Z", "z") else s)
+        except ValueError:
+            return ""
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        return ""
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def observed_at_utc() -> str:
+    """When BK observed (fetched) the provider payload: aware UTC, ISO-Z. Never process-local."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def blank_row(event: dict, bookmaker_title: str) -> dict:
     commence_time = event.get("commence_time")
     local_time = to_iso_local(commence_time)
@@ -173,13 +199,64 @@ def blank_row(event: dict, bookmaker_title: str) -> dict:
         "Book": bookmaker_title,
         "GameID": event.get("id", ""),
         "LastUpdated": "",
+        # Each spread outcome is its OWN selection with its own line and price, resolved by matching the
+        # outcome name to the home/away team -- never by provider order (G4, 2026-11-04).
+        "HomeSpread": pd.NA,
+        "HomeSpreadOdds": pd.NA,
+        "AwaySpread": pd.NA,
+        "AwaySpreadOdds": pd.NA,
+        # Zone-explicit time + event identity (L1 truthful time). LastUpdated above is LEGACY (Eastern
+        # display string) and kept only for compatibility -- no new authority may depend on it.
+        "EventId": event.get("id", "") or "",
+        "EventCommenceAtUTC": utc_iso_z(commence_time),
+        "SourceUpdatedAtUTC": "",
+        "FetchedAtUTC": "",
     }
 
 
-def parse_event_markets(event: dict, bookmaker: dict) -> dict:
+def _spread_sides(outcomes: list, home: str, away: str) -> dict:
+    """{'home': (point, price) | None, 'away': (point, price) | None} by outcome NAME. An outcome whose
+    name matches neither team is ignored; a side quoted twice with different terms is a conflict and is
+    dropped (never guessed)."""
+    sides: dict = {"home": None, "away": None}
+    conflict = set()
+    for outcome in outcomes or []:
+        name = str(outcome.get("name", "")).strip()
+        side = "home" if name == home else ("away" if name == away else None)
+        if side is None:
+            continue
+        terms = (outcome.get("point"), outcome.get("price"))
+        if sides[side] is not None and sides[side] != terms:
+            conflict.add(side)
+        sides[side] = terms
+    for side in conflict:
+        sides[side] = None
+    return sides
+
+
+def _num(value):
+    try:
+        if value in (None, ""):
+            return pd.NA
+        return float(value)
+    except (TypeError, ValueError):
+        return pd.NA
+
+
+def parse_event_markets(event: dict, bookmaker: dict, fetched_at_utc: str | None = None) -> dict:
+    """One row per (event, bookmaker). `fetched_at_utc` = when BK observed this payload (ISO-Z); the
+    historical backfill passes none, so its rows never claim a current observation."""
     bookmaker_title = bookmaker.get("title") or BOOKMAKER_TITLES.get(bookmaker.get("key", ""), bookmaker.get("key", ""))
     row = blank_row(event, bookmaker_title)
-    row["LastUpdated"] = to_iso_local(bookmaker.get("last_update"))
+    row["LastUpdated"] = to_iso_local(bookmaker.get("last_update"))   # LEGACY display stamp (Eastern)
+    # Book/market source time: the bookmaker's last_update, else the newest market last_update.
+    source = utc_iso_z(bookmaker.get("last_update"))
+    if not source:
+        market_times = [utc_iso_z(m.get("last_update")) for m in bookmaker.get("markets", []) or []]
+        market_times = [t for t in market_times if t]
+        source = max(market_times) if market_times else ""
+    row["SourceUpdatedAtUTC"] = source
+    row["FetchedAtUTC"] = utc_iso_z(fetched_at_utc) if fetched_at_utc else ""
 
     home = str(event.get("home_team", "")).strip()
     away = str(event.get("away_team", "")).strip()
@@ -198,18 +275,21 @@ def parse_event_markets(event: dict, bookmaker: dict) -> dict:
                     row["AwayML"] = price
 
         elif key == "spreads":
-            for outcome in outcomes:
-                name = str(outcome.get("name", "")).strip()
-                point = outcome.get("point")
-                price = outcome.get("price")
-                if name == home:
-                    row["Spread"] = point
-                    row["SpreadOdds"] = price
-                    break
-                if name == away and point not in [None, ""]:
-                    row["Spread"] = -float(point)
-                    row["SpreadOdds"] = price
-                    break
+            sides = _spread_sides(outcomes, home, away)
+            if sides["home"] is not None:
+                row["HomeSpread"], row["HomeSpreadOdds"] = _num(sides["home"][0]), _num(sides["home"][1])
+            if sides["away"] is not None:
+                row["AwaySpread"], row["AwaySpreadOdds"] = _num(sides["away"][0]), _num(sides["away"][1])
+            # LEGACY wide columns, home perspective: `Spread` is the home line and `SpreadOdds` is the HOME
+            # side's own price. When only the away side was quoted, the home line is the mirrored away
+            # point but the home price was never captured -> SpreadOdds stays empty (price unavailable),
+            # never the away side's price.
+            if not pd.isna(row["HomeSpread"]):
+                row["Spread"] = row["HomeSpread"]
+                row["SpreadOdds"] = row["HomeSpreadOdds"]
+            elif not pd.isna(row["AwaySpread"]):
+                row["Spread"] = -float(row["AwaySpread"])
+                row["SpreadOdds"] = pd.NA
 
         elif key == "totals":
             for outcome in outcomes:
@@ -246,10 +326,11 @@ def fetch_odds_rows(api_key: str, sport: str, bookmakers: str, markets: list[str
         commenceTimeTo=commence_to,
     )
     payload = get_json(url)
+    fetched_at = observed_at_utc()   # the moment BK observed this payload (aware UTC)
     rows = []
     for event in payload:
         for bookmaker in event.get("bookmakers", []):
-            rows.append(parse_event_markets(event, bookmaker))
+            rows.append(parse_event_markets(event, bookmaker, fetched_at_utc=fetched_at))
     return rows
 
 
@@ -271,13 +352,23 @@ def build_dataframe(rows: list[dict]) -> pd.DataFrame:
         "Book",
         "GameID",
         "LastUpdated",
+        # L1 additive columns (legacy columns above are unchanged for existing readers)
+        "HomeSpread",
+        "HomeSpreadOdds",
+        "AwaySpread",
+        "AwaySpreadOdds",
+        "EventId",
+        "EventCommenceAtUTC",
+        "SourceUpdatedAtUTC",
+        "FetchedAtUTC",
     ]
 
     df = pd.DataFrame(rows)
     if df.empty:
         return pd.DataFrame(columns=columns)
 
-    for col in ["AwayML", "HomeML", "Spread", "SpreadOdds", "Total", "OverOdds", "UnderOdds"]:
+    for col in ["AwayML", "HomeML", "Spread", "SpreadOdds", "Total", "OverOdds", "UnderOdds",
+                "HomeSpread", "HomeSpreadOdds", "AwaySpread", "AwaySpreadOdds"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df = df[columns]

@@ -64,7 +64,7 @@
       <td style="text-align:left;"><a class="tw-mu" href="/tools/cfb-matchup?away={{ r.away|urlencode }}&amp;home={{ r.home|urlencode }}">{{ r.away }} @ {{ r.home }}</a>{% if r.time %}<small> &middot; {{ r.time }}</small>{% endif %}</td>
       <td>{{ r.pace }}</td>
       <td>{{ r.proj }}</td>
-      <td>{% if r.posted is not none %}{{ r.posted }}{% if r.line_label %}<small style="display:block;color:var(--text-muted);">{{ r.line_label }}</small>{% endif %}{% else %}&mdash;{% endif %}</td>
+      <td>{% if r.posted is not none %}{{ r.posted }}{% if r.line_label %}<small style="display:block;color:var(--text-muted);">{{ r.line_label }}</small>{% endif %}{% if r.line_time_label %}<small class="to-ts" style="display:block;color:var(--text-muted);">{{ r.line_time_label }}</small>{% endif %}{% else %}&mdash;{% endif %}</td>
       <td>{% if r.gap is not none %}<span class="{% if r.gap>=3 %}to-hot{% elif r.gap<=-3 %}to-cold{% endif %}">{{ '%+g'|format(r.gap) }}</span>{% else %}&mdash;{% endif %}</td>
       <td>{% if r.read=='shootout' %}<span style="color:#49d27d;font-weight:700;">Shootout</span>{% elif r.read=='grind' %}<span style="color:#7cc4ff;font-weight:700;">Grind</span>{% else %}&mdash;{% endif %}</td>
     </tr>

@@ -71,7 +71,7 @@
       {% for c in h_best %}
       <a class="bkn-row" href="/tools/cfb-best-spots">
         <span class="bkn-tile accent"><span class="n">{{ c.strength|round|int }}</span><span class="l">edge</span></span>
-        <span class="lead"><span class="t">{{ c.headline }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ c.matchup }} {{ c.spread }}</span></span><span class="m">{{ c.bullets[0] }}</span></span>
+        <span class="lead"><span class="t">{{ c.headline }} <span style="color:var(--text-muted);font:700 10px ui-monospace,monospace;">{{ c.matchup }} {{ c.spread }}</span>{% if c.line_time_label %} <small class="hb-ts" style="color:var(--text-muted);font-size:10px;">{{ c.line_time_label }}</small>{% endif %}</span><span class="m">{{ c.bullets[0] }}</span></span>
       </a>
       {% else %}<div class="bkn-empty">This week&rsquo;s spots load with the slate.</div>{% endfor %}
     </div>
