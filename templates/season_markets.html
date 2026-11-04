@@ -140,10 +140,27 @@
     <div class="parlay-surface-soft" style="padding:12px;margin-top:12px;">
       <div class="page-kicker">Leagues at launch</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
-        {% for item in ['NFL','NCAAF','NBA','WNBA','MLB','NCAAMB','NCAAWB'] %}<span class="badge">{{ item }}</span>{% endfor %}
+        {% for item in ['NFL','NCAAF','NBA','WNBA','MLB'] %}<span class="badge">{{ item }}</span>{% endfor %}
       </div>
     </div>
   </div>
 </div>
+{% endif %}
+
+{% if planned_sports %}
+{# Planned only: no governed production pipeline. No link, count, live badge or launch claim
+   (qc_ncaab_shell_honesty.py). #}
+<!-- season-planned:start -->
+<div class="card mb-24" data-season-planned="1">
+  <div class="p-16">
+    <div class="page-kicker">Planned</div>
+    <ul style="list-style:none;margin:8px 0 0;padding:0;color:var(--text-muted);line-height:1.8;">
+      {% for item in planned_sports %}
+      <li>{{ item.label }} &mdash; {{ item.status }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+<!-- season-planned:end -->
 {% endif %}
 {% endblock %}

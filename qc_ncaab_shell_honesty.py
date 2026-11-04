@@ -22,6 +22,10 @@ Checks:
      example-row builder is gone from app.py.
   7. Mutation proof: re-inserting a fake row, a "Live Board & Lines" label, a sample hub note, a
      coverage claim, or removing the honest sentence each makes the audit FAIL.
+  8. Season Markets (/tools/season-markets): NCAAMB/NCAAWB are never under "Leagues at launch", never
+     counted, listed in filters or shown as rows (even when a synthetic fixture holds CBB rows); they
+     appear only in a separate Planned section with the exact text "Data pipeline not yet available"
+     and no link, count, live badge or launch claim. Mutation proof for each.
 Exit 0 = all pass.
 """
 from __future__ import annotations
@@ -220,6 +224,90 @@ def audit_copy(pricing_html: str | None = None) -> list[str]:
     return fails
 
 
+PLANNED_TEXT = 'Data pipeline not yet available'
+CBB_CODE_RX = re.compile(r'NCAAMB|NCAAWB|college basketball|college hoops|\bCBB\b', re.I)
+
+
+def audit_season_markets(html: str, label: str) -> list[str]:
+    """Season Markets: NCAAMB/NCAAWB appear ONLY in the separate Planned section, each with the exact
+    'Data pipeline not yet available' text, and with no link, count, live badge or launch claim."""
+    fails: list[str] = []
+    m = re.search(r'<!-- season-planned:start -->(.*?)<!-- season-planned:end -->', html, re.S)
+    if not m:
+        return [f'{label}: separate Planned section missing']
+    planned = m.group(1)
+    outside = html.replace(m.group(0), '')
+    content = outside.split('<div class="bk-compat-content">', 1)[-1].split('<footer', 1)[0]
+    hits = CBB_CODE_RX.findall(content)
+    if hits:
+        fails.append(f'{label}: college basketball outside the Planned section: {sorted(set(hits))}')
+    launch = re.search(r'Leagues at launch</div>(.*?)</div>\s*</div>', content, re.S)
+    if launch and CBB_CODE_RX.search(launch.group(1)):
+        fails.append(f'{label}: college basketball listed under "Leagues at launch"')
+    ptext = _visible(planned)
+    for name in ("Men's College Basketball", "Women's College Basketball"):
+        if f'{name} — {PLANNED_TEXT}' not in ptext:
+            fails.append(f'{label}: Planned entry missing exact text for {name}: {ptext!r}')
+    if re.search(r'<a\b|<button\b|<select\b|<option\b', planned, re.I):
+        fails.append(f'{label}: Planned section carries an action/link')
+    if re.search(r'\d', ptext):
+        fails.append(f'{label}: Planned section carries a count/number: {ptext!r}')
+    if re.search(r'\b(live|launch\w*|active|coming soon)\b', ptext, re.I) or 'badge' in planned:
+        fails.append(f'{label}: Planned section carries a live/launch badge or claim: {ptext!r}')
+    return fails
+
+
+def _season_fixture(tmp) -> None:
+    """Synthetic season-market rows incl. NCAAMB/NCAAWB (as an ingest could write them)."""
+    import pandas as pd
+    from services import season_markets as sm
+    d = tmp / 'data' / 'season_markets'
+    d.mkdir(parents=True)
+    rows = []
+    for sport, team in (('NFL', 'QC Team A'), ('NBA', 'QC Team B'), ('NCAAMB', 'QC Hoops M'), ('NCAAWB', 'QC Hoops W')):
+        for book, line in (('Book A', 9.5), ('Book B', 10.5)):
+            rows.append({'SnapshotAt': '2026-11-01T00:00:00Z', 'Sport': sport, 'Season': '2026', 'EntityType': 'team',
+                         'Entity': team, 'Team': team, 'Market': 'Wins', 'Line': line, 'OverOdds': -115,  # synthetic-fixture
+                         'UnderOdds': -105,  # synthetic-fixture
+                         'Book': book, 'Source': 'qc-fixture', 'SourceUpdatedAt': ''})
+    pd.DataFrame(rows, columns=sm.MARKET_COLUMNS).to_csv(d / 'Season_Markets.csv', index=False)
+
+
+def sweep_season_markets() -> list[str]:
+    """Render /tools/season-markets for the awaiting-feed state AND a live state fed by a synthetic
+    fixture that includes college-basketball rows; audit both plus the builder context."""
+    import tempfile
+    from pathlib import Path
+    from services import season_markets as sm
+    fails: list[str] = []
+    real_builder = app.build_season_market_context
+    with tempfile.TemporaryDirectory() as td:
+        empty, live = Path(td) / 'empty', Path(td) / 'live'
+        empty.mkdir()
+        _season_fixture(live)
+        for label, base in (('season-markets[awaiting feed]', empty), ('season-markets[live fixture]', live)):
+            ctx = sm.build_season_market_context(base)
+            leaked = [s for s in ctx.get('sports', []) if s in sm.PLANNED_SPORTS]
+            leaked += [r['sport'] for r in ctx.get('rows', []) if r.get('sport') in sm.PLANNED_SPORTS]
+            if leaked:
+                fails.append(f'{label}: context lists/counts planned sports: {sorted(set(leaked))}')
+            if base is live and ctx.get('market_rows') != 2:
+                fails.append(f'{label}: market_rows={ctx.get("market_rows")} (expected 2: NFL+NBA only)')
+            if [p.get('code') for p in ctx.get('planned_sports', [])] != ['NCAAMB', 'NCAAWB']:
+                fails.append(f'{label}: planned_sports missing from context')
+            app.build_season_market_context = lambda _base, _b=base, **kw: real_builder(_b, **kw)
+            try:
+                with isolated_owner_client() as c:
+                    r = c.get('/tools/season-markets')
+                if r.status_code != 200:
+                    fails.append(f'{label}: HTTP {r.status_code}')
+                    continue
+                fails += audit_season_markets(r.get_data(as_text=True), label)
+            finally:
+                app.build_season_market_context = real_builder
+    return fails
+
+
 def route_inventory() -> list[str]:
     swept = {r.replace('{s}', s) for r in GATED_PAGES for s in SPORTS} | {p.format(s=s) for p in FREE_PAGES for s in SPORTS}
     fails = []
@@ -270,6 +358,33 @@ def main() -> int:
 
     copy_fails = audit_copy(pricing)
     ok(not copy_fails, f'6: coverage copy no longer claims college hoops {copy_fails or ""}')
+
+    sm_fails = sweep_season_markets()
+    ok(not sm_fails, '8: Season Markets lists NCAAMB/NCAAWB only under a separate Planned section '
+       f'("{PLANNED_TEXT}"), never counted/launched -- awaiting-feed and live-fixture states {sm_fails[:4] or ""}')
+
+    # 8 mutation proof: each re-introduced Season Markets defect must FAIL.
+    from services import season_markets as sm
+    saved_gov = sm.GOVERNED_SPORTS
+    sm.GOVERNED_SPORTS = sm.SPORTS
+    try:
+        ok(bool(sweep_season_markets()), '8: mutation [NCAAMB/NCAAWB rows counted/listed as governed] is caught')
+    finally:
+        sm.GOVERNED_SPORTS = saved_gov
+    with isolated_owner_client() as c:
+        sm_good = c.get('/tools/season-markets').get_data(as_text=True)
+    sm_mutants = {
+        '"Leagues at launch" NCAAMB badge': sm_good.replace('<span class="badge">MLB</span>',
+                                                             '<span class="badge">MLB</span><span class="badge">NCAAMB</span>', 1),
+        'Planned entry with action link': sm_good.replace('<!-- season-planned:end -->',
+                                                          '<a href="/sports/ncaamb">Open</a><!-- season-planned:end -->', 1),
+        'Planned entry with live badge': sm_good.replace('<!-- season-planned:end -->',
+                                                         '<span class="badge">Live</span><!-- season-planned:end -->', 1),
+        'Planned entry with count': sm_good.replace(f'{PLANNED_TEXT}</li>', f'{PLANNED_TEXT} (12 markets)</li>', 1),
+        'Planned exact text removed': sm_good.replace(PLANNED_TEXT, 'Launching soon'),
+    }
+    for name, mutated in sm_mutants.items():
+        ok(mutated != sm_good and bool(audit_season_markets(mutated, name)), f'8: mutation [{name}] is caught')
 
     # ---- 7. Mutation proof: each re-introduced defect must make the audit FAIL. ----
     fake_row = ('<table><tr><td>Example Guard</td><td>DUKE</td><td>PTS OVER 17.5</td>'

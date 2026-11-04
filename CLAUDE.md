@@ -427,7 +427,10 @@ QC: `qc_membership_regression.py`, `qc_plan_access_matrix.py`, `qc_checkout_read
   to carry the current season.)
 - **College hoops:** no data pipeline. Command Center + Props/Market/Trends/Parlay routes keep
   their URLs but render only the honest unavailable state (`ncaab_unavailable.html`); sample rows,
-  fabricated confidence and coverage claims were removed. Guard: `qc_ncaab_shell_honesty.py`.
+  fabricated confidence and coverage claims were removed. Season Markets lists NCAAMB/NCAAWB only
+  under a separate "Planned" block ("Data pipeline not yet available"; `GOVERNED_SPORTS` vs
+  `PLANNED_SPORTS` in `services/season_markets.py` — never counted or launched even if ingest writes
+  rows). Guard: `qc_ncaab_shell_honesty.py`.
 - **Fantasy Salary / Value / Own%** need a DFS slate provider decision (SportsDataIO or
   FantasyData) — a user decision, then wiring. **No salaries, no contests** by
   deliberate choice (money-league legal risk).

@@ -8,6 +8,13 @@ import pandas as pd
 
 
 SPORTS = ("NFL", "NCAAF", "NBA", "WNBA", "MLB", "NCAAMB", "NCAAWB")
+# Display governance (truthfulness safeguard B): college basketball has no governed production
+# pipeline, so it is PLANNED only -- never counted, listed, filtered or launched on the page, even
+# if an ingest writes rows for it. SPORTS stays the ingest-normalization list (refresh_season_markets).
+PLANNED_SPORTS = ("NCAAMB", "NCAAWB")
+PLANNED_SPORT_LABELS = {"NCAAMB": "Men's College Basketball", "NCAAWB": "Women's College Basketball"}
+PLANNED_SPORT_STATUS = "Data pipeline not yet available"
+GOVERNED_SPORTS = tuple(sport for sport in SPORTS if sport not in PLANNED_SPORTS)
 MARKET_COLUMNS = [
     "SnapshotAt", "Sport", "Season", "EntityType", "Entity", "Team", "Market",
     "Line", "OverOdds", "UnderOdds", "Book", "Source", "SourceUpdatedAt",
@@ -50,7 +57,7 @@ def load_season_markets(base_dir: Path) -> pd.DataFrame:
     for column in ("Line", "OverOdds", "UnderOdds"):
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
     frame = frame[
-        frame["Sport"].isin(SPORTS)
+        frame["Sport"].isin(GOVERNED_SPORTS)
         & frame["EntityType"].isin(("team", "player"))
         & frame["Entity"].ne("")
         & frame["Market"].ne("")
@@ -72,7 +79,7 @@ def load_season_projections(base_dir: Path) -> pd.DataFrame:
     frame["ProjectedValue"] = pd.to_numeric(frame["ProjectedValue"], errors="coerce")
     frame["SampleSize"] = pd.to_numeric(frame["SampleSize"], errors="coerce")
     return frame[
-        frame["Sport"].isin(SPORTS)
+        frame["Sport"].isin(GOVERNED_SPORTS)
         & frame["EntityType"].isin(("team", "player"))
         & frame["Entity"].ne("")
         & frame["Market"].ne("")
@@ -97,10 +104,12 @@ def build_season_market_context(
     markets = load_season_markets(base_dir)
     projections = load_season_projections(base_dir)
     generated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    planned = [{"code": code, "label": PLANNED_SPORT_LABELS[code], "status": PLANNED_SPORT_STATUS}
+               for code in PLANNED_SPORTS]
 
     if markets.empty:
         return {
-            "rows": [], "sports": list(SPORTS), "markets": [], "market_rows": 0,
+            "rows": [], "sports": list(GOVERNED_SPORTS), "planned_sports": planned, "markets": [], "market_rows": 0,
             "comparison_rows": 0, "books": [], "generated_at": generated_at,
             "feed_state": "awaiting_feed",
             "feed_note": "The comparison system is ready, but no licensed season-market feed has populated it yet.",
@@ -191,6 +200,7 @@ def build_season_market_context(
     return {
         "rows": rows,
         "sports": sorted(markets["Sport"].dropna().unique().tolist()),
+        "planned_sports": planned,
         "markets": sorted(markets["Market"].dropna().unique().tolist()),
         "market_rows": int(len(consensus)),
         "comparison_rows": int(consensus["ProjectedValue"].notna().sum()),
