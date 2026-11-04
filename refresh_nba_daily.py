@@ -5,7 +5,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from services.run_outcomes import props_step_outcome, record_child_outcomes
+from services.run_outcomes import (EXIT_HARD_FAILURE, props_step_outcome, record_child_outcomes,
+                                   runner_exit_for_child)
 
 BASE_DIR = Path(__file__).resolve().parent
 NON_BLOCKING_STEPS = {"runtime_snapshots"}
@@ -98,14 +99,14 @@ def main() -> int:
                 print(f"[WARN] Continuing because {label} is non-blocking for live NBA refresh.", flush=True)
                 print()
                 continue
-            return result.returncode
+            return runner_exit_for_child(result.returncode)   # 1 stays 1; any hard failure >=2
         print(f"[PASS] {label} seconds={elapsed:.1f}", flush=True)
         print()
 
     if degraded:
         print("NBA daily refresh completed the safe work but is DEGRADED (player props validation failed "
               "or unavailable for a non-benign reason).")
-        return 1
+        return EXIT_HARD_FAILURE   # DEGRADED is a hard failure (>=2), never the benign 1
     print("NBA daily refresh completed cleanly.")
     return 0
 

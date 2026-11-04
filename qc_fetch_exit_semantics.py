@@ -4,18 +4,24 @@ is a HARD failure on every reporting surface, and configured exit semantics are 
 Drives the REAL step runners with real subprocess children (stub children for exit 0 / 1, and the REAL
 fetch_game_lines.py / fetch_player_props.py refusing basketball_ncaab for exit 2 -- it refuses before any
 request or write):
+  Portable runner contract (owner decision): exit 0 = success; exit 1 = ONLY the frozen benign
+  no-new-rows outcome; exit >=2 = hard failure. Systemd is modelled from the production units (read-only
+  SSM): bk-linemove.service SuccessExitStatus=1 => {0, 1} read as SUCCESS; bk-daily.service default => {0}.
+  A hard failure must therefore NEVER exit 0 or 1 from a runner.
   L. bk-linemove  refresh_line_movement_snapshots.main(): exit 0 -> OK, exit 1 -> OK ("no new rows", the
-     existing contract), exit 2 -> FAILED + runner exit 1.
+     existing contract), exit 2/3 -> FAILED + runner exit 2 (systemd under SuccessExitStatus=1: FAILED).
   D. bk-daily     run_daily.main() (temp BASE_DIR/LOG_DIR; network QCs + run status mapped to stubs): exit 0
      -> PASS; exit 1 in season -> FAIL, off-season -> SKIP (off-season) (existing); exit 2 UNCONFIGURED_SPORT
-     -> FAIL in AND out of season, with and without --continue-on-error; runner exit 1; the structured
+     -> FAIL in AND out of season, with and without --continue-on-error; runner exit 2; the structured
      Last_Operator_Summary lists the step in failed_steps with blocking_failure=true.
   S. run status   generate_run_status._operator_signals / build_run_status over that summary -> a degraded
      reason naming the step; overall is never GREEN/WATCH.
   P. props parents services.run_outcomes.classify_props_child / props_step_outcome: exit 2 is
      VALIDATION_FAILED (alerting) even when a STALE benign receipt (events_found=0) sits on disk; exit 0/1
      classification unchanged. refresh_football_props.main() with an exit-2 child -> VALIDATION_FAILED,
-     DEGRADED, exit 1. refresh_football_line_movement.main() propagates exit 2.
+     DEGRADED, exit 2. refresh_football_line_movement / refresh_nba_daily / refresh_mlb_daily /
+     refresh_wnba_daily: child 1 -> 1 (unchanged), child >=2 -> >=2, props DEGRADED -> 2;
+     runner_exit_for_child maps negative (signal) codes to 2.
 Run via qc_offline.py; no provider request (the exit-2 children refuse before the network).
 """
 from __future__ import annotations
@@ -35,10 +41,20 @@ import generate_run_status as grs  # noqa: E402
 import refresh_football_line_movement as rflm  # noqa: E402
 import refresh_football_props as rfp  # noqa: E402
 import refresh_line_movement_snapshots as rlm  # noqa: E402
+import refresh_mlb_daily as rmlb  # noqa: E402
+import refresh_nba_daily as rnba  # noqa: E402
+import refresh_wnba_daily as rwnba  # noqa: E402
 import run_daily as rd  # noqa: E402
 from services import run_outcomes as ro  # noqa: E402
 
 PY = sys.executable
+# Production systemd success sets (read-only SSM, 2026-11-04). Units only propagate the runner's code.
+LINEMOVE_SYSTEMD_SUCCESS = frozenset({0, 1})   # bk-linemove.service: SuccessExitStatus=1 (+ the default 0)
+BK_DAILY_SYSTEMD_SUCCESS = frozenset({0})      # bk-daily.service: default; OnFailure=bk-daily-alert
+
+
+def systemd(code, success):
+    return "SUCCESS" if code in success else "FAILED"
 _OK = 0
 _FAIL = 0
 MATRIX: list[str] = []
@@ -90,7 +106,12 @@ def children(root: Path) -> dict:
         "exit 2 UNCONFIGURED_SPORT (stub)": stub(
             root, "c2", 2, "OUTCOME: VALIDATION_FAILED reason_code=UNCONFIGURED_SPORT sport=basketball_ncaab"),
         "exit 2 UNCONFIGURED_SPORT (real fetch_game_lines)": real_refusal("fetch_game_lines.py"),
+        "exit 3 (other failure, no marker)": stub(root, "c3", 3, "Traceback: synthetic hard failure"),
     }
+
+
+def code_of(child: str) -> int:
+    return int(child.split()[1])
 
 
 # ---- L. bk-linemove -------------------------------------------------------------------------------------
@@ -102,14 +123,20 @@ def check_linemove():
             with patched(rlm, STEPS=[("MLB game lines", cmd, 120)]):
                 rc, out = quiet(rlm.main)
             failed = "FAILED" in out
-            want_fail = label.startswith("exit 2")
-            MATRIX.append(f"linemove   | {label:52s} | step={'FAILED' if failed else 'OK':6s} runner_exit={rc}")
-            ok(failed == want_fail and rc == (1 if want_fail else 0),
+            want_fail = code_of(label) >= 2
+            sd = systemd(rc, LINEMOVE_SYSTEMD_SUCCESS)
+            MATRIX.append(f"linemove   | {label:52s} | step={'FAILED' if failed else 'OK':6s} runner_exit={rc} "
+                          f"systemd(SuccessExitStatus=1)={sd}")
+            ok(failed == want_fail and rc == (2 if want_fail else 0),
                f"linemove {label}: step {'FAILED' if failed else 'OK'}, runner exit {rc} "
-               f"(expected {'FAILED/1' if want_fail else 'OK/0'})")
+               f"(expected {'FAILED/2' if want_fail else 'OK/0'})")
             if want_fail:
-                ok("exit 2" in out and "All line-movement snapshots captured" not in out,
+                ok(rc >= 2 and rc not in LINEMOVE_SYSTEMD_SUCCESS and sd == "FAILED",
+                   f"linemove {label}: hard failure exit {rc} is NOT 0/1 -> bk-linemove (SuccessExitStatus=1) reads FAILED")
+                ok(f"exit {code_of(label)}" in out and "All line-movement snapshots captured" not in out,
                    f"linemove {label}: reported as a failure (never 'captured' / 'no new rows')")
+            else:
+                ok(sd == "SUCCESS", f"linemove {label}: systemd reads SUCCESS (unchanged)")
 
 
 # ---- D + S. bk-daily + run status ------------------------------------------------------------------------
@@ -155,18 +182,22 @@ def check_run_daily():
                                                ("Football line movement", set(), "cross-sport")):
                 for coe in (False, True):
                     rc, status, summary, reasons, overall = run_daily_case(root, step_label, cmd, active, coe)
-                    code = int(child.split()[1])
+                    code = code_of(child)
                     if code == 0:
                         want = "PASS"
-                    elif code == 2:
+                    elif "UNCONFIGURED_SPORT" in child:
                         want = "FAIL"
-                    else:   # exit 1: existing season-gate contract
+                    else:   # exit 1 / other failure without the marker: existing season-gate contract (frozen)
                         want = "SKIP (off-season)" if step_label != "Football line movement" and not active else "FAIL"
                     tag = f"run_daily [{step_label} | {season}{' | --continue-on-error' if coe else ''}] {child}"
                     MATRIX.append(f"run_daily  | {child:52s} | {step_label} {season}{' coe' if coe else ''}: "
-                                  f"step={status} runner_exit={rc} run_status={overall}")
+                                  f"step={status} runner_exit={rc} systemd(bk-daily)={systemd(rc, BK_DAILY_SYSTEMD_SUCCESS)} "
+                                  f"run_status={overall}")
                     ok(status == want, f"{tag}: step {status!r} (expected {want!r})")
-                    ok(rc == (1 if want == "FAIL" else 0), f"{tag}: runner exit {rc}")
+                    ok(rc == (2 if want == "FAIL" else 0), f"{tag}: runner exit {rc} (FAIL -> 2, never 1)")
+                    if want == "FAIL":
+                        ok(rc not in (0, 1) and systemd(rc, BK_DAILY_SYSTEMD_SUCCESS) == "FAILED",
+                           f"{tag}: hard failure is not 0/1; bk-daily systemd reads FAILED (OnFailure alert)")
                     if want == "FAIL":
                         ok(summary["blocking_failure"] is True and step_label in summary["failed_steps"],
                            f"{tag}: Last_Operator_Summary blocking_failure + failed_steps={summary['failed_steps']}")
@@ -175,7 +206,7 @@ def check_run_daily():
                     else:
                         ok(overall == "GREEN" and not reasons,
                            f"{tag}: run status unchanged by this step ({overall}, reasons={reasons})")
-                    if code == 2:
+                    if "UNCONFIGURED_SPORT" in child:
                         ok(status not in ("PASS",) and not status.startswith("SKIP") and not status.startswith("WARN"),
                            f"{tag}: never PASS / SKIP / WARN")
 
@@ -223,7 +254,7 @@ def check_props_parents():
             else:
                 os.environ["ODDS_API_KEY"] = saved_key
         sidecar = json.loads((root / "data" / "tracking" / "_child_outcomes_football_props.json").read_text())
-        ok(rc == 1 and set(sidecar["outcomes"].values()) == {ro.VALIDATION_FAILED} and sidecar["degraded"],
+        ok(rc == 2 and set(sidecar["outcomes"].values()) == {ro.VALIDATION_FAILED} and sidecar["degraded"],
            f"refresh_football_props: exit-2 children with STALE benign receipts -> {sidecar['outcomes']}, DEGRADED, exit {rc}")
         MATRIX.append(f"fb-props   | exit 2 (real + stub) w/ stale benign receipts -> {sorted(set(sidecar['outcomes'].values()))} parent_exit={rc}")
 
@@ -234,6 +265,43 @@ def check_props_parents():
         MATRIX.append(f"fb-lines   | exit 2 (real fetch_game_lines) -> parent_exit={rc}")
 
 
+# ---- R. the other chain runners in the bk-daily path ------------------------------------------------------
+def check_chain_runners():
+    print("--- R. chain runners: child exit -> runner exit (1 stays 1; hard failure >=2) ---")
+    for code, want in ((-15, 2), (-9, 2), (1, 1), (2, 2), (3, 3), (124, 124), (241, 241)):
+        got = ro.runner_exit_for_child(code)
+        ok(got == want, f"runner_exit_for_child({code}) -> {got} (expected {want})")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        kids = children(root)
+        for child, cmd in kids.items():
+            code = code_of(child)
+            want = 0 if code == 0 else (1 if code == 1 else max(2, code))
+            for name, mod, patch in (
+                    ("refresh_football_line_movement", rflm, {"STEPS": [("nfl_game_lines", cmd, 120)]}),
+                    ("refresh_nba_daily", rnba, {"STEPS": [("game_lines", cmd, 120)]}),
+                    ("refresh_mlb_daily", rmlb, {"_build_steps": lambda c=cmd: [("game_lines", c, 120)]}),
+                    ("refresh_wnba_daily", rwnba, {"STEPS": [("game_lines", cmd, 120)]})):
+                with patched(mod, **patch):
+                    rc, _out = quiet(mod.main)
+                MATRIX.append(f"chain      | {child:52s} | {name}: runner_exit={rc}")
+                ok(rc == want, f"{name} {child}: runner exit {rc} (expected {want}; hard failure never 0/1)")
+        # props DEGRADED in the NBA / MLB parents -> 2 (was 1): exit-2 child, stale benign receipt on disk
+        two = kids["exit 2 UNCONFIGURED_SPORT (stub)"]
+        for name, mod, slug, patch in (
+                ("refresh_nba_daily", rnba, "basketball_nba", {"STEPS": [("player_props", two, 120)]}),
+                ("refresh_mlb_daily", rmlb, "baseball_mlb", {"_build_steps": lambda: [("player_props", two, 120)]})):
+            base = Path(tempfile.mkdtemp(dir=root))
+            (base / "data" / "tracking").mkdir(parents=True)
+            (base / "data" / "tracking" / f"_last_props_fetch_{slug}.json").write_text(
+                json.dumps({"events_found": 0, "rows_fetched": 0}))
+            with patched(mod, BASE_DIR=base, PROPS_ARTIFACT=base / "data" / "props" / "X_Props.csv", **patch):
+                rc, out = quiet(mod.main)
+            ok(rc == 2 and "[VALIDATION_FAILED] player_props" in out,
+               f"{name}: exit-2 props child (stale benign receipt) -> VALIDATION_FAILED, DEGRADED, runner exit {rc}")
+            MATRIX.append(f"chain      | props exit 2 + stale benign receipt -> {name}: VALIDATION_FAILED runner_exit={rc}")
+
+
 def main() -> int:
     print("=" * 80)
     print("QC: UNCONFIGURED_SPORT exit 2 is a hard failure on every runner/report surface (safeguard A)")
@@ -241,6 +309,7 @@ def main() -> int:
     check_linemove()
     check_run_daily()
     check_props_parents()
+    check_chain_runners()
     print("--- exit-code matrix ---")
     for row in MATRIX:
         print("  " + row)

@@ -43,6 +43,24 @@ UNCONFIGURED_SPORT_REASON = "UNCONFIGURED_SPORT"
 UNCONFIGURED_SPORT_MARKER = "reason_code=" + UNCONFIGURED_SPORT_REASON
 EXIT_UNCONFIGURED_SPORT = 2
 
+# Portable RUNNER exit semantics (owner decision, Safeguard A). Production units differ -- bk-linemove has
+# SuccessExitStatus=1 -- so a runner must encode the verdict itself and the unit only propagates it:
+#   0  success
+#   1  ONLY the frozen benign "no new rows / last-known-good preserved" outcome
+#   >=2 hard failure / degraded (never mapped onto 0 or 1)
+EXIT_OK = 0
+EXIT_NO_NEW_ROWS = 1
+EXIT_HARD_FAILURE = 2
+
+
+def runner_exit_for_child(code: int) -> int:
+    """Exit code for a runner stopping on a failed child: a child 1 stays 1 (the frozen no-new-rows
+    contract); any other non-zero code (>=2, or a negative signal code such as earlyoom's SIGTERM) is a
+    hard failure and stays >=2."""
+    if code == EXIT_NO_NEW_ROWS:
+        return EXIT_NO_NEW_ROWS
+    return code if code >= EXIT_HARD_FAILURE else EXIT_HARD_FAILURE
+
 
 def is_alerting(outcome: str) -> bool:
     return outcome in ALERTING
