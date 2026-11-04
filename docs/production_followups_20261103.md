@@ -444,6 +444,15 @@ On `f06e568` (→ exact `6bdb73f`). Commits: `394c12f` governed no-game result, 
   (~8% of the 100k plan, on top of ~15–22k current); restricting intra-day refreshes to the current Eastern slate
   (instead of 5 days) should cut that roughly by the share of events beyond today (code-side confirmation pending from
   v4). No-game day: the props step is skipped when lines report no events; cost then 0 (provider `/events` is free).
+- **Owner NBA cadence decision (2026-11-04):** a full **five-day** NBA props refresh every four hours is affordable
+  (~8,000 credits/month) on top of ~540/month for lines; total projected usage stays comfortably below the 100,000
+  plan. **Do not narrow the props window to save credits** (it would remove legitimate future-board coverage). NBA
+  props get **their own publisher lock and cadence contract**. Timer activation stays blocked by the independent
+  no-game schedule requirement and separate production authorization. NBA v4 continues but is **not** Linux-gated on
+  its current base; if Integrity+D4 deploys, NBA v4 is rebuilt on the new master and its full offline gate re-run.
+- **Integrity+D4 status (2026-11-04):** exact `e1e33dc32777e2a9ec69f04293dbbc546eb00faf` = **LINUX GATE PASS /
+  DEPLOYMENT CANDIDATE** (receipt `docs/integrity_d4_linux_gate_receipt_20261104.md`). Not deployed; a final
+  cache/deployment-boundary audit is required first because the release changes executable-ticket authority.
 - **Blast radius to note for review:** the central gate changes what `/`, `/dashboard`, `/free`, `/home/*`, `/elite`,
   `/derivatives` and the player/tool pages show whenever the NBA/WNBA props file is > 6h old — with today's once-daily
   refresh that is most of the day until the 4h cadence (which covers lines, not props) and a props cadence exist.
