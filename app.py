@@ -15507,6 +15507,9 @@ def build_elite_sharp_money_scanner(candidates):
                 'sport': sport,
                 'player': player,
                 'stat': stat,
+                # Where this quote came from (recorded with the alert so history can prove its provenance).
+                'source_provenance': f"{ELITE_ALERT_SOURCE_PREFIX}{sport}:data/props/"
+                                     f"{ELITE_ALERT_PROPS_SOURCE_FILES.get(sport, sport + '_Props.csv')}",
                 'book': str(row.get('Book') or '').strip(),
                 'game': str(row.get('Game') or '').strip(),
                 'open_line': row.get('OpenLine') if pd.notna(row.get('OpenLine')) else row.get('Line'),
@@ -15531,8 +15534,103 @@ ELITE_ALERT_COLUMNS = [
     'AlertId', 'FirstSeen', 'LastSeen', 'Sport', 'Player', 'Stat', 'Book', 'Game',
     'OpenLine', 'CurrentLine', 'SharpSide', 'ModelSide', 'Alignment', 'Urgency',
     'OverMove', 'UnderMove', 'LineMove', 'Reliability', 'TrueProb', 'Score',
-    'OutcomeState', 'ActualValue', 'GameDate', 'ResolvedAt'
+    'OutcomeState', 'ActualValue', 'GameDate', 'ResolvedAt',
+    # v5 provenance (2026-11): tz-aware UTC instant this row's book/line was captured, and where it came from.
+    'CapturedAtUTC', 'SourceProvenance',
 ]
+
+# Alert HISTORY rule (v5 owner decision 6). A persisted alert is a record of what a book showed at capture
+# time -- never a current executable quote. It may show player + recorded line + recorded book ONLY when it
+# also carries a trustworthy tz-aware UTC capture time and recorded source provenance, always under exactly
+# this label, with no price styling, no action and no path into a ticket/parlay. Otherwise book and line are
+# WITHHELD (provenance unavailable). The CSV export obeys the same rule.
+ELITE_ALERT_HISTORY_LABEL = 'Historical alert — not a current executable quote'
+ELITE_ALERT_PROVENANCE_UNAVAILABLE = 'Book and line withheld — provenance unavailable (no trustworthy capture time and source recorded)'
+ELITE_ALERT_SOURCE_PREFIX = 'props_feed:'
+ELITE_ALERT_QUOTE_COLUMNS = ('Book', 'OpenLine', 'CurrentLine', 'LineMove', 'OverMove', 'UnderMove')
+ELITE_ALERT_ACTION_COLUMNS = ('Urgency',)
+ELITE_ALERT_PROPS_SOURCE_FILES = {'NBA': 'NBA_Props.csv', 'WNBA': 'WNBA_Props.csv', 'MLB': 'MLB_Props.csv'}
+
+
+def _elite_alert_capture_utc(value):
+    """The alert row's capture instant as an aware UTC datetime, or None when it is missing, unparseable,
+    naive (zone unknown), not UTC, or in the future (beyond 5 min clock skew)."""
+    text = str(value if value is not None else '').strip()
+    if not text or text.lower() in {'nan', 'nat', 'none'}:
+        return None
+    try:
+        dt = datetime.fromisoformat(text.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if dt.tzinfo is None or dt.utcoffset() != timedelta(0):
+        return None
+    if dt - datetime.now(timezone.utc) > timedelta(minutes=5):
+        return None
+    return dt.astimezone(timezone.utc)
+
+
+def _elite_alert_source(value):
+    text = str(value if value is not None else '').strip()
+    if not text or text.lower() in {'nan', 'none'} or not text.startswith(ELITE_ALERT_SOURCE_PREFIX):
+        return None
+    return text
+
+
+def elite_alert_has_provenance(row) -> bool:
+    row = row if isinstance(row, dict) else dict(row)
+    return _elite_alert_capture_utc(row.get('CapturedAtUTC')) is not None and \
+        _elite_alert_source(row.get('SourceProvenance')) is not None
+
+
+def _elite_alert_text(value):
+    text = str(value if value is not None else '').strip()
+    return '' if text.lower() in {'nan', 'none', 'nat'} else text
+
+
+def elite_alert_history_row(row) -> dict:
+    """Display-safe history row: player always; recorded line/book only with trustworthy provenance."""
+    row = row if isinstance(row, dict) else dict(row)
+    captured = _elite_alert_capture_utc(row.get('CapturedAtUTC'))
+    source = _elite_alert_source(row.get('SourceProvenance'))
+    ok = captured is not None and source is not None
+    out = {
+        'history_label': ELITE_ALERT_HISTORY_LABEL,
+        'player': _elite_alert_text(row.get('Player')),
+        'sport': _elite_alert_text(row.get('Sport')),
+        'stat': _elite_alert_text(row.get('Stat')),
+        'side': _elite_alert_text(row.get('SharpSide')),
+        'outcome_state': _elite_alert_text(row.get('OutcomeState')) or 'Pending',
+        'provenance_ok': ok,
+        'book': None, 'line': None, 'captured_at_utc': None, 'captured_display': None, 'source': None,
+        'provenance_note': None if ok else ELITE_ALERT_PROVENANCE_UNAVAILABLE,
+    }
+    if ok:
+        out.update({
+            'book': _elite_alert_text(row.get('Book')) or None,
+            'line': _elite_alert_text(row.get('CurrentLine')) or None,
+            'captured_at_utc': captured.isoformat(timespec='seconds'),
+            'captured_display': _format_eastern_display(captured),
+            'source': source,
+        })
+    return out
+
+
+def elite_alert_export_frame(df):
+    """The CSV export under the history rule: every row labelled; rows without provenance have book and
+    line(-move) columns blanked; action labels never exported."""
+    out = df.copy() if df is not None else pd.DataFrame(columns=ELITE_ALERT_COLUMNS)
+    for column in ELITE_ALERT_COLUMNS:
+        if column not in out.columns:
+            out[column] = ''
+    out = out[ELITE_ALERT_COLUMNS].astype(object)
+    ok = [elite_alert_has_provenance(r) for r in out.to_dict('records')]
+    for column in ELITE_ALERT_QUOTE_COLUMNS:
+        out[column] = [v if keep else '' for v, keep in zip(out[column].tolist(), ok)]
+    for column in ELITE_ALERT_ACTION_COLUMNS:
+        out[column] = ''
+    out.insert(0, 'ProvenanceStatus', ['RECORDED' if keep else 'UNAVAILABLE (book and line withheld)' for keep in ok])
+    out.insert(0, 'HistoryLabel', ELITE_ALERT_HISTORY_LABEL)
+    return out
 
 
 def _elite_alert_id(row):
@@ -15565,6 +15663,7 @@ def persist_elite_line_move_alerts(scans):
     path = DATA_DIR / 'tracking' / 'Elite_LineMove_Alerts.csv'
     existing = load_elite_line_move_alerts()
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    captured_utc = datetime.now(timezone.utc).isoformat(timespec='seconds')
     existing_by_id = {}
     if not existing.empty and 'AlertId' in existing.columns:
         for _, row in existing.iterrows():
@@ -15600,6 +15699,9 @@ def persist_elite_line_move_alerts(scans):
             'ActualValue': row.get('ActualValue') or '',
             'GameDate': row.get('GameDate') or '',
             'ResolvedAt': row.get('ResolvedAt') or '',
+            # The book/line above were read from the props feed at THIS instant (aware UTC), from this source.
+            'CapturedAtUTC': captured_utc,
+            'SourceProvenance': scan.get('source_provenance', ''),
         }
 
     if not existing_by_id:
@@ -15765,7 +15867,8 @@ def build_elite_alert_history_summary(alerts=None):
             })
         buckets.sort(key=lambda item: (item['resolved'], item['hit_rate'] or 0), reverse=True)
     recent_df = df.sort_values('LastSeen', ascending=False).head(8).copy()
-    recent = recent_df.to_dict('records')
+    # History rule: display-safe rows only (label; book/line only with trustworthy provenance; no action).
+    recent = [elite_alert_history_row(r) for r in recent_df.to_dict('records')]
     return {
         'total': int(len(df)),
         'pending': int((df['OutcomeState'].fillna('').astype(str).str.strip().isin(['', 'Pending'])).sum()),
@@ -43232,7 +43335,8 @@ def elite_dashboard():
     # should stay on the selected sport instead of flipping to a hardcoded MLB.
     focus_sport = normalize_sport_access_key(request.args.get('sport', '').strip())
     user_key = str((current_user or {}).get('user_id') or (current_user or {}).get('email') or 'anonymous')
-    snapshot_key = f"elite_dashboard_v3_{focus_sport or 'all'}_{hashlib.md5(user_key.encode('utf-8')).hexdigest()}"
+    # v4: alert-history rows are display-safe (provenance rule); never serve a pre-rule v3 snapshot.
+    snapshot_key = f"elite_dashboard_v4_{focus_sport or 'all'}_{hashlib.md5(user_key.encode('utf-8')).hexdigest()}"
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
     if snapshot:
         context = snapshot.get('payload') or {}
@@ -43340,7 +43444,8 @@ def elite_learn():
 @app.route('/elite/alerts/export')
 def elite_alerts_export():
     alerts = grade_elite_line_move_alerts()
-    csv_content = alerts.to_csv(index=False)
+    # Same history rule as the page: labelled rows; book/line blanked without provenance; no action column.
+    csv_content = elite_alert_export_frame(alerts).to_csv(index=False)
     response = make_response(csv_content)
     response.headers['Content-Type'] = 'text/csv'
     response.headers['Content-Disposition'] = 'attachment; filename=elite_line_move_alerts.csv'
