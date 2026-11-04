@@ -323,6 +323,11 @@ SCORECARDS = [
     ("Atomic Ticket Submission QC", "qc_ticket_submission_atomic.py", 180),
     # D4 residual R1: the Matchup Center disk cache is version-isolated from pre-fix entries.
     ("Matchup Center Cache Version QC", "qc_matchup_center_cache_version.py", 120),
+    # D4 owner decisions 1+3: a changed quote (book / line / price, a better price too) rejects the whole
+    # ticket with the current terms -- never a silent reprice; the executable range is frozen at 2..8 legs.
+    ("Ticket Quote Change QC", "qc_ticket_quote_change.py", 240),
+    # D4 owner decision 2: /parlay/save stores exactly the accepted picks (1..20) -- never truncated/filtered.
+    ("Parlay Save Exactness QC", "qc_parlay_save_exact.py", 120),
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),
