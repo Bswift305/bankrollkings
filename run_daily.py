@@ -9,7 +9,7 @@ from pathlib import Path
 
 from season_utils import active_sports, is_preseason_step, nfl_preseason_active, sport_for_label
 from services.env_loader import load_local_env
-from services.run_outcomes import UNCONFIGURED_SPORT_MARKER
+from services.run_outcomes import EXIT_HARD_FAILURE, UNCONFIGURED_SPORT_MARKER
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -426,7 +426,9 @@ def main() -> int:
         print(output)
     if not ok:
         failed = True
-    return 1 if failed else 0
+    # A blocking failure is a HARD failure (>=2), never 1 -- 1 is reserved for the benign no-new-rows
+    # outcome under the portable runner contract (services.run_outcomes.EXIT_*).
+    return EXIT_HARD_FAILURE if failed else 0
 
 
 if __name__ == "__main__":

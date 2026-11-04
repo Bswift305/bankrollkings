@@ -10,7 +10,7 @@ from services import nba_market
 from services import nba_market_budget as budget
 from services.run_outcomes import (
     LINES_READY, PROVIDER_ERROR, SCHEDULE_UNAVAILABLE, SKIPPED_BLOCKED_BY_LINES, VALIDATION_FAILED,
-    NO_FRESH_AFTER_LOCK, record_child_outcomes,
+    NO_FRESH_AFTER_LOCK, EXIT_HARD_FAILURE, record_child_outcomes, runner_exit_for_child,
 )
 
 # v5: bk-daily's NBA lines + props steps call the SHARED ensure API (services/nba_market.ensure_nba_lines /
@@ -200,7 +200,9 @@ def main() -> int:
                 print(f"[WARN] Continuing because {label} is non-blocking for live NBA refresh.", flush=True)
                 print()
                 continue
-            return result.returncode
+            # An ungoverned child exit 1 becomes 2 (exit 1 is reserved for a governed benign outcome);
+            # >=2 and signals stay hard failures.
+            return runner_exit_for_child(result.returncode)
         step_results[label] = "PASS"
         print(f"[PASS] {label} seconds={elapsed:.1f}", flush=True)
         print()
@@ -209,11 +211,12 @@ def main() -> int:
         skipped = [k for k, v in step_results.items() if v == SKIPPED_BLOCKED_BY_LINES]
         print(f"NBA daily refresh is DEGRADED: game lines did not publish (exit {lines_exit}); "
               f"skipped as lines-dependent: {', '.join(skipped) or 'none'}. Independent steps completed.")
-        return lines_exit or 1
+        # never the benign 1: a lines failure is a hard failure (>=2) whatever the child returned
+        return runner_exit_for_child(lines_exit) if lines_exit else EXIT_HARD_FAILURE
     if degraded:
         print("NBA daily refresh completed the safe work but is DEGRADED (player props validation failed "
               "or unavailable for a non-benign reason).")
-        return 1
+        return EXIT_HARD_FAILURE   # DEGRADED is a hard failure (>=2), never the benign 1
     print("NBA daily refresh completed cleanly.")
     return 0
 

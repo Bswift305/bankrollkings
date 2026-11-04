@@ -94,8 +94,8 @@ def main() -> int:
             rc = _run_scenario(base,
                                {"events": 14, "rows": 0, "present": ["player_pass_yds"], "proven": False, "exit": 1, "advance": False},
                                {"events": 40, "rows": 900, "present": ["player_pass_yds"], "exit": 0, "advance": True})
-            if rc != 1:
-                failures.append(f"C nfl-validation-failed: expected 1 (degraded), got {rc}")
+            if rc != 2:   # portable runner contract: DEGRADED is a hard failure (>=2), never the benign 1
+                failures.append(f"C nfl-validation-failed: expected 2 (degraded), got {rc}")
     finally:
         rfp.BASE_DIR, rfp.STEPS = saved
 

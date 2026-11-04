@@ -30,6 +30,7 @@ from datetime import datetime
 from pathlib import Path
 
 from services.run_outcomes import (
+    EXIT_HARD_FAILURE,
     aggregate_parent,
     is_alerting,
     props_step_outcome,
@@ -100,7 +101,7 @@ def main() -> int:
         # At least one child is alerting (VALIDATION_FAILED / PROVIDER_ERROR / STALE). The parent must
         # NOT report a clean PASS -- exit non-zero so the operator records it and Run Status degrades.
         print("Football player props refresh is DEGRADED (an artifact did not advance for a non-benign reason).")
-        return 1
+        return EXIT_HARD_FAILURE   # DEGRADED is a hard failure (>=2), never the benign 1
     print("Football player props refresh completed (all children benign).")
     return 0
 

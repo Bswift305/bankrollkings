@@ -4,6 +4,8 @@ import subprocess
 import sys
 from datetime import datetime
 
+from services.run_outcomes import runner_exit_for_child
+
 
 NON_BLOCKING_STEPS = {"runtime_snapshots"}
 
@@ -56,7 +58,7 @@ def main() -> int:
                 print(f"[WARN] Continuing because {label} is non-blocking for live WNBA refresh.", flush=True)
                 print()
                 continue
-            return result.returncode
+            return runner_exit_for_child(result.returncode)   # 1 stays 1; any hard failure >=2
         print(f"[PASS] {label} seconds={elapsed:.1f}", flush=True)
         print()
 

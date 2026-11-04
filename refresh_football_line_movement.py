@@ -4,6 +4,8 @@ import subprocess
 import sys
 from datetime import datetime
 
+from services.run_outcomes import runner_exit_for_child
+
 
 STEPS = [
     ("nfl_game_lines", [sys.executable, "fetch_nfl_game_lines.py", "--days", "130"], 240),
@@ -29,7 +31,7 @@ def main() -> int:
         elapsed = (datetime.now() - started).total_seconds()
         if result.returncode != 0:
             print(f"[FAIL] {label} exited with code {result.returncode} after {elapsed:.1f}s", flush=True)
-            return result.returncode
+            return runner_exit_for_child(result.returncode)   # 1 stays 1; any hard failure >=2
         print(f"[PASS] {label} seconds={elapsed:.1f}", flush=True)
         print()
     print("Football line movement refresh completed.")

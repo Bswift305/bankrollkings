@@ -22,8 +22,8 @@ import sys
 from pathlib import Path
 
 from services import run_receipts
-from services.run_outcomes import (BENIGN_LINES_NONPUBLISH, RUN_RECEIPT_MISMATCH, RUN_RECEIPT_MISSING,
-                                   governed_lines_nonpublish)
+from services.run_outcomes import (BENIGN_LINES_NONPUBLISH, EXIT_HARD_FAILURE, RUN_RECEIPT_MISMATCH,
+                                   RUN_RECEIPT_MISSING, governed_lines_nonpublish)
 
 BASE_DIR = Path(__file__).parent.resolve()
 
@@ -120,7 +120,9 @@ def main() -> int:
         print(f"Completed with {len(failures)} failure(s):")
         for label, message in failures:
             print(f"- {label}: {message}")
-        return 1
+        # HARD failure -> >=2. Exit 1 is reserved for benign no-new-rows, and prod bk-linemove.service has
+        # SuccessExitStatus=1, so returning 1 here would read as SUCCESS to systemd.
+        return EXIT_HARD_FAILURE
     print("All line-movement snapshots captured.")
     return 0
 
