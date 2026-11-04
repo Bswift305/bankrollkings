@@ -150,6 +150,36 @@ football props are unchanged. QC: `qc_nba_props_lock.py`.
 (`data/tracking/_last_nba_props_publish.json`) before the shape-receipt classifier, so a lock skip or a
 reuse is never misread from an older shape receipt.
 
+### NBA props cadence contract (proposal; not installed)
+
+Code facts (this branch):
+
+- One NBA props refresh = one `/v4/sports/basketball_nba/events` listing (`fetch_player_props.py:341-352`,
+  `commenceTimeFrom=now`, filtered client-side to `--days`, line 359; **free** per `services/odds_quota.py:26-36`)
+  + one `/events/{id}/odds` call per event in the window (`fetch_player_props.py:495`, loop at 823) with the
+  six NBA markets (`:167`, points/rebounds/assists/threes/steals/blocks), region `us` (`:165`), the four
+  bk-daily books. If the combined call errors, a per-market fallback makes up to six single-market calls
+  for that event (`:523-525`).
+- Credits per event = markets returned x regions (`odds_quota.odds_credit_cost`, `:26-36`, encodes markets x
+  regions as the bound) -> at most 6 per event. Events further out than the books have posted return no
+  markets and cost nothing. A typical game day is roughly 5-10 events with posted props in a five-day window
+  (about 30-60 credits a run); a no-game day with nothing posted costs the free `/events` call only.
+- WNBA props: `fetch_wnba_player_props.py` (same shared fetcher, same six markets, four books, `--days 5`)
+  from `run_daily.py:201`; `refresh_wnba_daily.py:14` has the same step. Not on the NBA props lock.
+- Today's trigger: NBA props run only inside bk-daily (`run_daily.py:197` -> `refresh_nba_daily.py:186`), once
+  a day after the lines step (`:181`). There is no props timer on prod.
+- Ordering: props validate against `NBA_Odds.csv` (`fetch_player_props.SPORT_EVENT_MANIFESTS`), so props run
+  **after** lines and check the lines publish by receipt + sha (above), never by taking the lines lock.
+
+Proposal (owner decisions: full five-day window, ~8k credits/month props + ~540/month lines under the 100k
+plan): `ops/bk-nba-props.{service,timer}`, `OnCalendar=*-*-* 00/4:45:00` -> 00:45, 04:45, 08:45, 12:45,
+16:45, 20:45 UTC, 30 minutes after each proposed lines tick (00/4:15). Props then validate against a lines
+list at most 30 minutes old and stay inside the 6h rule with about 2h headroom; bk-daily at 13:00 UTC reuses
+both the 12:15 lines and the 12:45 props publishes. A failed lines tick makes the following props tick
+`SKIPPED_BLOCKED_BY_LINES` (no spend). **Not installed or enabled**: activation stays blocked by the
+independent no-game schedule requirement (see "Timer-enablement blocker") and needs separate production
+authorization; enable only together with, and after, `bk-nba-lines.timer`.
+
 ## Stale NBA/WNBA props: central enforcement
 
 The 6h rule is enforced in the **loaders**, not per page: `load_props` / `load_wnba_props` /

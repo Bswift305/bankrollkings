@@ -1,0 +1,20 @@
+[Unit]
+Description=Bankroll Kings - fire the NBA player-props refresh every 4 hours, 30 min after the lines job
+
+# PROPOSAL ONLY -- NOT installed or enabled by the repo. TIMER-ENABLEMENT BLOCKER: see bk-nba-props.service
+# (independent no-game schedule source + separate production authorization; enable only with/after
+# bk-nba-lines.timer). Never replace SCHEDULE_UNAVAILABLE with a fabricated NO_GAMES_SCHEDULED.
+
+[Timer]
+# Times are UTC: 00:45, 04:45, 08:45, 12:45, 16:45, 20:45 -- 30 min after each proposed lines tick
+# (bk-nba-lines.timer, 00/4:15), so props validate against a lines event list <= 30 min old (the publisher
+# requires <= 120). Every 4h keeps published props inside the 6h executable rule with ~2h headroom.
+# bk-daily (13:00 UTC) then reuses the 12:15 lines and the 12:45 props publishes (REUSED_FRESH, zero credits).
+# If lines failed, this run is SKIPPED_BLOCKED_BY_LINES with no request. Five-day window kept (owner decision).
+# Cost (owner estimate): ~8k credits/month for props + ~540/month for lines.
+OnCalendar=*-*-* 00/4:45:00
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
