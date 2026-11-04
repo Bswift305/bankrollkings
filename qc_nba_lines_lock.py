@@ -72,10 +72,55 @@ def _block_network():
     socket.getaddrinfo, socket.socket.connect = gai, connect
 
 
+BARRIER_DEADLINE_SECONDS = 120.0   # a barrier that never opens fails the run loudly; it is never a pass
+
+
+def _await_file(path, deadline_seconds: float = BARRIER_DEADLINE_SECONDS) -> bool:
+    """Hard-condition poll (no fixed-sleep assumption): True as soon as `path` exists, False at the deadline."""
+    end = time.monotonic() + deadline_seconds
+    while time.monotonic() < end:
+        if Path(path).exists():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def _install_contention_signal() -> None:
+    """Waiter side of the deterministic barrier: when this publisher's FIRST lock attempt finds the lock held, write
+    the file named by QC_CONTENDED_SIGNAL, then wait for the lock exactly as production does. `contended` stays
+    True (set by the failed first attempt); waited_seconds covers the whole wait from the first attempt."""
+    sig = os.environ.get("QC_CONTENDED_SIGNAL")
+    if not sig:
+        return
+    from services import process_lock
+    orig = process_lock.ExclusiveLock.acquire
+
+    def acquire(self, wait_seconds=0.0, poll_seconds=0.2):
+        t0 = time.monotonic()
+        if orig(self, 0.0, poll_seconds):
+            return True
+        Path(sig).write_text(str(os.getpid()), encoding="utf-8")
+        got = orig(self, max(0.0, float(wait_seconds or 0.0) - (time.monotonic() - t0)), poll_seconds)
+        self.waited_seconds = round(time.monotonic() - t0, 3)
+        return got
+    process_lock.ExclusiveLock.acquire = acquire
+
+
+def _hold(spec: str) -> None:
+    """Holder side: 'file:<path>' keeps the lock until that file exists (the waiter's signal or a parent release
+    file); a number is a plain delay used only where no other process depends on it."""
+    if spec.startswith("file:"):
+        if not _await_file(spec[5:]):
+            raise RuntimeError(f"qc barrier never opened: {spec[5:]}")
+    else:
+        time.sleep(float(spec))
+
+
 def child_main(argv) -> int:
-    base, counter, hold, extra = Path(argv[0]), Path(argv[1]), float(argv[2]), argv[3:]
+    base, counter, hold, extra = Path(argv[0]), Path(argv[1]), argv[2], argv[3:]
     _block_network()
     sys.path.insert(0, str(HERE))
+    _install_contention_signal()
     import fetch_game_lines as fg
     commence = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     lu = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -86,7 +131,7 @@ def child_main(argv) -> int:
     def stub_get_json(url):
         with open(counter, "a", encoding="utf-8") as fh:   # one line per paid-request attempt
             fh.write(f"{os.getpid()}\n")
-        time.sleep(hold)
+        _hold(hold)
         if os.environ.get("QC_STUB_FAIL") == "1":
             raise RuntimeError("qc stub provider error")
         return payload
@@ -144,7 +189,9 @@ def qc_two_process():
         counter = root / "counter.txt"
 
         # (1) contention: A holds the lock inside its (stub) paid request; B is refused.
-        a = _spawn(base, counter, 6.0, "--caller", "qc_A")
+        release_a = root / "release-a"
+        # Barriers, never sleeps: A keeps the lock until the parent has finished B.
+        a = _spawn(base, counter, f"file:{release_a}", "--caller", "qc_A")
         check(_wait_calls(counter, 1), "A acquired the lock and entered its request")
         before = _snapshot(base)
         b = _spawn(base, counter, 0.0, "--caller", "qc_B")
@@ -158,6 +205,7 @@ def qc_two_process():
         check(not any(tok in b_out.split() for tok in ("OK", "[OK]", "PASS", "[PASS]")) and "UPDATED" not in b_out,
               "B's output never says OK / PASS / UPDATED")
         check(a_alive, "A was still holding the lock while B was refused (real overlap, not sequential)")
+        release_a.write_text("go", encoding="utf-8")
         a_out, _ = a.communicate(timeout=120)
         rec = json.loads((base / "data/tracking/_last_game_lines_fetch_basketball_nba.json").read_text(encoding="utf-8"))
         pub = json.loads((base / "data/tracking/_last_nba_lines_publish.json").read_text(encoding="utf-8"))
@@ -173,9 +221,12 @@ def qc_two_process():
               f"lock released when the winner exited: next process acquired and fetched (exit {c.returncode})")
 
         # (2) serialization + reuse: B2 waits for A2's lock, then REUSES A2's verified publish (no call).
-        a2 = _spawn(base, counter, 3.0, "--caller", "qc_A2")
+        sig2 = root / "b2-contended"
+        # A2 keeps the lock until B2 has provably found it held (B2's first lock attempt failed and signalled).
+        a2 = _spawn(base, counter, f"file:{sig2}", "--caller", "qc_A2")
         check(_wait_calls(counter, 3), "A2 holds the lock mid-request")
-        b2 = _spawn(base, counter, 0.0, "--caller", "nba_daily", "--allow-reuse", "--lock-wait-seconds", "60")
+        b2 = _spawn(base, counter, 0.0, "--caller", "nba_daily", "--allow-reuse", "--lock-wait-seconds", "60",
+                    env_extra={"QC_CONTENDED_SIGNAL": str(sig2)})
         b2_out, _ = b2.communicate(timeout=180)
         a2.communicate(timeout=120)
         pub2 = json.loads((base / "data/tracking/_last_nba_lines_publish.json").read_text(encoding="utf-8"))
@@ -196,7 +247,7 @@ def qc_two_process():
               "uncontended reuse is REUSED_FRESH (no wait, zero calls) -- distinct from REUSED_FRESH_AFTER_LOCK")
 
         # (4) release on crash: kill a holder mid-request; the next process acquires at once.
-        k = _spawn(base, counter, 60.0, "--caller", "qc_killed")
+        k = _spawn(base, counter, f"file:{root / 'never-opens'}", "--caller", "qc_killed")
         check(_wait_calls(counter, 4), "victim holds the lock mid-request")
         snap_k = _snapshot(base)
         k.kill()
@@ -233,10 +284,11 @@ def qc_wait_then_no_fresh():
         base.mkdir()
         counter = root / "counter.txt"
         env = {"BK_NBA_LINES_LOCK_PATH": str(root / "locks" / "nba_game_lines.lock")}
-        h = _spawn(base, counter, 3.0, "--caller", "qc_fail_holder", env_extra={**env, "QC_STUB_FAIL": "1"})
+        sig1 = root / "w-contended"
+        h = _spawn(base, counter, f"file:{sig1}", "--caller", "qc_fail_holder", env_extra={**env, "QC_STUB_FAIL": "1"})
         check(_wait_calls(counter, 1), "failing holder holds the lock mid-request")
         w = _spawn(base, counter, 0.0, "--caller", "nba_daily", "--allow-reuse", "--lock-wait-seconds", "60",
-                   "--no-fetch-after-lock", env_extra=env)
+                   "--no-fetch-after-lock", env_extra={**env, "QC_CONTENDED_SIGNAL": str(sig1)})
         w_out, _ = w.communicate(timeout=180)
         h_out, _ = h.communicate(timeout=120)
         pub = json.loads((base / "data/tracking/_last_nba_lines_publish.json").read_text(encoding="utf-8"))
@@ -248,10 +300,11 @@ def qc_wait_then_no_fresh():
               f"waiter (--no-fetch-after-lock) after a FAILED holder: NO_FRESH_AFTER_LOCK exit {w.returncode}, "
               f"zero calls, nothing published, never OK/REUSED")
 
-        h2 = _spawn(base, counter, 3.0, "--caller", "qc_fail_holder2", env_extra={**env, "QC_STUB_FAIL": "1"})
+        sig3 = root / "w2-contended"
+        h2 = _spawn(base, counter, f"file:{sig3}", "--caller", "qc_fail_holder2", env_extra={**env, "QC_STUB_FAIL": "1"})
         check(_wait_calls(counter, 2), "second failing holder holds the lock mid-request")
         w2 = _spawn(base, counter, 0.0, "--caller", "nba_daily", "--allow-reuse", "--lock-wait-seconds", "60",
-                    env_extra=env)
+                    env_extra={**env, "QC_CONTENDED_SIGNAL": str(sig3)})
         w2_out, _ = w2.communicate(timeout=180)
         h2.communicate(timeout=120)
         pub2 = json.loads((base / "data/tracking/_last_nba_lines_publish.json").read_text(encoding="utf-8"))
