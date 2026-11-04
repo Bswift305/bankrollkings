@@ -115,6 +115,9 @@ SCORECARDS = [
     ("NBA No-Game Governance QC", "qc_nba_no_game_governance.py", 180),
     ("NBA Lines Lock QC", "qc_nba_lines_lock.py", 300),
     ("NBA/WNBA Stale Props QC", "qc_nba_wnba_props_stale.py", 300),
+    # NBA v4: the NBA player-props publisher's OWN kernel lock (real two-process contention, reuse under
+    # the lock, lines-event-list prerequisite, crash release, location enforcement). Offline stub provider.
+    ("NBA Props Lock QC", "qc_nba_props_lock.py", 300),
     # Run Status DEGRADED (Oct 24 monitoring-truth fix): overall must read DEGRADED -- never GREEN -- when
     # a current-market Odds family is stale (a sport whose game lines are fresh but props are stale), a
     # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages

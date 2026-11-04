@@ -8,14 +8,17 @@ from pathlib import Path
 
 from services.nba_lines_publisher import EXIT_LOCK_UNAVAILABLE, EXIT_LOCKED, LOCK_UNAVAILABLE
 from services.run_outcomes import (
-    LINES_READY, NO_ACTIVE_EVENTS, NO_FRESH_AFTER_LOCK, PROVIDER_ERROR, SCHEDULE_UNAVAILABLE,
-    SKIPPED_BLOCKED_BY_LINES, SKIPPED_LOCKED, UPDATED, VALIDATION_FAILED, props_step_outcome,
-    record_child_outcomes,
+    LINES_READY, NO_ACTIVE_EVENTS, NO_FRESH_AFTER_LOCK, PROVIDER_ERROR, REUSED_FRESH, REUSED_FRESH_AFTER_LOCK,
+    SCHEDULE_UNAVAILABLE, SKIPPED_BLOCKED_BY_LINES, SKIPPED_LOCKED, UPDATED, VALIDATION_FAILED, is_alerting,
+    props_step_outcome, record_child_outcomes,
 )
 
 # bk-daily reuses a receipt-verified NBA lines publish from the 4-hourly job (REUSE_WINDOW_MINUTES in
 # services/nba_lines_publisher.py) and waits up to this long for that job's lock instead of racing it.
 LINES_LOCK_WAIT_SECONDS = 120
+# Same contract for NBA player props (services/nba_props_publisher.py, its OWN lock): bk-daily reuses a
+# receipt+sha-verified props publish from a props job (<= 90 min) and waits up to this long for its lock.
+PROPS_LOCK_WAIT_SECONDS = 120
 
 BASE_DIR = Path(__file__).resolve().parent
 NON_BLOCKING_STEPS = {"runtime_snapshots"}
@@ -140,6 +143,36 @@ def classify_lines_step(returncode: int | None, timed_out: bool, receipt_mtime_b
     return VALIDATION_FAILED, f"exit {returncode}, receipt outcome={got or 'missing'}"
 
 
+def _props_publish_receipt_path() -> Path:
+    return Path(BASE_DIR) / "data" / "tracking" / "_last_nba_props_publish.json"
+
+
+def classify_props_publisher(returncode: int | None, timed_out: bool, publish_receipt_mtime_before: float):
+    """Publisher-level props outcomes that the response-shape receipt cannot express (the fetch never ran):
+    75 SKIPPED_LOCKED, 76 LOCK_UNAVAILABLE, and -- from a props publisher receipt written THIS run --
+    REUSED_FRESH / REUSED_FRESH_AFTER_LOCK (benign) or NO_FRESH_AFTER_LOCK / SKIPPED_BLOCKED_BY_LINES
+    (alerting). Returns (outcome, detail) or None to fall through to the shape-receipt classifier."""
+    if timed_out or returncode is None:
+        return None
+    if returncode == EXIT_LOCKED:
+        return SKIPPED_LOCKED, "another NBA props publisher held the props lock; no paid request, nothing written"
+    if returncode == EXIT_LOCK_UNAVAILABLE:
+        return LOCK_UNAVAILABLE, "the NBA props lock could not be opened/validated; no paid request, nothing written"
+    if _mtime(_props_publish_receipt_path()) > publish_receipt_mtime_before:
+        try:
+            pub = json.loads(_props_publish_receipt_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pub = {}
+        got = str(pub.get("outcome") or "")
+        if got in (REUSED_FRESH, REUSED_FRESH_AFTER_LOCK):
+            if returncode == 0:
+                return got, str(pub.get("detail") or "reused")
+            return VALIDATION_FAILED, f"exit {returncode} but this run's props receipt says {got}"
+        if got in (NO_FRESH_AFTER_LOCK, SKIPPED_BLOCKED_BY_LINES):
+            return got, str(pub.get("detail") or got)
+    return None
+
+
 STEPS = [
     ("playoff_results", [sys.executable, "-X", "utf8", "refresh_playoff_results.py"], 240),
     ("playoff_player_logs", [sys.executable, "-X", "utf8", "refresh_playoff_player_logs.py"], 480),
@@ -148,7 +181,11 @@ STEPS = [
     ("game_lines", [sys.executable, "fetch_game_lines.py", "--bookmakers", "draftkings,caesars,fanduel,betmgm",
                     "--days", "5", "--caller", "nba_daily", "--allow-reuse",
                     "--lock-wait-seconds", str(LINES_LOCK_WAIT_SECONDS)], 240),
-    ("player_props", [sys.executable, "fetch_player_props.py", "--bookmakers", "draftkings,caesars,fanduel,betmgm", "--days", "5"], 240),
+    # The NBA props publisher (fetch_player_props -> services.nba_props_publisher): its own lock first, reuse a
+    # verified props publish by a props job, verify the lines event list, else the one validated publish.
+    ("player_props", [sys.executable, "fetch_player_props.py", "--bookmakers", "draftkings,caesars,fanduel,betmgm",
+                      "--days", "5", "--caller", "nba_daily", "--allow-reuse",
+                      "--lock-wait-seconds", str(PROPS_LOCK_WAIT_SECONDS)], 240),
     ("injuries", [sys.executable, "-X", "utf8", "fetch_injuries.py"], 180),
     ("basketball_officiating", [sys.executable, "fetch_basketball_officiating_assignments.py"], 120),
     ("officiating_context", [sys.executable, "build_officiating_context.py"], 90),
@@ -193,6 +230,7 @@ def main() -> int:
         started = datetime.now()
         print(f"[STEP] {label} timeout={timeout}s", flush=True)
         props_mtime_before = _mtime(PROPS_ARTIFACT) if label == PROPS_STEP else 0.0
+        props_pub_before = _mtime(_props_publish_receipt_path()) if label == PROPS_STEP else 0.0
         lines_receipt_before = _mtime(_lines_receipt_path()) if label == LINES_STEP else 0.0
         publish_receipt_before = _mtime(_publish_receipt_path()) if label == LINES_STEP else 0.0
         try:
@@ -207,8 +245,14 @@ def main() -> int:
             # Classify from the response-shape receipt (directive #2/#3). Benign -> continue cleanly;
             # alerting -> degrade the run but DO NOT abort the safe downstream steps.
             exit_code = result.returncode if not timed_out else 1
-            outcome, detail, alerting = props_step_outcome(BASE_DIR, PROPS_SPORT_SLUG, PROPS_ARTIFACT,
-                                                           props_mtime_before, exit_code, timed_out)
+            special = classify_props_publisher(None if timed_out else result.returncode, timed_out,
+                                               props_pub_before)
+            if special:
+                outcome, detail = special
+                alerting = is_alerting(outcome)
+            else:
+                outcome, detail, alerting = props_step_outcome(BASE_DIR, PROPS_SPORT_SLUG, PROPS_ARTIFACT,
+                                                               props_mtime_before, exit_code, timed_out)
             child_outcomes["player_props"] = outcome
             step_results[label] = outcome
             record_child_outcomes(BASE_DIR, "nba_daily", child_outcomes)

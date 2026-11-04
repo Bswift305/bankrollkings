@@ -114,21 +114,27 @@ def _qc_temp_root(path: Path):
     return Path(tmp) / first if first.lower().startswith("qc_") else None
 
 
-def lock_spec() -> tuple[Path, Path, str]:
-    """(lock file path, containment root, source). Raises LockPathRejected for an override that is neither
-    inside the runtime root nor inside a QC temp root -- the override can never point the lock elsewhere."""
+def runtime_lock_spec(filename: str, override_env: str) -> tuple[Path, Path, str]:
+    """Shared by every governed publisher lock (NBA lines, NBA props): (lock file path, containment root,
+    source). Canonical = <runtime root>/locks/<filename>. The `override_env` QC override is honoured only
+    inside the runtime root or a qc_* temp dir; anything else raises LockPathRejected."""
     root = runtime_root()
-    env = (os.environ.get("BK_NBA_LINES_LOCK_PATH") or "").strip()
+    env = (os.environ.get(override_env) or "").strip()
     if not env:
-        return root / "locks" / LOCK_FILENAME, root, "canonical"
+        return root / "locks" / filename, root, "canonical"
     p = Path(env)
     if is_within(p.parent, root):
         return p, root, "override:runtime"
     qc_root = _qc_temp_root(p.parent)
     if qc_root is not None:
         return p, qc_root, "override:qc_temp"
-    raise LockPathRejected(f"BK_NBA_LINES_LOCK_PATH={env} is outside the runtime root {real(root)} and is not "
+    raise LockPathRejected(f"{override_env}={env} is outside the runtime root {real(root)} and is not "
                            "inside a qc_* temp directory (refused)")
+
+
+def lock_spec() -> tuple[Path, Path, str]:
+    """(lock file path, containment root, source) for the NBA LINES lock."""
+    return runtime_lock_spec(LOCK_FILENAME, "BK_NBA_LINES_LOCK_PATH")
 
 
 def lock_is_held() -> bool:
