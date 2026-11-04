@@ -27,6 +27,9 @@ Proves:
   e. context readers (load_ncaaf_context_slate -> Best Spots / Big Favorites / totals pace / CFB matchup
      card) show a CFBD line labeled exactly `CFBD consensus — no book price`, with every price None;
      only those context builders call the composer;
+  g. second-writer mutations: a second atomic_write_csv_set / to_csv / open-for-write writer of the odds_api
+     artifacts (inside fetch_game_lines.py or another module) and a second caller of fetch_game_lines.run_fetch
+     outside fetch_game_lines.py are each FLAGGED; the baseline has none.
   f. mutation: re-inserting the old legacy-path write loop, or re-introducing -110 prices in the CFBD
      writer, or removing the market firewall, FAILS this QC.
 
@@ -676,6 +679,87 @@ mod.LINES_COLS = mod.LINES_COLS + ["SpreadOdds", "OverOdds", "UnderOdds"]
 mres2 = success_checks(mod, "mutant2: ")
 ok(any((not c) and ("price" in lab or "-110" in lab) for c, lab in mres2),
    "mutant (-110 + validator removed): artifact price/-110 checks FAIL")
+
+# ---- g. second-writer mutations (v6 rebuild: the approved writer is fetch_game_lines.run_fetch) --------------
+print("--- g. every second writer / second run_fetch caller is FLAGGED ---")
+
+
+def run_fetch_callers(override=None):
+    """Tracked .py files (other than fetch_game_lines.py itself) that reach fetch_game_lines.run_fetch -- by
+    `from fetch_game_lines import run_fetch` or `<module alias>.run_fetch`. The approved paths are inside
+    fetch_game_lines.py only (main() for every non-NBA sport; main() handing run_fetch to the NBA publisher)."""
+    found = set()
+    for path in tracked("*.py"):
+        rel = path.relative_to(REPO).as_posix()
+        if rel == "fetch_game_lines.py" or rel.startswith(("_attic/", "qc_")):
+            continue
+        try:
+            src = (override or {}).get(rel) or path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if "fetch_game_lines" not in src or "run_fetch" not in src:
+            continue
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            continue
+        aliases = set()
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Import):
+                for a in n.names:
+                    if a.name == "fetch_game_lines":
+                        aliases.add(a.asname or a.name)
+            elif isinstance(n, ast.ImportFrom) and n.module == "fetch_game_lines":
+                if any(a.name in ("run_fetch", "*") for a in n.names):
+                    found.add(rel)
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Attribute) and n.attr == "run_fetch" and isinstance(n.value, ast.Name) \
+                    and n.value.id in aliases:
+                found.add(rel)
+    return found
+
+
+ok(run_fetch_callers() == set(), f"no module outside fetch_game_lines.py reaches run_fetch ({sorted(run_fetch_callers())})")
+FGL = "fetch_game_lines.py"
+fgl_src = (REPO / FGL).read_text(encoding="utf-8")
+SECOND_IN_FGL = """
+
+def _second_writer(df):
+    atomic_write_csv_set([(df, SPORT_OUTPUTS["americanfootball_ncaaf"]["odds"], {"index": False})])
+"""
+mp, *_ = inventory(GROUPS["odds_api"]["names"], override={FGL: fgl_src + SECOND_IN_FGL})
+ok((FGL, "_second_writer") in mp and (FGL, "run_fetch") in mp,
+   "mutant (second atomic_write_csv_set writer inside fetch_game_lines.py): inventory FLAGS it beside run_fetch")
+OTHER = "fetch_wnba_game_lines.py"
+other_src = (REPO / OTHER).read_text(encoding="utf-8")
+SECOND_SET = """
+
+def _ncaaf_side_publish(df):
+    from services.atomic_csv import atomic_write_csv_set
+    atomic_write_csv_set([(df, BASE_DIR / "data" / "odds" / "NCAAF_Odds.csv", {"index": False})])
+"""
+SECOND_CSV = """
+
+def _ncaaf_side_csv(df):
+    df.to_csv(BASE_DIR / "data" / "schedules" / "NCAAF_Schedule.csv", index=False)
+"""
+SECOND_OPEN = """
+
+def _ncaaf_side_open(text):
+    with open(BASE_DIR / "data" / "schedules" / "NCAAF_Odds.csv", "w", encoding="utf-8") as fh:
+        fh.write(text)
+"""
+for label, code, fn in (("atomic_write_csv_set", SECOND_SET, "_ncaaf_side_publish"),
+                        ("to_csv", SECOND_CSV, "_ncaaf_side_csv"), ("open(...,'w')", SECOND_OPEN, "_ncaaf_side_open")):
+    mp, *_ = inventory(GROUPS["odds_api"]["names"], override={OTHER: other_src + code})
+    ok((OTHER, fn) in mp and mp != GROUPS["odds_api"]["approved"],
+       f"mutant (second writer via {label} in another module): inventory FLAGS {OTHER}:{fn}")
+NCAAF_WRAP = "fetch_ncaaf_game_lines.py"
+wrap_src = (REPO / NCAAF_WRAP).read_text(encoding="utf-8")
+for label, code in (("alias.run_fetch", "\n\ndef _bypass(args):\n    return shared_fetch.run_fetch(args)\n"),
+                    ("from-import", "\n\ndef _bypass2(args):\n    from fetch_game_lines import run_fetch\n    return run_fetch(args)\n")):
+    hits = run_fetch_callers(override={NCAAF_WRAP: wrap_src + code})
+    ok(NCAAF_WRAP in hits, f"mutant (second run_fetch caller via {label} in {NCAAF_WRAP}): FLAGGED")
 
 print("=" * 80)
 print(f"Clean: {_FAIL == 0}  (ok={_OK} fail={_FAIL})")
