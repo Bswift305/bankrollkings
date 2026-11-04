@@ -83,12 +83,33 @@ Every NBA lines publish goes through `services/nba_lines_publisher.publish` (ent
 | | |
 |---|---|
 | Lock | `services/process_lock.ExclusiveLock`: `fcntl.flock(LOCK_EX\|LOCK_NB)` on Linux (the contract); `msvcrt.locking` on Windows for local QC. fd-based, released by the kernel on exit or crash; the file is never unlinked and its content is informational only. |
-| Path | `$BK_NBA_LINES_LOCK_PATH` (QC override) > `$BK_RUNTIME_DIR/locks/nba_game_lines.lock` > `/opt/bankrollkings-runtime/locks/nba_game_lines.lock` (POSIX default, outside the checkout). Windows dev falls back to the gitignored `.runtime/generated/locks/`. |
-| Order | lock **before** any paid request -> optional reuse -> the one validation + atomic 3-file publish -> publisher receipt `data/tracking/_last_nba_lines_publish.json` (written only by the holder). |
-| Contention | `SKIPPED_LOCKED`, exit 75: no paid request, no receipt, no write, never `OK`/`PASS`. Unopenable lock path: `LOCK_UNAVAILABLE`, exit 76, same guarantees. |
-| Reuse | bk-daily (`--allow-reuse --lock-wait-seconds 120`) reuses a publish from the last **90 minutes** (`REUSE_WINDOW_MINUTES`) when the fetch receipt is `UPDATED` / exit 0 / `game_lines_event_v1`, its UTC time is valid and not in the future, and every output's sha256 on disk equals the receipt's `sha256_after`. Outcome `REUSED_FRESH`, zero credits. 90 min is far inside the 6h executable rule. |
+| Path | `$BK_RUNTIME_DIR/locks/nba_game_lines.lock` > `/opt/bankrollkings-runtime/locks/nba_game_lines.lock` (POSIX default, outside the checkout). Windows dev falls back to the gitignored `.runtime/generated/locks/`. `$BK_NBA_LINES_LOCK_PATH` is a QC override honoured **only** when it resolves inside the runtime root or inside a `qc_*` directory directly under the system temp dir; anything else is `LOCK_UNAVAILABLE`. Never set it on prod. |
+| Containment | `services/process_lock.open_validated_lock_file`: the lock dir must `realpath` inside the runtime root and the file directly inside the lock dir. A symlinked lock **dir** or lock **file** is refused (lstat, then `O_NOFOLLOW` where available); after open the fd inode must equal the path's inode, and on POSIX the file must be regular with exactly one link. Refused -> `LOCK_UNAVAILABLE`, exit 76, before any request. |
+| Permissions (POSIX) | Lock dir created `0700`, lock file `0600`. An existing looser dir/file **owned by this euid** is repaired (`chmod 0700` / `fchmod 0600`) and re-verified; one owned by another uid, or still loose, is refused (`LOCK_UNAVAILABLE`). Every job that takes the lock must run as the same user (`ubuntu`). Windows has no POSIX modes; those checks are skipped there (dev only) and the QC reports them as `[SKIP]`, not as passes. |
+| Order | lock **before** any paid request -> reuse decided **under** the lock -> the one validation + atomic 3-file publish -> publisher receipt `data/tracking/_last_nba_lines_publish.json` (written only by the holder). |
+| Contention | `SKIPPED_LOCKED`, exit 75: no paid request, no receipt, no write, never `OK`/`PASS`. Unopenable or rejected lock location: `LOCK_UNAVAILABLE`, exit 76, same guarantees. |
+| Reuse | bk-daily (`--allow-reuse --lock-wait-seconds 120`, step timeout 240 s) reuses a publish from the last **90 minutes** (`REUSE_WINDOW_MINUTES`) when the fetch receipt is `UPDATED` / exit 0 / `game_lines_event_v1`, its UTC time is valid and not in the future, and every output's sha256 on disk equals the receipt's `sha256_after`. Zero credits. **The 90-minute window is duplicate-fetch suppression only; the executable boundary stays the 6h CLOCK-A rule** (a reused file ages exactly like a fetched one). |
 
-QC: `qc_nba_lines_lock.py` (real two-process contention, crash release, reuse rules).
+### Lock state machine
+
+| State | Condition | Outcome | Exit | Class | Paid request |
+|---|---|---|---|---|---|
+| S0 | lock location rejected (containment / symlink / perms) or unopenable | `LOCK_UNAVAILABLE` | 76 | alerting | none |
+| S1 | lock still held by another process after the bounded wait | `SKIPPED_LOCKED` | 75 | alerting | none |
+| S2a | acquired **without** waiting, `--allow-reuse`, receipt + hashes valid | `REUSED_FRESH` | 0 | benign | none |
+| S2b | acquired **after waiting** for another holder, `--allow-reuse`, receipt + hashes **re-read under the lock** and valid | `REUSED_FRESH_AFTER_LOCK` | 0 | benign | none |
+| S2b' | acquired after waiting, `--allow-reuse --no-fetch-after-lock`, no valid fresh publish | `NO_FRESH_AFTER_LOCK` | 1 | alerting | none |
+| S2b'' | acquired after waiting, `--allow-reuse` (default), no valid fresh publish | fetch normally under the lock (S3) | | | one |
+| S2c | no `--allow-reuse` (4-hourly job, manual run): it is the refresh | S3 | | | one |
+| S3 | fetch + event validation + atomic publish | `UPDATED` / `PROVIDER_ERROR` / `VALIDATION_FAILED` / `SCHEDULE_UNAVAILABLE` | 0 / 1 | benign / alerting | one |
+
+Another process holding the lock is never a success by itself: success after a wait requires the
+receipt and every output hash to verify under the lock. There is no pre-lock reuse path. bk-daily
+treats `UPDATED`, `REUSED_FRESH` and `REUSED_FRESH_AFTER_LOCK` as lines-ready (`run_outcomes.LINES_READY`);
+anything else skips the lines-dependent steps as `SKIPPED_BLOCKED_BY_LINES`.
+
+QC: `qc_nba_lines_lock.py` (real two-process contention, waiting after a failed holder, crash release,
+location/symlink enforcement with a call-counting stub provider, POSIX permission rules, reuse rules).
 
 ## Stale NBA/WNBA props: central enforcement
 

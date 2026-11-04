@@ -7,31 +7,53 @@ Every NBA game-lines publish -- bk-daily's NBA refresh (refresh_nba_daily -> fet
 publish(). There is no other path: fetch_game_lines.run_fetch() refuses an event-aware (NBA) fetch unless
 this module holds the lock.
 
-Order of operations (each step fails closed):
-  1. Acquire the shared kernel lock (services.process_lock: fcntl.flock on Linux) at lock_path() BEFORE
-     any paid request. Contention (after an optional bounded wait) -> SKIPPED_LOCKED: no paid request, no
-     receipt, no file write, exit EXIT_LOCKED (75), and the output never says OK/PASS. A lock file that
-     cannot be opened -> LOCK_UNAVAILABLE, exit EXIT_LOCK_UNAVAILABLE (76), likewise no request/no write.
-  2. (callers that opt in, i.e. bk-daily) Reuse: if the other job published a receipt-verified NBA lines
-     file within REUSE_WINDOW_MINUTES, record REUSED_FRESH and stop -- no paid request.
-  3. Otherwise run the ONE shared fetch + event validation + atomic 3-file publish
-     (fetch_game_lines.run_fetch, contract game_lines_event_v1).
-  4. Write the publisher receipt (data/tracking/_last_nba_lines_publish.json) -- only ever by the lock
-     holder -- and release the lock (also released by the kernel on exit/crash).
+State machine (v4, owner decision 2). Every state is decided BEFORE or UNDER the lock; no paid request is
+ever made without lock ownership:
 
-Lock path (one explicit path, OUTSIDE the checkout on prod):
-  $BK_NBA_LINES_LOCK_PATH                         explicit override (QC only)
+  S0  resolve + enforce the lock location (lock_spec / process_lock.open_validated_lock_file):
+        rejected (outside the runtime root, symlink, loose perms not ours) or unopenable
+        -> LOCK_UNAVAILABLE                exit 76   alerting   no request, no write
+  S1  try the lock, waiting at most --lock-wait-seconds:
+        still held by another process     -> SKIPPED_LOCKED      exit 75   alerting   no request, no write
+                                             (NEVER "OK" just because another process held the lock)
+  S2  lock acquired. `contended` = the first attempt found another holder (we waited for it).
+      S2a allow_reuse and NOT contended: verify the receipt + every output sha256 (reuse_check)
+            valid fresh publish            -> REUSED_FRESH        exit 0    benign     no request
+      S2b allow_reuse and contended: RE-READ the receipt + hashes UNDER the lock (the holder we waited
+          for may just have published -- or may have failed)
+            valid fresh publish            -> REUSED_FRESH_AFTER_LOCK exit 0 benign   no request
+            none, fetch_after_contention   -> fall through to S3 (fetch normally, under the lock)
+            none, not fetch_after_contention -> NO_FRESH_AFTER_LOCK exit 1 alerting   no request, no write
+                                             (CLI --no-fetch-after-lock; bk-daily keeps the default and fetches)
+      S2c not allow_reuse (the 4-hourly job, manual runs): it IS the refresh -> S3 (contended or not)
+      S3  fetch (the ONE shared fetch + event validation + atomic 3-file publish, fetch_game_lines.run_fetch,
+          contract game_lines_event_v1) -> UPDATED exit 0 / PROVIDER_ERROR / VALIDATION_FAILED /
+          SCHEDULE_UNAVAILABLE exit 1
+  S4  publisher receipt (data/tracking/_last_nba_lines_publish.json) -- only ever by the lock holder --
+      then release (also released by the kernel on exit/crash).
+  REUSED_FRESH vs REUSED_FRESH_AFTER_LOCK: both are a receipt+hash-verified reuse under the lock; the
+  latter means this process had to WAIT for another holder first, so the operator can see the two jobs
+  collided and were serialized. There is no pre-lock reuse path: reuse is only ever decided under the lock.
+
+Lock location (one explicit path, OUTSIDE the checkout on prod), see lock_spec():
   $BK_RUNTIME_DIR/locks/nba_game_lines.lock       when BK_RUNTIME_DIR is set (repo convention, bk_runtime)
   /opt/bankrollkings-runtime/locks/nba_game_lines.lock   POSIX default (prod)
   <repo>/.runtime/generated/locks/nba_game_lines.lock    Windows dev only (gitignored)
+  $BK_NBA_LINES_LOCK_PATH  QC override -- honoured ONLY when it resolves inside the runtime root or inside a
+                           `qc_*` directory directly under the system temp dir; anything else is
+                           LOCK_UNAVAILABLE (exit 76). Never set it on prod.
+  Containment, symlink and POSIX-permission (dir 0700 / file 0600) enforcement: services/process_lock.py.
 
-Reuse window: REUSE_WINDOW_MINUTES = 90. It is deliberately far inside the 6h executable-price rule
-(LIVE_LINES_MAX_AGE_HOURS, CLOCK A), so a reused file is at most 1.5h past its publish when bk-daily's
-props step runs, leaving >= 4.5h of customer-executable life; and it is wide enough that the 4-hourly job's
-12:45 UTC tick is reused by bk-daily's NBA step that follows the 13:00 UTC start. Reuse requires ALL of:
-fetch receipt outcome UPDATED, exit_code 0, published True, contract game_lines_event_v1, receipt `at`
-parseable, not in the future, and within the window, and every output's current sha256 equal to the
-receipt's sha256_after (the file on disk is exactly what that verified publish wrote).
+Reuse window: REUSE_WINDOW_MINUTES = 90 is DUPLICATE-FETCH SUPPRESSION ONLY. It decides whether paying for
+another fetch is pointless; it is NOT a freshness boundary. The executable-price boundary stays the 6h
+rule (LIVE_LINES_MAX_AGE_HOURS, CLOCK A) enforced on customer surfaces from the provider LastUpdated -- a
+reused file ages exactly like a fetched one. 90 min leaves >= 4.5h of customer-executable life after a
+reuse, and covers the 4-hourly job's last tick before 13:00 UTC being reused by bk-daily's NBA step
+(the tick time lives in ops/bk-nba-lines.timer).
+Reuse requires ALL of: fetch receipt outcome UPDATED, exit_code 0, published True, contract
+game_lines_event_v1, receipt time parseable, timezone-aware, not in the future, and within the window, and
+every output's current sha256 equal to the receipt's sha256_after (the file on disk is exactly what that
+verified publish wrote).
 """
 from __future__ import annotations
 
@@ -40,10 +62,10 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from services.process_lock import ExclusiveLock, LockUnavailable
+from services.process_lock import ExclusiveLock, LockPathRejected, LockUnavailable, is_within, real
 from services.run_outcomes import (
-    NO_ACTIVE_EVENTS, PROVIDER_ERROR, REUSED_FRESH, SCHEDULE_UNAVAILABLE, SKIPPED_LOCKED, UPDATED,
-    VALIDATION_FAILED,
+    NO_ACTIVE_EVENTS, NO_FRESH_AFTER_LOCK, PROVIDER_ERROR, REUSED_FRESH, REUSED_FRESH_AFTER_LOCK,
+    SCHEDULE_UNAVAILABLE, SKIPPED_LOCKED, UPDATED, VALIDATION_FAILED,
 )
 
 SPORT = "basketball_nba"
@@ -61,17 +83,52 @@ EXIT_LOCK_UNAVAILABLE = 76
 _ACTIVE_LOCK: ExclusiveLock | None = None
 
 
+def runtime_root() -> Path:
+    """The containment root for the lock: $BK_RUNTIME_DIR, else the POSIX prod default, else (Windows dev)
+    the gitignored in-repo runtime dir."""
+    runtime = (os.environ.get("BK_RUNTIME_DIR") or "").strip()
+    if runtime:
+        return Path(runtime)
+    if os.name != "nt":
+        return Path(POSIX_DEFAULT_RUNTIME_DIR)
+    import bk_runtime   # Windows dev: the gitignored in-repo runtime dir
+    return bk_runtime.runtime_dir()
+
+
 def lock_path() -> Path:
+    """The CANDIDATE lock path (unvalidated; lock_spec() enforces it)."""
     env = (os.environ.get("BK_NBA_LINES_LOCK_PATH") or "").strip()
     if env:
         return Path(env)
-    runtime = (os.environ.get("BK_RUNTIME_DIR") or "").strip()
-    if runtime:
-        return Path(runtime) / "locks" / LOCK_FILENAME
-    if os.name != "nt":
-        return Path(POSIX_DEFAULT_RUNTIME_DIR) / "locks" / LOCK_FILENAME
-    import bk_runtime   # Windows dev: the gitignored in-repo runtime dir
-    return bk_runtime.runtime_dir() / "locks" / LOCK_FILENAME
+    return runtime_root() / "locks" / LOCK_FILENAME
+
+
+def _qc_temp_root(path: Path):
+    """The `qc_*` directory directly under the system temp dir that contains `path`, else None."""
+    import tempfile
+    tmp = real(tempfile.gettempdir())
+    target = real(path)
+    if not is_within(target, tmp) or target == tmp:
+        return None
+    first = os.path.relpath(target, tmp).split(os.sep)[0]
+    return Path(tmp) / first if first.lower().startswith("qc_") else None
+
+
+def lock_spec() -> tuple[Path, Path, str]:
+    """(lock file path, containment root, source). Raises LockPathRejected for an override that is neither
+    inside the runtime root nor inside a QC temp root -- the override can never point the lock elsewhere."""
+    root = runtime_root()
+    env = (os.environ.get("BK_NBA_LINES_LOCK_PATH") or "").strip()
+    if not env:
+        return root / "locks" / LOCK_FILENAME, root, "canonical"
+    p = Path(env)
+    if is_within(p.parent, root):
+        return p, root, "override:runtime"
+    qc_root = _qc_temp_root(p.parent)
+    if qc_root is not None:
+        return p, qc_root, "override:qc_temp"
+    raise LockPathRejected(f"BK_NBA_LINES_LOCK_PATH={env} is outside the runtime root {real(root)} and is not "
+                           "inside a qc_* temp directory (refused)")
 
 
 def lock_is_held() -> bool:
@@ -164,14 +221,16 @@ def _fetch_outcome(base_dir, run_id_before, rc: int) -> str:
 
 
 def publish(args, *, run_fetch, base_dir, outputs: dict, caller: str = "unspecified",
-            allow_reuse: bool = False, lock_wait_seconds: float = 0.0) -> int:
-    """Run one governed NBA lines publish. Returns the process exit code (see module docstring)."""
+            allow_reuse: bool = False, lock_wait_seconds: float = 0.0,
+            fetch_after_contention: bool = True) -> int:
+    """Run one governed NBA lines publish. Returns the process exit code (see the module state machine)."""
     global _ACTIVE_LOCK
-    path = lock_path()
-    lock = ExclusiveLock(path, label=f"nba_game_lines:{caller}")
     try:
+        path, root, source = lock_spec()
+        lock = ExclusiveLock(path, label=f"nba_game_lines:{caller}", root=root)
+        receipt_before_wait = (_read_json(fetch_receipt_path(base_dir)) or {}).get("run_id")
         got = lock.acquire(wait_seconds=lock_wait_seconds)
-    except LockUnavailable as exc:
+    except LockUnavailable as exc:   # incl. LockPathRejected (containment / symlink / permissions)
         print(f"[{LOCK_UNAVAILABLE}] NBA game lines ({caller}): {exc}. No paid request made, nothing written.",
               flush=True)
         return EXIT_LOCK_UNAVAILABLE
@@ -181,18 +240,37 @@ def publish(args, *, run_fetch, base_dir, outputs: dict, caller: str = "unspecif
         return EXIT_LOCKED
     _ACTIVE_LOCK = lock
     started = datetime.now(timezone.utc)
+    common = {"caller": caller, "lock_path": str(path), "lock_source": source,
+              "lock_waited_seconds": lock.waited_seconds, "lock_contended": lock.contended}
     try:
         if allow_reuse:
+            # Decided UNDER the lock, from a fresh re-read of the receipt and the files on disk -- never from
+            # the mere fact that another process held the lock.
             ok, detail = reuse_check(base_dir, outputs, now=started)
             if ok:
+                outcome = REUSED_FRESH_AFTER_LOCK if lock.contended else REUSED_FRESH
+                published_while_waiting = (lock.contended and
+                                           (_read_json(fetch_receipt_path(base_dir)) or {}).get("run_id")
+                                           != receipt_before_wait)
                 _write_publish_receipt(base_dir, {
-                    "caller": caller, "outcome": REUSED_FRESH, "exit_code": EXIT_OK, "detail": detail,
-                    "lock_path": str(path), "lock_waited_seconds": lock.waited_seconds, "paid_requests": 0,
+                    **common, "outcome": outcome, "exit_code": EXIT_OK, "detail": detail, "paid_requests": 0,
+                    "published_while_waiting": bool(published_while_waiting),
                     "reuse_window_minutes": REUSE_WINDOW_MINUTES, "at": started.isoformat(timespec="seconds"),
                 })
-                print(f"[{REUSED_FRESH}] NBA game lines ({caller}): {detail}. No paid request made.", flush=True)
+                print(f"[{outcome}] NBA game lines ({caller}): {detail}. No paid request made.", flush=True)
                 return EXIT_OK
-            print(f"[INFO] NBA game lines ({caller}): not reusing -- {detail}.", flush=True)
+            if lock.contended and not fetch_after_contention:
+                _write_publish_receipt(base_dir, {
+                    **common, "outcome": NO_FRESH_AFTER_LOCK, "exit_code": EXIT_FAILED, "paid_requests": 0,
+                    "detail": f"waited for another publisher, but no valid fresh publish exists: {detail}",
+                    "at": started.isoformat(timespec="seconds"),
+                })
+                print(f"[{NO_FRESH_AFTER_LOCK}] NBA game lines ({caller}): waited for another publisher but "
+                      f"found no valid fresh publish ({detail}). No paid request made, nothing published.",
+                      flush=True)
+                return EXIT_FAILED
+            print(f"[INFO] NBA game lines ({caller}): not reusing -- {detail}"
+                  + ("; fetching under the lock after waiting" if lock.contended else "") + ".", flush=True)
         before = (_read_json(fetch_receipt_path(base_dir)) or {}).get("run_id")
         try:
             rc = int(run_fetch(args))
@@ -204,8 +282,7 @@ def publish(args, *, run_fetch, base_dir, outputs: dict, caller: str = "unspecif
             rc = EXIT_FAILED
         fetch_receipt = _read_json(fetch_receipt_path(base_dir)) or {}
         _write_publish_receipt(base_dir, {
-            "caller": caller, "outcome": outcome, "exit_code": rc, "lock_path": str(path),
-            "lock_waited_seconds": lock.waited_seconds, "fetch_run_id": fetch_receipt.get("run_id"),
+            **common, "outcome": outcome, "exit_code": rc, "fetch_run_id": fetch_receipt.get("run_id"),
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         })
         print(f"[{outcome}] NBA game lines ({caller}) exit={rc}", flush=True)

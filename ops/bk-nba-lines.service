@@ -5,10 +5,13 @@ Wants=network-online.target
 
 # NOT installed or enabled by the repo. Install (source of record: ops/), via SSM as root, AFTER the
 # branch is merged and deployed to /opt/bankrollkings:
-#   sudo install -d -o ubuntu -g ubuntu -m 755 /opt/bankrollkings-runtime/locks
-#     (the shared lock dir; if BK_RUNTIME_DIR is set in /opt/bankrollkings/.env the lock lives at
-#      $BK_RUNTIME_DIR/locks/ instead -- create that one, owned by ubuntu. bk-daily reads the same .env,
-#      so both jobs always resolve the SAME lock path; never set BK_NBA_LINES_LOCK_PATH on prod.)
+#   sudo install -d -o ubuntu -g ubuntu -m 700 /opt/bankrollkings-runtime/locks
+#     (the shared lock dir, 0700; the lock file is created 0600. If BK_RUNTIME_DIR is set in
+#      /opt/bankrollkings/.env the lock lives at $BK_RUNTIME_DIR/locks/ instead -- create that one, owned by
+#      ubuntu, 0700. bk-daily reads the same .env, so both jobs always resolve the SAME lock path. A looser
+#      dir/file owned by ubuntu is repaired on first use; one owned by another user is REFUSED
+#      (LOCK_UNAVAILABLE) -- so every job taking this lock must run as ubuntu. Never set
+#      BK_NBA_LINES_LOCK_PATH on prod: it is honoured only inside the runtime root or a qc_* temp dir.)
 #   sudo cp ops/bk-nba-lines.service /etc/systemd/system/bk-nba-lines.service
 #   sudo cp ops/bk-nba-lines.timer   /etc/systemd/system/bk-nba-lines.timer
 #   sudo systemctl daemon-reload && sudo systemctl enable --now bk-nba-lines.timer

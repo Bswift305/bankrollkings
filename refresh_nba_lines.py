@@ -14,7 +14,8 @@ Exit codes (journal-visible, never "OK" on failure):
   0  UPDATED
   1  any failure (PROVIDER_ERROR / VALIDATION_FAILED / SCHEDULE_UNAVAILABLE / COST / PUBLISH)
   75 SKIPPED_LOCKED     another NBA lines publish held the lock; no request, nothing written
-  76 LOCK_UNAVAILABLE   lock file could not be opened; no request, nothing written
+  76 LOCK_UNAVAILABLE   lock location rejected (outside the runtime root / symlink / loose perms not ours)
+                        or the lock file could not be opened; no request, nothing written
 """
 from __future__ import annotations
 
