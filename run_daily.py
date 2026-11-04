@@ -14,6 +14,9 @@ from services import operator_run
 
 BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = BASE_DIR / "logs"
+# D11: how long a starting run retries for the operator lease (covers a Run Status reader's momentary
+# probe). A lease held longer than this means another operator run is live -> this run REFUSES.
+LEASE_WAIT_SECONDS = 30.0
 
 # Load the service .env so EVERY child step inherits the API keys even when the operator is launched by
 # hand (not via the systemd unit that sets EnvironmentFile). Without this, qc_odds_feed and refresh_cfb_data
@@ -285,7 +288,31 @@ def main() -> int:
     # cold rebuild (~200s -> 504). Prewarm-only (no snapshot rebuilds); builder failures are non-fatal.
     if not args.skip_refresh:
         steps.append(("Dashboard prewarm", _python("refresh_runtime_snapshots.py", "--prewarm-only"), 600))
+    return _execute(args, sports, steps)
 
+
+def _execute(args, sports, steps) -> int:
+    """D11: hold the exclusive operator LEASE for the whole run. A second operator that cannot take it
+    REFUSES (exit 75) and writes nothing -- so concurrent runs can never overwrite each other's active
+    marker. The OS releases the lease if this process dies, which is how a killed run is detected."""
+    try:
+        lease = operator_run.acquire_lease(BASE_DIR, wait_seconds=LEASE_WAIT_SECONDS)
+    except (OSError, ValueError) as exc:
+        print(f"[REFUSED] cannot open the operator lease safely: {exc}")
+        return operator_run.REFUSED_EXIT_CODE
+    if lease is None:
+        _, active = operator_run.read_marker(BASE_DIR)
+        active = active or {}
+        print(f"[REFUSED] another operator run holds the lease: run {active.get('run_id')} "
+              f"started {active.get('started_at')} -- not starting (nothing written)")
+        return operator_run.REFUSED_EXIT_CODE
+    try:
+        return _execute_locked(args, sports, steps, lease)
+    finally:
+        lease.release()
+
+
+def _execute_locked(args, sports, steps, lease) -> int:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = LOG_DIR / f"daily_operator_{stamp}.log"
@@ -295,12 +322,17 @@ def main() -> int:
     # The cap is the sum of the planned step timeouts (+ post-refresh health + Run Status + slack).
     max_runtime = sum(int(t) for _, _, t in steps) + 120 + 300 + operator_run.SLACK_SECONDS
     try:
-        run = operator_run.begin_run(BASE_DIR, log_name=log_path.name, sports=sports,
+        run = operator_run.begin_run(BASE_DIR, lease, log_name=log_path.name, sports=sports,
                                      max_runtime_seconds=max_runtime)
+    except operator_run.OperatorRunConflict as exc:
+        print(f"[REFUSED] {exc} -- not starting (nothing written)")
+        return operator_run.REFUSED_EXIT_CODE
     except (OSError, ValueError) as exc:
-        # Never block the refresh on the marker; the id is still exported so children/summary carry it.
+        # Never block the refresh on a marker WRITE error (we hold the lease, so no other run is live);
+        # the id is still exported so children/summary carry it.
         print(f"[WARN] could not write the current-run marker: {exc}")
         run = {"run_id": operator_run.new_run_id(), "started_at": None}
+        lease.run_id = run["run_id"]
         os.environ[operator_run.RUN_ID_ENV] = run["run_id"]
     run_id = run["run_id"]
     print(f"Operator run: {run_id} (started {run.get('started_at')})")
@@ -405,7 +437,7 @@ def main() -> int:
     from services.run_outcomes import partition_child_outcomes, is_alerting
     # Only sidecars stamped with THIS run's id are current (D11). A stale sidecar from a parent that did
     # not run this time (aborted chain, out-of-set sport) is listed as not_run_this_run, never folded in.
-    child_outcomes, not_run_this_run = partition_child_outcomes(BASE_DIR, run_id)
+    child_outcomes, not_run_this_run, legacy_children = partition_child_outcomes(BASE_DIR, run_id)
     degraded_children = sorted({
         f"{parent}:{label}={o}"
         for parent, payload in child_outcomes.items()
@@ -427,6 +459,8 @@ def main() -> int:
         "child_outcomes": child_outcomes,
         "degraded_child_outcomes": degraded_children,
         "not_run_this_run": not_run_this_run,
+        # tokenless (pre-D11 / outside-operator) sidecars: legacy history only, never current.
+        "legacy_child_outcomes": legacy_children,
         "steps": step_outcomes,
     }
     summary_path = BASE_DIR / "data" / "tracking" / "Last_Operator_Summary.json"
@@ -441,8 +475,10 @@ def main() -> int:
     # clobbering a marker that already belongs to a newer run).
     if run.get("started_at"):
         try:
-            operator_run.close_run(BASE_DIR, run, summary["state"] if summary_written else operator_run.FAILED,
-                                   summary_written=summary_written, finished_at=finished)
+            if not operator_run.close_run(BASE_DIR, lease, run,
+                                          summary["state"] if summary_written else operator_run.FAILED,
+                                          summary_written=summary_written, finished_at=finished):
+                print(f"[WARN] current-run marker for {run_id} was not RUNNING/ours; left untouched")
         except (OSError, ValueError) as exc:
             print(f"[WARN] could not close the current-run marker: {exc}")
 

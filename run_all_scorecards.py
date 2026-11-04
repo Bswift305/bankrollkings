@@ -108,7 +108,9 @@ SCORECARDS = [
     # Run Status = CURRENT operator run (D11, 2026-11-04): a mid-run Run Status (the nested Edge call) read
     # the previous run's log + summary as current. Identity is now an immutable run id (atomic marker +
     # BK_OPERATOR_RUN_ID); mid-run -> PENDING/IN PROGRESS, killed run -> INCOMPLETE, previous run labelled
-    # separately, stale child-outcome sidecars ignored. Offline temp tree + in-process mutation checks.
+    # separately, stale/tokenless child-outcome sidecars ignored, concurrent runs refused via an OS lease.
+    # Offline temp tree + real child processes. Inside the operator it runs the baseline (~10s); the
+    # mutation sweep (~3 min) runs when invoked directly.
     ("Run Status Current-Run QC", "qc_run_status_current_run.py", 300),
     # Zero-network paid-fetch gate (Oct 24): before spending a credit, classify each sport from the local
     # schedule + feed ages as PROBE_JUSTIFIED / NO_FETCH / FRESH / NO_SCHEDULE, so a blanket "refetch

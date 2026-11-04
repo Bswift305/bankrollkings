@@ -22,6 +22,7 @@ Pure: stdlib only, no pandas, no app import -- safe to import from any refresh s
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -106,58 +107,75 @@ def props_step_outcome(base_dir, sport_slug: str, artifact_path, mtime_before: f
     return outcome, detail, is_alerting(outcome)
 
 
+_PARENT_RE = re.compile(r"^[a-z0-9_]{1,64}$")
+
+
 def record_child_outcomes(base_dir, parent: str, outcomes: dict[str, str]) -> None:
     """Write a structured per-parent child-outcome sidecar so the operator summary records the CHILD
     OUTCOME (the vocabulary) -- not merely the parent exit code (directive #3). Best-effort; one file per
-    parent so parents never clobber each other. Stamped with the operator run id inherited from run_daily
-    (BK_OPERATOR_RUN_ID; None when run outside the operator) so readers accept it only for that run (D11)."""
-    from services.operator_run import env_run_id
-    path = Path(base_dir) / "data" / "tracking" / f"_child_outcomes_{parent}.json"
+    parent so parents never clobber each other.
+
+    D11: EVERY sidecar is stamped with the operator run id inherited from run_daily (BK_OPERATOR_RUN_ID).
+    Outside the operator the stamp is null -- a tokenless sidecar is legacy history and never a current
+    outcome. Written atomically (0600, no symlink, contained in data/tracking); `at` is UTC ISO-Z."""
+    from services.operator_run import atomic_write_json, env_run_id, utc_now_iso
+    if not _PARENT_RE.match(str(parent)):
+        return
+    tracking = Path(base_dir) / "data" / "tracking"
+    path = tracking / f"_child_outcomes_{parent}.json"
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps({
+        atomic_write_json(path, {
             "parent": parent,
             "run_id": env_run_id(),
-            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "at": utc_now_iso(),
             "outcomes": outcomes,
             "degraded": any(is_alerting(o) for o in outcomes.values()),
-        }, indent=2), encoding="utf-8")
-        tmp.replace(path)
-    except OSError:
+        })
+    except (OSError, ValueError):
         pass
 
 
-def partition_child_outcomes(base_dir, run_id) -> tuple[dict[str, dict], dict[str, dict]]:
-    """Split every _child_outcomes_<parent>.json into (this_run, not_this_run) by EXACT run id. A sidecar
-    with no run id, or another run's id (a parent that did not run this time: an aborted chain, an
-    out-of-set sport), is never a current outcome -- it is returned in not_this_run as {parent: {run_id,
-    at}} for labelling only. No run id -> nothing is current."""
+def partition_child_outcomes(base_dir, run_id) -> tuple[dict[str, dict], dict[str, dict], dict[str, dict]]:
+    """Split every _child_outcomes_<parent>.json into (this_run, other_runs, legacy) by EXACT run id.
+
+      this_run    stamped with exactly `run_id` -> the only sidecars that may be current outcomes;
+      other_runs  stamped with a DIFFERENT valid run id (a parent that did not run this time: an aborted
+                  chain, an out-of-set sport) -> {parent: {run_id, at}}, labelling only;
+      legacy      tokenless / malformed stamp (pre-D11 or written outside the operator) -> {parent: {at}},
+                  legacy history only, NEVER current.
+    No (valid) run id -> nothing is current. A symlinked sidecar is ignored."""
+    from services.operator_run import valid_run_id
     current: dict[str, dict] = {}
     other: dict[str, dict] = {}
+    legacy: dict[str, dict] = {}
     tracking = Path(base_dir) / "data" / "tracking"
     try:
         files = sorted(tracking.glob("_child_outcomes_*.json"))
     except OSError:
-        return current, other
+        return current, other, legacy
     for f in files:
+        if f.is_symlink():
+            continue
         try:
             payload = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         if not isinstance(payload, dict):
             continue
-        parent = payload.get("parent") or f.stem.replace("_child_outcomes_", "")
-        if run_id and payload.get("run_id") == run_id:
+        parent = f.stem.replace("_child_outcomes_", "")
+        stamp = payload.get("run_id")
+        if valid_run_id(run_id) and stamp == run_id:
             current[parent] = payload
+        elif valid_run_id(stamp):
+            other[parent] = {"run_id": stamp, "at": payload.get("at")}
         else:
-            other[parent] = {"run_id": payload.get("run_id"), "at": payload.get("at")}
-    return current, other
+            legacy[parent] = {"at": payload.get("at")}
+    return current, other, legacy
 
 
 def load_all_child_outcomes(base_dir, run_id) -> dict[str, dict]:
     """The CURRENT run's child outcomes for the operator summary: {parent: payload}, only sidecars stamped
-    with exactly `run_id` (D11: a stale sidecar from a step that did not run is never folded in)."""
+    with exactly `run_id` (D11: a stale or tokenless sidecar is never folded in)."""
     return partition_child_outcomes(base_dir, run_id)[0]
 
 

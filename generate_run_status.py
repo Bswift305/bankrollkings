@@ -29,8 +29,8 @@ CSV_PATH = TRACKING_DIR / "Run_Status.csv"
 OPERATOR_SUMMARY_PATH = TRACKING_DIR / "Last_Operator_Summary.json"
 # D11: the operator's current-run marker (services/operator_run.py). "Current" is keyed on its run id.
 OPERATOR_MARKER_PATH = TRACKING_DIR / operator_run.MARKER_FILENAME
-# Patchable seams (offline QC): process liveness + this host's name for the killed-run check.
-_PID_ALIVE = operator_run.pid_alive
+# Patchable seam (offline QC): this host's name for the killed-run check. Liveness is the operator LEASE
+# (services/operator_run.py): if Run Status can take it, the RUNNING marker's owner is gone.
 _HOSTNAME = None   # None -> socket.gethostname()
 # Log checks whose current-run log is written by the operator run itself (attributed by the
 # "Operator run: <id>" header line), mapped to the row status used while that run has not produced it.
@@ -289,6 +289,10 @@ def _summary_reasons(payload: dict) -> tuple[list[str], dict]:
     return reasons, info
 
 
+def _is_child_outcome_reason(reason: str) -> bool:
+    return reason.startswith("child outcome(s) alerting: ")
+
+
 def _previous_run_block(summary: dict | None) -> dict | None:
     """The last FINISHED run, kept visibly separate from the current run (never folded into its reasons)."""
     if not summary:
@@ -310,7 +314,9 @@ def _operator_context(now: datetime | None = None) -> tuple[list[str], dict]:
     state. Returns (current degraded reasons, operator info).
 
     operator.state:
-      LEGACY      no marker (pre-D11 tree): the summary is folded exactly as before.
+      LEGACY      no marker (pre-D11 tree): the summary's blocking failure / provider exhaustion fold as
+                  before, but its tokenless child outcomes are legacy history only (`legacy_history`),
+                  never a current reason.
       PENDING     the marker's run is RUNNING and has not written its final summary -> status IN PROGRESS;
                   the previous run's summary is shown only under `previous_run`, never as current.
       INCOMPLETE  RUNNING past its deadline / its process is gone, with no matching summary.
@@ -319,9 +325,7 @@ def _operator_context(now: datetime | None = None) -> tuple[list[str], dict]:
     """
     now = now or datetime.now(timezone.utc)
     m_status, marker = operator_run.read_json_status(OPERATOR_MARKER_PATH)
-    if m_status == "ok" and not (operator_run.valid_run_id(marker.get("run_id"))
-                                 and marker.get("state") in (operator_run.RUNNING, *operator_run.TERMINAL)
-                                 and operator_run.parse_utc(marker.get("started_at"))):
+    if m_status == "ok" and not operator_run._valid_marker(marker):
         m_status, marker = "corrupt", None
     s_status, summary = operator_run.read_json_status(OPERATOR_SUMMARY_PATH)
     if s_status != "ok":
@@ -332,6 +336,12 @@ def _operator_context(now: datetime | None = None) -> tuple[list[str], dict]:
         if summary is None:
             return [], {}
         reasons, info = _summary_reasons(summary)
+        legacy_children = info.get("degraded_child_outcomes") or []
+        reasons = [r for r in reasons if not _is_child_outcome_reason(r)]
+        info["degraded_child_outcomes"] = []
+        info["legacy_history"] = {"label": "legacy (unidentified run) child outcomes -- not current",
+                                  "degraded_child_outcomes": legacy_children,
+                                  "finished_at": summary.get("finished_at", "")}
         info["state"] = "LEGACY"
         info["run_id"] = summary.get("run_id")
         return reasons, info
@@ -369,6 +379,13 @@ def _operator_context(now: datetime | None = None) -> tuple[list[str], dict]:
                      "not_run_this_run": matching.get("not_run_this_run") or {}})
         return reasons, info
 
+    if marker.get("state") == operator_run.INCOMPLETE:
+        # Persisted by whoever detected the killed run (next run start / a Run Status that took the lease).
+        why = marker.get("incomplete_reason") or "did not finish"
+        return ([f"operator run {run_id} (started {current['started_at']}) did not finish (INCOMPLETE: {why})"],
+                {"state": "INCOMPLETE", "status_label": "INCOMPLETE", "run_id": run_id, "incomplete_reason": why,
+                 "incomplete_persisted": True, "current_run": current, "previous_run": previous})
+
     if marker.get("state") in operator_run.TERMINAL:
         # Closed, but its summary is missing/foreign: never substitute the older summary.
         return ([f"operator run {run_id} closed {marker.get('state')} but its final summary is missing"],
@@ -376,17 +393,18 @@ def _operator_context(now: datetime | None = None) -> tuple[list[str], dict]:
                  "current_run": current, "previous_run": previous})
 
     if marker.get("started_at") is None:   # env-only identity (marker names another run)
-        verdict, why = operator_run.RUNNING, "in progress"
+        verdict, why, persisted = operator_run.RUNNING, "in progress", False
     else:
-        verdict, why = operator_run.assess_running(marker, now, host=_HOSTNAME, alive_fn=_PID_ALIVE)
+        verdict, why, persisted = operator_run.settle_running(BASE_DIR, marker, now, host=_HOSTNAME)
     if verdict == operator_run.INCOMPLETE:
         return ([f"operator run {run_id} (started {current['started_at']}) did not finish (INCOMPLETE: {why})"],
                 {"state": "INCOMPLETE", "status_label": "INCOMPLETE", "run_id": run_id,
-                 "incomplete_reason": why, "current_run": current, "previous_run": previous})
+                 "incomplete_reason": why, "incomplete_persisted": bool(persisted),
+                 "current_run": current, "previous_run": previous})
 
     # RUNNING: interim child outcomes of THIS run are shown as interim only -- not final, not folded.
     try:
-        interim, _ = partition_child_outcomes(BASE_DIR, run_id)
+        interim = partition_child_outcomes(BASE_DIR, run_id)[0]
     except OSError:
         interim = {}
     return ([], {"state": "PENDING", "status_label": "IN PROGRESS", "run_id": run_id,
@@ -524,7 +542,9 @@ def build_run_status(now: datetime | None = None) -> dict:
 
 def write_outputs(payload: dict) -> None:
     TRACKING_DIR.mkdir(parents=True, exist_ok=True)
-    operator_run.atomic_write_json(JSON_PATH, payload)   # the site reads this file; never a torn read
+    # The site (gunicorn, possibly a different user than the operator) reads this file: atomic, but kept
+    # world-readable 0644 as the pre-D11 write_text was -- unlike the 0600 operator-internal files.
+    operator_run.atomic_write_json(JSON_PATH, payload, mode=0o644)
     rows = payload.get("rows", [])
     with CSV_PATH.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=["Name", "Status", "StatusNote", "LastRunAt", "AgeHours", "Artifact", "Note"],
