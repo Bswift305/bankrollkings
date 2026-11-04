@@ -289,12 +289,13 @@ def qc_line_movement():
 
 
 def qc_timer_blocker():
-    """The proposed 4h timer stays a proposal: :15 past every fourth UTC hour, and the TIMER-ENABLEMENT
-    BLOCKER (no independent schedule source -> SCHEDULE_UNAVAILABLE, never a fabricated NO_GAMES_SCHEDULED)
-    is written into both unit headers and the contract doc."""
+    """The proposed 4h NBA market orchestrator timer (v5: one timer for lines then props) stays a proposal:
+    :15 past every fourth UTC hour, and the TIMER-ENABLEMENT BLOCKER (no independent schedule source ->
+    SCHEDULE_UNAVAILABLE, never a fabricated NO_GAMES_SCHEDULED) is written into both unit headers and the
+    contract doc."""
     here = Path(__file__).resolve().parent
-    timer = (here / "ops" / "bk-nba-lines.timer").read_text(encoding="utf-8")
-    service = (here / "ops" / "bk-nba-lines.service").read_text(encoding="utf-8")
+    timer = (here / "ops" / "bk-nba-market-refresh.timer").read_text(encoding="utf-8")
+    service = (here / "ops" / "bk-nba-market-refresh.service").read_text(encoding="utf-8")
     doc = (here / "docs" / "game_lines_event_contract.md").read_text(encoding="utf-8")
     cal = [l.strip() for l in timer.splitlines() if l.strip().startswith("OnCalendar=")]
     check(cal == ["OnCalendar=*-*-* 00/4:15:00"], f"timer fires at :15 past every fourth UTC hour ({cal})")
