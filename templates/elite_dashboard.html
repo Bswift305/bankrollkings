@@ -301,12 +301,23 @@
 <div class="card mb-24 panel-glow">
     <div class="card-header panel-header-gloss">
         <div>
-            <div class="card-title">Sharp Money / Line Movement Scanner</div>
-            <div class="cell-meta" style="margin-top:4px;">Open-to-current price moves, model-side alignment, and act/hold labels from today’s loaded books.</div>
+            <div class="card-title">Line Movement Scanner</div>
+            <div class="cell-meta" style="margin-top:4px;">Open-to-current line moves (points) and price moves (American-odds cents) from the loaded props feed, each with its own actual change, the side the move points toward, and the model side on record. Listed when the line moved at least 0.5 points or either price moved at least 10 cents; the two units are never combined. A move describes the market; it does not predict the result. A start-time countdown appears only when the event start time, quote time, source and price are all recorded.</div>
+            {% set mv_base = '/elite?' ~ ('sport=' ~ focus_sport ~ '&' if focus_sport else '') %}
+            <div class="cell-meta" style="margin-top:6px;" data-moves-controls="1">
+                Order:
+                {% if moves_sort == 'start' %}<strong>start time</strong>{% else %}<a href="{{ mv_base }}moves_sort=start{% if moves_state %}&moves_state={{ moves_state }}{% endif %}">start time</a>{% endif %} ·
+                {% if moves_sort == 'line' %}<strong>line change</strong>{% else %}<a href="{{ mv_base }}moves_sort=line{% if moves_state %}&moves_state={{ moves_state }}{% endif %}">line change</a>{% endif %} ·
+                {% if moves_sort == 'price' %}<strong>price change</strong>{% else %}<a href="{{ mv_base }}moves_sort=price{% if moves_state %}&moves_state={{ moves_state }}{% endif %}">price change</a>{% endif %}
+                &nbsp;| Show:
+                {% for st, txt in [('', 'all moves'), ('LINE_MOVED', 'line moved'), ('PRICE_MOVED', 'price moved'), ('LINE_AND_PRICE_MOVED', 'line and price moved')] %}
+                {% if moves_state == st %}<strong>{{ txt }}</strong>{% else %}<a href="{{ mv_base }}moves_sort={{ moves_sort }}{% if st %}&moves_state={{ st }}{% endif %}">{{ txt }}</a>{% endif %}{% if not loop.last %} · {% endif %}
+                {% endfor %}
+            </div>
         </div>
-        <span class="badge badge-accent">{{ sharp_money|length }} moves</span>
+        <span class="badge">{{ sharp_money|length }} moves</span>
     </div>
-    <div class="table-shell">
+    <div class="table-shell" data-live-line-moves="1">
         <table class="data-table compact-board">
             <thead>
                 <tr>
@@ -314,13 +325,15 @@
                     <th>Book</th>
                     <th>Line</th>
                     <th>Move</th>
-                    <th>Sharp Side</th>
-                    <th>Model</th>
-                    <th>Alignment</th>
-                    <th>Action</th>
+                    <th>Line-move side</th>
+                    <th>Model side</th>
+                    <th>Model vs move</th>
+                    <th>Start</th>
                 </tr>
             </thead>
             <tbody>
+                {# D14 (docs/elite_live_labels_d14.md): facts only -- no directive, no "sharp", no score, no
+                   hit-rate tier; line (points) and price (American-odds cents) deltas shown separately. #}
                 {% for row in sharp_money %}
                 <tr>
                     <td>
@@ -333,21 +346,26 @@
                         <div class="cell-meta">Open {{ row.open_line }}</div>
                         <div class="cell-meta">Now {{ row.current_line }}</div>
                     </td>
-                    <td>
-                        <div class="cell-meta">O {% if row.over_move is not none %}{{ row.over_move }} pts{% else %}-{% endif %}</div>
-                        <div class="cell-meta">U {% if row.under_move is not none %}{{ row.under_move }} pts{% else %}-{% endif %}</div>
-                        {% if row.line_move is not none %}<div class="cell-meta">Line {{ row.line_move }}</div>{% endif %}
+                    <td data-move-state="{{ row.move_state }}">
+                        <div class="cell-meta"><strong>{{ row.move_state_text }}</strong></div>
+                        {% if row.line_delta is number %}<div class="cell-meta">Line {{ '%+.1f'|format(row.line_delta) }} pts</div>{% endif %}
+                        {% if row.over_price_delta_cents is number and row.open_over_price is number and row.over_price is number %}<div class="cell-meta">Over {{ '%+d'|format(row.open_over_price|int) }} → {{ '%+d'|format(row.over_price|int) }} ({{ '%+d'|format(row.over_price_delta_cents|int) }}¢)</div>{% endif %}
+                        {% if row.under_price_delta_cents is number and row.open_under_price is number and row.under_price is number %}<div class="cell-meta">Under {{ '%+d'|format(row.open_under_price|int) }} → {{ '%+d'|format(row.under_price|int) }} ({{ '%+d'|format(row.under_price_delta_cents|int) }}¢)</div>{% endif %}
                     </td>
-                    <td><span class="badge">{{ row.sharp_side }}</span></td>
-                    <td>
-                        <span class="badge {% if row.reliability == 'ANCHOR' %}badge-accent{% endif %}">{{ row.model_side }}</span>
-                        <div class="cell-meta" style="margin-top:6px;">{{ row.reliability }}{% if row.true_prob %} · {{ row.true_prob }}%{% endif %}</div>
+                    <td>{% if row.move_side %}<span class="badge">{{ row.move_side }}</span>{% else %}<span class="cell-meta">Mixed</span>{% endif %}</td>
+                    <td><span class="badge">{{ row.model_side }}</span></td>
+                    <td class="cell-meta">{{ row.alignment_text }}</td>
+                    <td data-start-cell="1">
+                        {% if row.start_label %}
+                        <span class="badge" data-start-label="1">{{ row.start_label }}</span>
+                        <div class="cell-meta" style="margin-top:4px;">{{ row.start_display_et }}</div>
+                        {% else %}
+                        <div class="cell-meta" data-start-note="1">{{ row.start_note }}</div>
+                        {% endif %}
                     </td>
-                    <td style="color:{% if row.alignment == 'ALIGNED' %}var(--accent){% elif row.alignment == 'CONFLICT' %}var(--danger){% else %}var(--text-muted){% endif %}; font-weight:800;">{{ row.alignment }}</td>
-                    <td><span class="badge {% if row.urgency == 'WINDOW CLOSING' %}badge-accent{% endif %}">{{ row.urgency }}</span></td>
                 </tr>
                 {% else %}
-                <tr><td colspan="8" class="cell-meta">No meaningful open-to-current moves are loaded yet. Refresh books to activate the scanner.</td></tr>
+                <tr><td colspan="8" class="cell-meta">No line move of 0.5+ points or price move of 10+ cents is loaded right now{% if moves_state %} for this filter{% endif %}.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
