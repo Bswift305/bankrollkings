@@ -17,7 +17,7 @@ def _item(source_id: str, captured: str, line: float):
     return ObservedChangeInput(
         entity_type="player", entity_id=ENTITY,
         field="market_quote:nfl:player_rush_yds:draftkings:a@b",
-        current_value={"line": line, "over_price": -110, "under_price": -110,
+        current_value={"line": line, "over_price": -110, "under_price": -110,  # synthetic-fixture
                        "book": "DraftKings", "game": "A@B", "stat": "Rush Yds"},
         dataset="odds_api_player_props", source="The Odds API",
         source_observation_id=source_id, first_captured_at=captured,

@@ -59,7 +59,7 @@ def check(label: str, got, want) -> None:
 
 def rec(**kw) -> dict:
     base = {"Player": "P", "PlayerId": "", "PlayerIdStatus": "", "StatKey": "rushing_yards",
-            "Line": 40.5, "AsOfWeek": 4, "Direction": "OVER", "Odds": -110}
+            "Line": 40.5, "AsOfWeek": 4, "Direction": "OVER", "Odds": -110}  # synthetic-fixture
     base.update(kw)
     return base
 

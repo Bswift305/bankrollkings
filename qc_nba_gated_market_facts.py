@@ -122,23 +122,23 @@ def test_empty_feed_honest():
 def test_completeness_unavailable_not_zero():
     print("\n[E] a required field missing on ANY displayed row -> that count is None ('Unavailable')")
     # blank GAME -> games / player_stat_markets / teams all None; quote_rows + books still derivable
-    bg = _facts([('P1', '', 'DK', 'PTS', 10.5, -110, -110), ('P2', 'DET@PHI', 'DK', 'AST', 4.5, 110, -130)])
+    bg = _facts([('P1', '', 'DK', 'PTS', 10.5, -110, -110), ('P2', 'DET@PHI', 'DK', 'AST', 4.5, 110, -130)])  # synthetic-fixture
     check(bg['games'] is None and bg['player_stat_markets'] is None and bg['teams'] is None,
           "blank game -> games/player_stat_markets/teams = None")
     check(bg['quote_rows'] == 2 and bg['books'] == 1, "quote_rows + books still correct with a blank game")
     # blank STAT -> player_stat_markets None; games/teams/books fine
-    bs = _facts([('P1', 'DET@PHI', 'DK', '', 10.5, -110, -110), ('P2', 'DET@PHI', 'DK', 'AST', 4.5, 110, -130)])
+    bs = _facts([('P1', 'DET@PHI', 'DK', '', 10.5, -110, -110), ('P2', 'DET@PHI', 'DK', 'AST', 4.5, 110, -130)])  # synthetic-fixture
     check(bs['player_stat_markets'] is None, "blank stat -> player_stat_markets = None")
     check(bs['games'] == 1 and bs['teams'] == 2 and bs['books'] == 1, "blank stat leaves games/teams/books intact")
     # blank BOOK -> books None; others fine
-    bb = _facts([('P1', 'DET@PHI', '', 'PTS', 10.5, -110, -110), ('P2', 'DET@PHI', 'DK', 'AST', 4.5, 110, -130)])
+    bb = _facts([('P1', 'DET@PHI', '', 'PTS', 10.5, -110, -110), ('P2', 'DET@PHI', 'DK', 'AST', 4.5, 110, -130)])  # synthetic-fixture
     check(bb['books'] is None, "blank book -> books = None (not a partial count)")
     check(bb['games'] == 1 and bb['player_stat_markets'] == 2 and bb['teams'] == 2, "blank book leaves the rest intact")
 
 
 def test_missing_side_still_counted():
     print("\n[F] a quote with a missing side is still a displayed row (quote_rows counts it)")
-    ms = _facts([('P1', 'DET@PHI', 'DK', 'PTS', 10.5, -110, None)])
+    ms = _facts([('P1', 'DET@PHI', 'DK', 'PTS', 10.5, -110, None)])  # synthetic-fixture
     check(ms['quote_rows'] == 1, "row with only an over side still counts as a quote row")
     check(ms['player_stat_markets'] == 1 and ms['games'] == 1, "other counts derive normally")
 

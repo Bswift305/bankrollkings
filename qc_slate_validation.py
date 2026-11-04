@@ -44,7 +44,7 @@ def _df(n_events, rows_per_event, bad_line=False, ts="2026-10-24 13:00:00"):
         game = f"team{2*e}@team{2*e+1}"
         for r in range(rows_per_event):
             rows.append({"Player": f"P{e}_{r}", "Stat": "Points", "MarketKey": MARKETS[r % len(MARKETS)],
-                         "Line": ("nan" if bad_line else 20.5), "OverOdds": -110, "UnderOdds": -110,
+                         "Line": ("nan" if bad_line else 20.5), "OverOdds": -110, "UnderOdds": -110,  # synthetic-fixture
                          "Game": game, "Book": BOOKS[r % len(BOOKS)], "LastUpdated": ts})
     return pd.DataFrame(rows)
 

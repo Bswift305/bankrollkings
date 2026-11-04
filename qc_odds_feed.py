@@ -35,6 +35,9 @@ from services.freshness_contract import cadence_state, refresh_cadence_hours
 load_local_env(Path(__file__).resolve().parent)
 
 BASE_DIR = Path(__file__).resolve().parent
+# This QC calls the live Odds API (/v4/sports). It is NOT an offline QC: qc_offline.py refuses it
+# and offline mode (BK_QC_OFFLINE=1) reports NOT RUN instead of calling out (incident 2026-11-01).
+REQUIRES_NETWORK = True
 # Feed FAMILIES (incident 2026-10-24): health is reported per family, never as one blanket "odds healthy".
 GAME_LINE_FEEDS = {s: f"data/odds/{s}_Odds.csv" for s in ("NFL", "NCAAF", "NBA", "WNBA", "MLB")}
 PROPS_FEEDS = {s: f"data/props/{s}_Props.csv" for s in ("NFL", "NCAAF", "NBA", "WNBA", "MLB")}
@@ -65,6 +68,9 @@ def _odds_api_key() -> str:
 
 
 def _key_valid() -> tuple[bool, str]:
+    from services.qc_no_network import offline_mode
+    if offline_mode():
+        return False, "Odds API key NOT CHECKED -- offline mode (BK_QC_OFFLINE=1); no live call made."
     key = _odds_api_key()
     if not key:
         return False, "ODDS_API_KEY / THE_ODDS_API_KEY is not set in the environment."
@@ -138,6 +144,10 @@ def run_qc(check_key: bool = True) -> dict:
 
 
 def main() -> int:
+    from services.qc_no_network import offline_mode
+    if offline_mode():
+        print("NOT RUN: qc_odds_feed requires the live Odds API; offline mode is set (BK_QC_OFFLINE=1).")
+        return 3
     report = run_qc()
     print("=" * 60)
     print("ODDS FEED HEALTH")
