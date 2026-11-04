@@ -108,14 +108,28 @@ def stub_stage_child(argv) -> int:
                       "x-requests-remaining": remaining})
         q.write_ledger("player_props per-event", NBA, base, markets=["player_points"])
         if i < len(lasts) - 1:
-            foreign0 = sum(1 for r in _read_rows(base) if r.get("attribution_id") != token)
-            deadline = time.monotonic() + 30
-            while sum(1 for r in _read_rows(base) if r.get("attribution_id") != token) < foreign0 + 2:
+            # Deterministic interleave (Linux gate defect 3, 2026-11-04): before writing the next batch, wait
+            # until the ledger FILE SEQUENCE shows, after this stage's last row, at least one untokened NBA row
+            # AND one NBA row carrying the other writer's token. The next batch is appended after them, so they
+            # are provably BETWEEN this stage's rows -- by file order, never by timing. Hard deadline = fail.
+            deadline = time.monotonic() + 60
+            while not _foreign_after_own(_read_rows(base), token):
                 if time.monotonic() > deadline:
-                    print("stub child: no foreign rows arrived (handshake timeout)", flush=True)
+                    print("stub child: required foreign rows never arrived (handshake timeout)", flush=True)
                     return 8
                 time.sleep(0.02)
     return 0
+
+
+OTHER_WRITER_TOKEN = "d" * 32
+
+
+def _foreign_after_own(rows, token) -> bool:
+    last_own = max((k for k, r in enumerate(rows) if r.get("attribution_id") == token), default=-1)
+    tail = rows[last_own + 1:]
+    untokened = any(r.get("sport") == NBA and "attribution_id" not in r and "_corrupt" not in r for r in tail)
+    other = any(r.get("sport") == NBA and r.get("attribution_id") == OTHER_WRITER_TOKEN for r in tail)
+    return untokened and other
 
 
 def other_writer_child(argv) -> int:
@@ -246,7 +260,7 @@ def _run_concurrent(tmp, name, lasts, mode, expect_sum, expect_status):
     base = Path(tmp) / name
     _append_raw(base, [_row(NBA, 77, 99999), _row(NBA, 6, 99993, "c" * 32)])   # pre-existing rows
     stop_file = Path(tmp) / f"{name}.stop"
-    other_tok = "d" * 32
+    other_tok = OTHER_WRITER_TOKEN   # the child handshake waits for this writer's rows by file order
     env = dict(os.environ)
     env[ATTRIBUTION_ENV] = other_tok
     other = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--other-writer", str(base),
