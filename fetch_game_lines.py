@@ -456,6 +456,9 @@ def parse_args(argv=None) -> argparse.Namespace:
                              "REUSE_WINDOW_MINUTES instead of paying for another fetch.")
     parser.add_argument("--lock-wait-seconds", type=float, default=0.0,
                         help="NBA only: bounded wait for the shared publisher lock before SKIPPED_LOCKED.")
+    parser.add_argument("--no-fetch-after-lock", action="store_true",
+                        help="NBA only (with --allow-reuse): after WAITING for another publisher, do not fetch "
+                             "if no valid fresh publish exists -- record NO_FRESH_AFTER_LOCK (exit 1) instead.")
     return parser.parse_args(argv)
 
 
@@ -478,7 +481,8 @@ def main(argv=None) -> int:
         return nba_lines_publisher.publish(
             args, run_fetch=run_fetch, base_dir=BASE_DIR, outputs=_output_paths(args, sport),
             caller=str(args.caller or "fetch_game_lines_cli"), allow_reuse=bool(args.allow_reuse),
-            lock_wait_seconds=float(args.lock_wait_seconds or 0.0))
+            lock_wait_seconds=float(args.lock_wait_seconds or 0.0),
+            fetch_after_contention=not bool(args.no_fetch_after_lock))
     return run_fetch(args)
 
 
