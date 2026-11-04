@@ -94,7 +94,7 @@ def _sandbox():
     with tempfile.TemporaryDirectory(prefix="qc_elite_alerts_") as td:
         data = Path(td) / "data"
         (data / "tracking").mkdir(parents=True)
-        pd.DataFrame(ROWS)[app.ELITE_ALERT_COLUMNS].to_csv(data / "tracking" / "Elite_LineMove_Alerts.csv", index=False)
+        pd.DataFrame(ROWS).reindex(columns=app.ELITE_ALERT_COLUMNS).to_csv(data / "tracking" / "Elite_LineMove_Alerts.csv", index=False)
         saved = {n: getattr(app, n) for n in ("DATA_DIR", "load_runtime_snapshot", "write_runtime_snapshot",
                                               "build_elite_cross_sport_candidates", "build_streak_heat_chart_service",
                                               "grade_manual_bet_logs")}
@@ -149,7 +149,9 @@ def qc_route_and_export():
     blank = all(all(by_player[r["Player"]][c] == "" for c in quote_cols)
                 and by_player[r["Player"]]["ProvenanceStatus"].startswith("UNAVAILABLE") for r in WITHHELD)
     check(blank, "(3) export blanks book + line(-move) columns for every row without provenance")
-    check(all(r["Urgency"] == "" for r in rows) and "QCBOOKNAIVE" not in csv_text,
+    # D14: the action (Urgency) column is no longer exported at all (legacy rows hold ACT); blank is also safe.
+    check(all(r.get("Urgency", "") == "" for r in rows) and "QCBOOKNAIVE" not in csv_text
+          and ",ACT," not in csv_text,
           "(3) no action label exported; withheld books absent from the CSV text")
 
 
@@ -185,8 +187,10 @@ def qc_persist_and_scanner():
 
 def qc_snapshot_key():
     src = (HERE / "app.py").read_text(encoding="utf-8")
-    check('snapshot_key = f"elite_dashboard_v4_' in src and 'snapshot_key = f"elite_dashboard_v3_' not in src,
-          "(5) Elite snapshot key bumped to v4 (pre-rule v3 payloads are never served)")
+    # v5 (D14 live labels) supersedes v4; neither pre-rule v3 nor pre-D14 v4 payloads may be served.
+    check('snapshot_key = f"elite_dashboard_v5_' in src and 'snapshot_key = f"elite_dashboard_v3_' not in src
+          and 'snapshot_key = f"elite_dashboard_v4_' not in src,
+          "(5) Elite snapshot key bumped past v4 (pre-rule v3 and pre-D14 v4 payloads are never served)")
     tpl = (HERE / "templates" / "elite_dashboard.html").read_text(encoding="utf-8")
     hist = tpl[tpl.find("Recent Alerts"):tpl.find("Best-Book Shopping Board")]
     check("row.Book" not in hist and "row.CurrentLine" not in hist and "entity_anchor" not in hist

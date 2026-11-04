@@ -131,6 +131,11 @@ SCORECARDS = [
     # Elite alert HISTORY (v5): exact "Historical alert" label, book/line only with an aware-UTC capture time +
     # recorded source, no action/price styling/ticket path; /elite/alerts/export obeys the same rule.
     ("Elite Alert History QC", "qc_elite_alert_history.py", 300),
+    # Elite LIVE line-move labels (D14, docs/elite_live_labels_d14.md): no ACT/HOLD/PASS/WINDOW CLOSING/"sharp"/
+    # score in payloads, /elite, matchup builder or export; "Starts in N minutes" only with verified start + fresh
+    # quote time + recorded source + executable price, each input suppressing it alone; render-time (never
+    # frozen in the snapshot); UTC-after-8pm-ET edge; historical rows never live. Offline synthetic.
+    ("Elite Live Labels QC", "qc_elite_live_labels.py", 300),
     # Run Status DEGRADED (Oct 24 monitoring-truth fix): overall must read DEGRADED -- never GREEN -- when
     # a current-market Odds family is stale (a sport whose game lines are fresh but props are stale), a
     # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages

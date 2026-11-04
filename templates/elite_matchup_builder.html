@@ -123,14 +123,17 @@
             <div class="card-title">Line Movement In This Game</div>
             <span class="badge">{{ sharp_money|length }} moves</span>
         </div>
-        <div class="p-16" style="display:grid; gap:8px;">
+        <div class="p-16" style="display:grid; gap:8px;" data-live-line-moves="1">
+            {# D14 (docs/elite_live_labels_d14.md): facts only -- no directive, no "sharp", no score. #}
             {% for row in sharp_money %}
             <div class="parlay-surface-soft" style="padding:10px;">
                 <div style="display:flex; justify-content:space-between; gap:10px;">
                     {{ entity_anchor('player', row.sport, row.player, css_class='player-link') }}
-                    <span class="badge">{{ row.urgency }}</span>
+                    {% if row.start_label %}<span class="badge" data-start-label="1">{{ row.start_label }}</span>{% endif %}
                 </div>
-                <div class="cell-meta" style="margin-top:5px;">{{ row.sharp_side }} {{ row.stat }} | Model {{ row.model_side }} | {{ row.alignment }} | {{ row.book }}</div>
+                <div class="cell-meta" style="margin-top:5px;">{{ row.move_state_text }}{% if row.line_delta is number %} · line {{ '%+.1f'|format(row.line_delta) }} pts{% endif %}{% if row.over_price_delta_cents is number %} · over {{ '%+d'|format(row.over_price_delta_cents|int) }}¢{% endif %}{% if row.under_price_delta_cents is number %} · under {{ '%+d'|format(row.under_price_delta_cents|int) }}¢{% endif %}</div>
+                <div class="cell-meta" style="margin-top:3px;">Line-move side {{ row.move_side or 'mixed' }} {{ row.stat }} | Model {{ row.model_side }} | {{ row.alignment_text }} | {{ row.book }}</div>
+                {% if row.start_label %}<div class="cell-meta" style="margin-top:3px;">{{ row.start_display_et }}</div>{% else %}<div class="cell-meta" style="margin-top:3px;" data-start-note="1">{{ row.start_note }}</div>{% endif %}
             </div>
             {% else %}
             <div class="cell-meta">No meaningful line moves are loaded for this matchup.</div>
