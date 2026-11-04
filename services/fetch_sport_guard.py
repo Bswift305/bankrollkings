@@ -18,16 +18,14 @@ Pure: stdlib only, no pandas, no app import.
 """
 from __future__ import annotations
 
-from services.run_outcomes import VALIDATION_FAILED
+from services.run_outcomes import (EXIT_UNCONFIGURED_SPORT, UNCONFIGURED_SPORT_REASON,  # noqa: F401
+                                   VALIDATION_FAILED)
 
 # Typed outcome for an unconfigured sport. VALIDATION_FAILED is ALERTING in services.run_outcomes, so a
-# parent step can never read this as a benign skip; the reason code says why.
+# parent step can never read this as a benign skip; the reason code says why. The exit code (2) is
+# deliberately NOT 1: refresh_line_movement_snapshots treats exit 1 from fetch_game_lines as the benign
+# "no new rows, existing CSV preserved". Constants live in services.run_outcomes (shared vocabulary).
 UNCONFIGURED_SPORT_OUTCOME = VALIDATION_FAILED
-UNCONFIGURED_SPORT_REASON = "UNCONFIGURED_SPORT"
-
-# Exit code for an unconfigured sport. Deliberately NOT 1: refresh_line_movement_snapshots treats exit 1
-# from fetch_game_lines as the benign "no new rows, existing CSV preserved". A config error must alert.
-EXIT_UNCONFIGURED_SPORT = 2
 
 # Sports the provider offers that we deliberately do NOT fetch yet (no pipeline, no output paths). Listed
 # so the refusal message is specific; ANY key absent from a fetcher's path table fails closed regardless.
