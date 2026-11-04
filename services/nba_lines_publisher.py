@@ -48,8 +48,9 @@ Reuse window: REUSE_WINDOW_MINUTES = 90 is DUPLICATE-FETCH SUPPRESSION ONLY. It 
 another fetch is pointless; it is NOT a freshness boundary. The executable-price boundary stays the 6h
 rule (LIVE_LINES_MAX_AGE_HOURS, CLOCK A) enforced on customer surfaces from the provider LastUpdated -- a
 reused file ages exactly like a fetched one. 90 min leaves >= 4.5h of customer-executable life after a
-reuse, and covers the 4-hourly job's last tick before 13:00 UTC being reused by bk-daily's NBA step
-(the tick time lives in ops/bk-nba-lines.timer).
+reuse, and covers the proposed orchestrator's last tick before 13:00 UTC being reused by bk-daily's NBA step
+(v5: both callers enter through services/nba_market.ensure_nba_lines; the tick time lives in
+ops/bk-nba-market-refresh.timer).
 Reuse requires ALL of: fetch receipt outcome UPDATED, exit_code 0, published True, contract
 game_lines_event_v1, receipt time parseable, timezone-aware, not in the future, and within the window, and
 every output's current sha256 equal to the receipt's sha256_after (the file on disk is exactly what that
