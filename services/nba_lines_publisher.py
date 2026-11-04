@@ -84,10 +84,29 @@ EXIT_LOCK_UNAVAILABLE = 76
 _ACTIVE_LOCK: ExclusiveLock | None = None
 
 
+def _is_qc_process() -> bool:
+    """True when this process runs a QC: started under qc_offline.py (BK_QC_OFFLINE=1, inherited by children)
+    or whose main script is a qc_*.py."""
+    import sys
+    return os.environ.get("BK_QC_OFFLINE") == "1" or os.path.basename(str(sys.argv[0] if sys.argv else "")).startswith("qc_")
+
+
 def runtime_root() -> Path:
     """The containment root for the lock: $BK_RUNTIME_DIR, else the POSIX prod default, else (Windows dev)
     the gitignored in-repo runtime dir."""
     runtime = (os.environ.get("BK_RUNTIME_DIR") or "").strip()
+    if _is_qc_process() and (not runtime or _qc_temp_root(Path(runtime)) is None):
+        # Linux gate defect 1 (2026-11-04): a QC must never resolve -- let alone lock or write receipts in --
+        # the production runtime (/opt/bankrollkings-runtime) or the dev runtime. Fail closed, loudly.
+        raise LockPathRejected(f"QC process refused: BK_RUNTIME_DIR={runtime or '(unset)'} is not a qc_* temp "
+                               "runtime (call services.qc_runtime.isolate_runtime())")
+    return _resolve_runtime_root(runtime)
+
+
+def _resolve_runtime_root(runtime: str) -> Path:
+    """The pure resolution rule (no guard, no IO): $BK_RUNTIME_DIR, else the POSIX prod default, else (Windows
+    dev) the gitignored in-repo runtime dir. QCs assert the rule through this function only -- they never let
+    runtime_root() hand them a production path."""
     if runtime:
         return Path(runtime)
     if os.name != "nt":

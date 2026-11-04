@@ -26,6 +26,12 @@ Exit 0 = all pass, 1 = any failure.
 """
 from __future__ import annotations
 
+import sys as _qc_sys  # noqa: E402
+from pathlib import Path as _QcPath  # noqa: E402
+_qc_sys.path.insert(0, str(_QcPath(__file__).resolve().parent))  # noqa: E402
+from services.qc_runtime import isolate_runtime as _isolate_runtime  # noqa: E402
+_isolate_runtime()  # per-run temp BK_RUNTIME_DIR: a QC never resolves the production runtime
+
 from services.qc_no_network import install as _block_network
 
 _block_network()  # before importing app: nothing below may reach the network
