@@ -1,0 +1,19 @@
+[Unit]
+Description=Bankroll Kings - fire the NBA game-lines refresh every 4 hours
+
+[Timer]
+# Times are UTC (prod's clock): 00:45, 04:45, 08:45, 12:45, 16:45, 20:45.
+#  * Every 4h keeps a published slate inside the 6h executable-price rule (LIVE_LINES_MAX_AGE_HOURS) with
+#    ~2h headroom; one missed tick lets lines go honestly stale at 6h rather than silently old.
+#  * :45 avoids bk-daily's 13:00 UTC start. The 12:45 tick publishes before bk-daily's NBA step, which
+#    then REUSES it (REUSED_FRESH, zero credits) when it is <= 90 min old, else fetches. Any overlap is
+#    serialized by the shared kernel lock (bk-daily waits up to 120s for it; this job does not wait and
+#    exits 75 SKIPPED_LOCKED with no request and no write).
+#  * 20:45 UTC = 3:45/4:45 pm ET, ahead of the evening tip-offs.
+# Cost: 6 runs/day x 3 credits = 18 credits/day (bk-daily's NBA fetch is usually reused).
+OnCalendar=*-*-* 00/4:45:00
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
