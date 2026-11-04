@@ -1,5 +1,19 @@
 # Integrity + D4 — final cache audit and deployment plan (for owner approval)
 
+> **Owner decision 2026-11-04: deployment of `e1e33dc` is HELD.** The rest of this plan is approved (restart
+> invalidation, `q1k2` floor cache, server-side kickoff checks, scoped rollback, signed-in acceptance matrix, no cache
+> purge). Two residuals must be closed first in a successor commit, then the complete offline gate and all Linux QCs
+> re-run on the exact final SHA:
+> 1. **Atomic user-submitted tickets** — any started / missing-or-unparseable-kickoff / stale / unpriced /
+>    unrecorded-source / malformed leg rejects the *entire* submitted ticket, image or handoff (409 sanitized when it
+>    became non-executable after build; 422 for malformed input), with safe per-leg reason codes and display identity;
+>    no payout, no partial image, nothing persisted. Server-generated cards may still be rebuilt with a visible notice;
+>    a user-submitted ticket is only altered by explicit user action. Adversarial QC for both image routes and every
+>    handoff route.
+> 2. **Version-isolate the Matchup Center disk cache** so new code never reads `data/cache/nfl_matchup_center.pkl`
+>    (no deletion, no broad purge); QC proves a planted pre-fix entry with a false DraftKings attribution is ignored
+>    and the rebuilt entry uses honest source wording.
+
 Candidate: exact **`e1e33dc32777e2a9ec69f04293dbbc546eb00faf`** — LINUX GATE PASS / DEPLOYMENT CANDIDATE
 (`docs/integrity_d4_linux_gate_receipt_20261104.md`). **Not deployed.** Production and `origin/master` = `6bdb73f`.
 
