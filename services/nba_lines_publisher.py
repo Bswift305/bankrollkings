@@ -204,13 +204,18 @@ def reuse_check(base_dir, outputs: dict, now: datetime | None = None,
 
 
 def _write_publish_receipt(base_dir, payload: dict) -> None:
-    # Only the lock holder calls this; atomic temp + replace.
+    # Only the lock holder calls this; atomic temp + replace. The replace retries a Windows sharing violation
+    # (another process -- e.g. the previous holder's parent classifying its stage -- reading the receipt at
+    # that instant); see services/receipt_io.py. Every receipt carries this stage run's token.
+    from services.receipt_io import current_stage_run_id, write_stage_run_copy, write_text_atomic
     path = publish_receipt_path(base_dir)
+    text = json.dumps({**payload, "stage_run_id": current_stage_run_id()}, indent=2, default=str)
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-        tmp.replace(path)
+        write_stage_run_copy(path, "lines", text)   # this run's own copy first (nothing else writes it)
+    except OSError as exc:
+        print(f"[WARN] could not write this run's NBA lines publisher receipt copy: {exc}")
+    try:
+        write_text_atomic(path, text)
     except OSError as exc:
         print(f"[WARN] could not write the NBA lines publisher receipt: {exc}")
 

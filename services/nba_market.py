@@ -130,14 +130,51 @@ def stage_command(stage: str, caller: str, python: str | None = None) -> list[st
 
 
 # ------------------------------------------------------------------------------------------------ classify
+def _foreign_receipt(receipt, stage_run_id) -> bool:
+    """True only when PROVABLY another stage run's receipt: this stage has a token and the receipt carries a
+    DIFFERENT one. (A receipt with no token is legacy/unknown and keeps the legacy mtime rule.)"""
+    return (stage_run_id is not None and isinstance(receipt, dict) and bool(receipt.get("stage_run_id"))
+            and receipt.get("stage_run_id") != stage_run_id)
+
+
+def _own_publisher_receipt(shared_path: Path, stage_run_id, kind: str):
+    """This stage run's OWN copy of its publisher receipt (services/receipt_io per-run file), or None."""
+    if not stage_run_id:
+        return None
+    from services.receipt_io import stage_run_receipt_path
+    own = _read_json(stage_run_receipt_path(shared_path, stage_run_id, kind))
+    return own if isinstance(own, dict) and own.get("stage_run_id") == stage_run_id else None
+
+
+def _publisher_receipt_for_stage(shared_path: Path, mtime_before, stage_run_id, kind: str):
+    """(receipt | None, foreign: bool). Own per-run copy first (immune to the single shared slot being replaced by
+    another publisher before we classify); else the shared receipt if it advanced during the stage -- unless it
+    provably belongs to another stage run."""
+    own = _own_publisher_receipt(shared_path, stage_run_id, kind)
+    if own is not None:
+        return own, False
+    if mtime_before is None or _mtime(shared_path) <= mtime_before:
+        return None, False
+    shared = _read_json(shared_path)
+    if _foreign_receipt(shared, stage_run_id):
+        return None, True
+    return shared, False
+
+
 def classify_lines(base_dir, returncode, timed_out: bool, fetch_mtime_before: float,
-                   publish_mtime_before: float | None = None) -> tuple[str, str]:
+                   publish_mtime_before: float | None = None, stage_run_id: str | None = None) -> tuple[str, str]:
     """(outcome, detail) for the lines stage, from the exit code AND the receipts THIS run wrote.
 
     An exit code alone never proves a benign non-publish, and an old receipt can never excuse a new failure
     (only a receipt whose mtime advanced during the stage is read). 75 = SKIPPED_LOCKED, 76 =
     LOCK_UNAVAILABLE; REUSED_FRESH / REUSED_FRESH_AFTER_LOCK (benign, LINES_READY) and NO_FRESH_AFTER_LOCK
-    (alerting) are read from the publisher receipt written this run."""
+    (alerting) are read from the publisher receipt written this run.
+
+    `stage_run_id` (set by ensure_stage): the publisher's per-run copy of its receipt is authoritative for this
+    stage. The shared single-slot receipt is never adopted when it carries another stage run's token (e.g. the
+    lock waiter we released overwrote it before we classified, or the holder we waited for when our own write
+    failed); and since another publisher demonstrably ran inside our window, the fetch receipt cannot be
+    attributed either: fail closed (VALIDATION_FAILED)."""
     if timed_out:
         return PROVIDER_ERROR, "game-lines stage timed out (child killed; kernel released the lock)"
     if returncode == EXIT_LOCKED:
@@ -145,16 +182,18 @@ def classify_lines(base_dir, returncode, timed_out: bool, fetch_mtime_before: fl
     if returncode == EXIT_LOCK_UNAVAILABLE:
         return LOCK_UNAVAILABLE, "the shared NBA lines lock could not be opened; no paid request, nothing written"
     pub_path = lines_publish_receipt_path(base_dir)
-    if publish_mtime_before is not None and _mtime(pub_path) > publish_mtime_before:
-        pub = _read_json(pub_path)
-        if pub:
-            got = str(pub.get("outcome") or "")
-            if returncode == 0 and got in LINES_READY:
-                return got, str(pub.get("detail") or ("published" if got == UPDATED else "reused"))
-            if returncode == 0:
-                return VALIDATION_FAILED, f"exit 0 but this run's publisher receipt says outcome={got}"
-            if got in _LINES_FAILURE_OUTCOMES:
-                return got, str(pub.get("detail") or f"exit {returncode}, publisher receipt outcome={got}")
+    pub, foreign = _publisher_receipt_for_stage(pub_path, publish_mtime_before, stage_run_id, "lines")
+    if foreign:
+        return VALIDATION_FAILED, (f"exit {returncode}: this run's publisher receipt is missing; the newest "
+                                   "receipt belongs to another publisher run and is not adopted")
+    if pub:
+        got = str(pub.get("outcome") or "")
+        if returncode == 0 and got in LINES_READY:
+            return got, str(pub.get("detail") or ("published" if got == UPDATED else "reused"))
+        if returncode == 0:
+            return VALIDATION_FAILED, f"exit 0 but this run's publisher receipt says outcome={got}"
+        if got in _LINES_FAILURE_OUTCOMES:
+            return got, str(pub.get("detail") or f"exit {returncode}, publisher receipt outcome={got}")
     receipt = None
     path = lines_fetch_receipt_path(base_dir)
     if _mtime(path) > fetch_mtime_before:
@@ -173,7 +212,8 @@ def classify_lines(base_dir, returncode, timed_out: bool, fetch_mtime_before: fl
     return VALIDATION_FAILED, f"exit {returncode}, receipt outcome={got or 'missing'}"
 
 
-def classify_props_publisher(base_dir, returncode, timed_out: bool, publish_mtime_before: float):
+def classify_props_publisher(base_dir, returncode, timed_out: bool, publish_mtime_before: float,
+                             stage_run_id: str | None = None):
     """Publisher-level props outcomes the response-shape receipt cannot express (the fetch never ran):
     75 SKIPPED_LOCKED, 76 LOCK_UNAVAILABLE, and -- from a props publisher receipt written THIS run --
     REUSED_FRESH / REUSED_FRESH_AFTER_LOCK (benign) or NO_FRESH_AFTER_LOCK / SKIPPED_BLOCKED_BY_LINES
@@ -185,8 +225,11 @@ def classify_props_publisher(base_dir, returncode, timed_out: bool, publish_mtim
     if returncode == EXIT_LOCK_UNAVAILABLE:
         return LOCK_UNAVAILABLE, "the NBA props lock could not be opened/validated; no paid request, nothing written"
     path = props_publish_receipt_path(base_dir)
-    if _mtime(path) > publish_mtime_before:
-        pub = _read_json(path) or {}
+    pub, foreign = _publisher_receipt_for_stage(path, publish_mtime_before, stage_run_id, "props")
+    if foreign:   # see classify_lines: never adopt another run's receipt
+        return VALIDATION_FAILED, (f"exit {returncode}: this run's props publisher receipt is missing; the "
+                                   "newest receipt belongs to another publisher run and is not adopted")
+    if pub is not None:
         got = str(pub.get("outcome") or "")
         if got in (REUSED_FRESH, REUSED_FRESH_AFTER_LOCK):
             if returncode == 0:
@@ -249,8 +292,19 @@ def _ledger_credits(base_dir, attribution_id: str) -> dict:
 
 
 # ------------------------------------------------------------------------------------------------ ensure
-def _receipt_ref(path: Path, mtime_before: float, base_dir) -> dict | None:
-    """Path + sha256 of a receipt only if THIS stage wrote it (mtime advanced); None otherwise."""
+def _receipt_ref(path: Path, mtime_before: float, base_dir, stage_run_id: str | None = None,
+                 kind: str | None = None) -> dict | None:
+    """Path + sha256 of a receipt only if THIS stage wrote it; None otherwise. With a stage-run token + kind, the
+    publisher's per-run copy is referenced (it is never overwritten by another run); otherwise the shared file
+    if its mtime advanced and it is not provably another run's."""
+    if stage_run_id and kind:
+        from services.receipt_io import stage_run_receipt_path
+        own = stage_run_receipt_path(path, stage_run_id, kind)
+        if _own_publisher_receipt(path, stage_run_id, kind) is not None:
+            path = own
+            mtime_before = -1.0
+        elif _foreign_receipt(_read_json(path), stage_run_id):
+            return None
     if _mtime(path) <= mtime_before:
         return None
     try:
@@ -275,9 +329,11 @@ def ensure_stage(stage: str, caller: str, *, base_dir, command=None, timeout=Non
     fetch_before, pub_before = _mtime(fetch_path), _mtime(pub_path)
     artifact_before = _mtime(artifact) if stage == "props" else 0.0
     from services.odds_quota import ATTRIBUTION_ENV
+    from services.receipt_io import STAGE_RUN_ENV
     attribution_id = _new_attribution_id()
     child_env = dict(os.environ)
     child_env[ATTRIBUTION_ENV] = attribution_id   # child only; the parent's environment is never modified
+    child_env[STAGE_RUN_ENV] = attribution_id     # stamped on the publisher receipts this child writes
     started, t0 = _utc_now(), time.monotonic()
     try:
         result = subprocess.run(command, timeout=timeout, env=child_env)
@@ -285,11 +341,17 @@ def ensure_stage(stage: str, caller: str, *, base_dir, command=None, timeout=Non
     except subprocess.TimeoutExpired:
         rc, timed_out = None, True
     seconds = round(time.monotonic() - t0, 3)
+    try:   # housekeeping: per-run receipt copies older than STAGE_RUN_KEEP_DAYS
+        from services.receipt_io import prune_stage_run_receipts
+        prune_stage_run_receipts(pub_path)
+    except Exception:
+        pass
     if stage == "lines":
-        outcome, detail = classify_lines(base_dir, rc, timed_out, fetch_before, pub_before)
+        outcome, detail = classify_lines(base_dir, rc, timed_out, fetch_before, pub_before,
+                                         stage_run_id=attribution_id)
         ok = outcome in LINES_READY
     else:
-        special = classify_props_publisher(base_dir, rc, timed_out, pub_before)
+        special = classify_props_publisher(base_dir, rc, timed_out, pub_before, stage_run_id=attribution_id)
         if special:
             outcome, detail = special
         else:
@@ -298,13 +360,15 @@ def ensure_stage(stage: str, caller: str, *, base_dir, command=None, timeout=Non
         ok = not is_alerting(outcome)
     exit_code = 124 if timed_out else int(rc)
     return {
-        "stage": stage, "ran": True, "caller": caller, "outcome": outcome, "detail": detail,
+        "stage": stage, "ran": True, "caller": caller, "stage_run_id": attribution_id,
+        "outcome": outcome, "detail": detail,
         "ok": bool(ok), "alerting": is_alerting(outcome), "exit_code": exit_code, "timed_out": timed_out,
         "started_at_utc": started.isoformat(timespec="seconds"),
         "ended_at_utc": _utc_now().isoformat(timespec="seconds"), "seconds": seconds,
         "timeout_seconds": timeout, "lock_wait_seconds": budget.LOCK_WAIT_SECONDS,
         "credits": _ledger_credits(base_dir, attribution_id),
-        "publisher_receipt": _receipt_ref(pub_path, pub_before, base_dir),
+        "publisher_receipt": _receipt_ref(pub_path, pub_before, base_dir, stage_run_id=attribution_id,
+                                          kind=stage),
         "fetch_receipt": _receipt_ref(fetch_path, fetch_before, base_dir),
     }
 
