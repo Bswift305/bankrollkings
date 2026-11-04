@@ -130,11 +130,21 @@ def _write_lines_receipt(sport: str, payload: dict) -> None:
     """Atomically write the per-sport game-lines fetch receipt (every exit path). Sanitized: counts,
     event ids, book names, hashes and reason codes only -- never prices or the API key."""
     path = lines_receipt_path(sport)
+    # Receipt-identity contract (2026-11-04): the caller's run token (services/run_receipts.STAGE_RUN_ENV) is
+    # stamped on the receipt, so a runner (refresh_line_movement_snapshots, the NBA publisher's caller) can
+    # identify the receipt written by ITS invocation -- never by file mtime. No/unsafe token -> null.
     try:
+        from services.run_receipts import UnsafeRunToken, env_token
+        token = env_token()
+    except UnsafeRunToken:
+        token = None
+    payload = {**payload, "stage_run_id": token}
+    try:
+        from services.receipt_io import replace_with_retry
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-        tmp.replace(path)
+        replace_with_retry(tmp, path)
         print(f"Game-lines receipt: {path.name} (outcome={payload.get('outcome')}, "
               f"published={payload.get('published')})")
     except OSError as exc:

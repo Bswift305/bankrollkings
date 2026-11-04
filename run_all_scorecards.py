@@ -133,6 +133,12 @@ SCORECARDS = [
     # tokenless / mtime-selected file. Behaviour (concurrency, killed writer, unsafe token, containment, retention)
     # + static caller inventory. Offline, temp dirs.
     ("NBA Run-Receipt Contract QC", "qc_nba_run_receipt_contract.py", 300),
+    # Linux gate defect 1: every QC that can reach an NBA publisher/lock/receipt isolates its runtime first
+    # (static), and runtime_root() refuses a non-qc-temp runtime inside any QC process (real child processes).
+    ("QC Runtime Isolation QC", "qc_runtime_isolation.py", 180),
+    # Linux gate defect 2: the line-movement runner identifies its child's receipt by run token, never mtime;
+    # identical-mtime receipts classify correctly; the old mtime classifier is shown to misclassify (mutation).
+    ("Line-Movement Receipt Identity QC", "qc_line_movement_receipt_identity.py", 180),
     # Elite alert HISTORY (v5): exact "Historical alert" label, book/line only with an aware-UTC capture time +
     # recorded source, no action/price styling/ticket path; /elite/alerts/export obeys the same rule.
     ("Elite Alert History QC", "qc_elite_alert_history.py", 300),

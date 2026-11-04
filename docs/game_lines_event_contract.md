@@ -260,6 +260,23 @@ Caller inventory (enforced by the static half of `qc_nba_run_receipt_contract.py
 | manual CLI `py fetch_game_lines.py --sport basketball_nba ...` / `fetch_player_props.py` | STANDALONE | exit code; own token printed |
 | `run_daily.py` (NFL preseason lines), `marketing/generators/weekly_cards.py` (NFL lines) | NOT_NBA | not a governed NBA publisher |
 
+**Line-movement runner (Linux gate defect 2, 2026-11-04).** `refresh_line_movement_snapshots.py` (prod
+`bk-linemove`) judged its child's `_last_game_lines_fetch_<sport>.json` "fresh" by `mtime > mtime_before`; on a
+coarse-timestamp filesystem successive writes share an mtime, so benign receipts read as stale (and an exit-0
+VALIDATION_FAILED read as OK). It now passes a per-invocation run token in `BK_NBA_STAGE_RUN_ID`;
+`fetch_game_lines._write_lines_receipt` stamps it as `stage_run_id`; the runner accepts only a matching token
+(missing -> `RUN_RECEIPT_MISSING`, other/no token -> `RUN_RECEIPT_MISMATCH`, both failures). No mtime is read.
+Exit semantics are unchanged (0 = all OK or benign skips, 1 = any failure); Safeguard A
+(`fix/fetch-output-path-guard`) also edits this runner's exit semantics -- the receipt-identity change is
+orthogonal (classification only) and must be merged keeping both. QC `qc_line_movement_receipt_identity.py`.
+
+**QC runtime isolation (Linux gate defect 1, 2026-11-04).** A QC must never resolve the production runtime.
+Every QC that can reach an NBA publisher / lock / run receipt calls `services.qc_runtime.isolate_runtime()` at
+module top (per-run 0700 `qc_runtime_*` dir, inherited by children, restored at exit), and
+`nba_lines_publisher.runtime_root()` REFUSES (LockPathRejected) any runtime that is not a `qc_*` temp dir inside a
+QC process (`BK_QC_OFFLINE=1` or a `qc_*.py` main script). QC `qc_runtime_isolation.py` (static reach-set audit +
+guard exercised in child processes + mutation).
+
 Out of scope (not NBA publisher stages): the MLB / football props parents still classify their non-publisher
 props children with `run_outcomes.props_step_outcome` (shape receipt + artifact advance).
 
