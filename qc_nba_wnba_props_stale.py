@@ -12,7 +12,7 @@ Eastern wall clock).
 Surfaces (route -> builder): /sports/nba/props + /sports/wnba/props (market-only board) · /tools/nba-player
 + /tools/wnba-player (build_market_player_page) · /tools/best-lines · /tools/risk-radar · /tools/slate-pulse ·
 /derivatives (_load_derivative_prop_rows) · / + /dashboard + /free (build_cross_sport_dashboard_snapshots,
-build_free_sport_prop_rows) · /elite (sharp-money scanner + best-book board) · /sports/wnba + /parlay?sport=wnba
+build_free_sport_prop_rows) · /elite (line-movement scanner + best-book board) · /sports/wnba + /parlay?sport=wnba
 + WNBA method/matchup pages (build_wnba_prop_board 12h cache) · /sports/nba (gate on) + /parlay + market-edge +
 command center (build_live_prop_runtime_context 12h disk cache) · NBA/WNBA/Elite runtime snapshots (72h) ·
 Green Light / King's Tickets / Daily Card (+png) / Menu (no NBA/WNBA props input -- static proof).
@@ -193,12 +193,12 @@ def qc_elite():
     saved = app.load_mlb_props
     app.load_mlb_props = lambda: pd.DataFrame()
     try:
-        res = _both(lambda s: (app.build_elite_sharp_money_scanner([]), app.build_elite_best_book_board(cand)))
+        res = _both(lambda s: (app.build_elite_line_move_scanner([]), app.build_elite_best_book_board(cand)))
     finally:
         app.load_mlb_props = saved
     (scan_s, book_s), (scan_f, book_f) = res["stale"], res["fresh"]
     check(not [x for x in scan_s if x["sport"] in ("NBA", "WNBA")] and [x for x in scan_f if x["sport"] == "NBA"],
-          "/elite sharp-money scanner: no NBA/WNBA move rows from a stale feed (fresh control has them)")
+          "/elite line-movement scanner: no NBA/WNBA move rows from a stale feed (fresh control has them)")
     check(not book_s and book_f, "/elite best-book board: no NBA price comparison from a stale feed (fresh control has one)")
 
 

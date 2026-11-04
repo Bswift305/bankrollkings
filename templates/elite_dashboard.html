@@ -315,7 +315,7 @@
                 {% endfor %}
             </div>
         </div>
-        <span class="badge">{{ sharp_money|length }} moves</span>
+        <span class="badge">{{ line_moves|length }} moves</span>
     </div>
     <div class="table-shell" data-live-line-moves="1">
         <table class="data-table compact-board">
@@ -334,7 +334,7 @@
             <tbody>
                 {# D14 (docs/elite_live_labels_d14.md): facts only -- no directive, no "sharp", no score, no
                    hit-rate tier; line (points) and price (American-odds cents) deltas shown separately. #}
-                {% for row in sharp_money %}
+                {% for row in line_moves %}
                 <tr>
                     <td>
                         {{ entity_anchor('player', row.sport, row.player, css_class='player-link') }}
@@ -344,7 +344,9 @@
                     <td>{{ row.book or '-' }}</td>
                     <td>
                         <div class="cell-meta">Open {{ row.open_line }}</div>
-                        <div class="cell-meta">Now {{ row.current_line }}</div>
+                        <div class="cell-meta">{% if row.historical %}Last captured{% else %}Now{% endif %} {{ row.current_line }}</div>
+                        <div class="cell-meta" data-quote-time="1">{% if row.quote_time_display %}as of {{ row.quote_time_display }}{% else %}update time not recorded{% endif %}</div>
+                        <div class="cell-meta" data-open-time="1">{{ row.open_time_note }}</div>
                     </td>
                     <td data-move-state="{{ row.move_state }}">
                         <div class="cell-meta"><strong>{{ row.move_state_text }}</strong></div>
@@ -360,7 +362,7 @@
                         <span class="badge" data-start-label="1">{{ row.start_label }}</span>
                         <div class="cell-meta" style="margin-top:4px;">{{ row.start_display_et }}</div>
                         {% else %}
-                        <div class="cell-meta" data-start-note="1">{{ row.start_note }}</div>
+                        <div class="cell-meta" data-start-note="1"{% if row.historical %} data-historical="1"{% endif %}>{{ row.start_note }}</div>
                         {% endif %}
                     </td>
                 </tr>

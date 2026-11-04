@@ -15477,7 +15477,7 @@ def _odds_move_points(open_price, current_price):
     return round(current_prob - open_prob, 1)
 
 
-def build_elite_sharp_money_scanner(candidates):
+def build_elite_line_move_scanner(candidates):
     candidate_lookup = {}
     for item in candidates or []:
         key = (str(item.get('sport', '')).upper(), str(item.get('player', '')).strip().upper(), str(item.get('stat', '')).strip().upper())
@@ -15576,10 +15576,6 @@ def _elite_live_number(value):
     return number if np.isfinite(number) else None
 
 
-# Legacy internal name (QC callers); the scanner is a line-movement scanner, never "sharp money".
-build_elite_line_move_scanner = build_elite_sharp_money_scanner
-
-
 def annotate_elite_line_moves(rows, now=None, sort=None, state=None):
     """Render-time factual start labels for live scanner rows (see services/elite_live_labels.py). `sort`
     ('line' / 'price') and `state` (a listed move state) are explicit user choices; default order is neutral."""
@@ -15604,15 +15600,20 @@ def annotate_elite_line_moves(rows, now=None, sort=None, state=None):
 
 ELITE_ALERT_COLUMNS = [
     'AlertId', 'FirstSeen', 'LastSeen', 'Sport', 'Player', 'Stat', 'Book', 'Game',
-    'OpenLine', 'CurrentLine', 'SharpSide', 'ModelSide', 'Alignment', 'Urgency',
-    'OverMove', 'UnderMove', 'LineMove', 'Reliability', 'TrueProb', 'Score',
+    'OpenLine', 'CurrentLine', 'LineMoveSide', 'ModelSide', 'Alignment', 'LineMove',
     'OutcomeState', 'ActualValue', 'GameDate', 'ResolvedAt',
     # v5 provenance (2026-11): tz-aware UTC instant this row's book/line was captured, and where it came from.
     'CapturedAtUTC', 'SourceProvenance',
-    # D14 (2026-11): factual move state + each price delta in its own unit (American-odds cents). OverMove /
-    # UnderMove (implied-probability points) are legacy and no longer written; LineMove stays (points).
+    # D14 (2026-11): factual move state + each price delta in its own unit (American-odds cents); LineMove is
+    # the line delta in points.
     'MoveState', 'OverPriceDeltaCents', 'UnderPriceDeltaCents',
 ]
+# D14 final (2026-11-04): retired archive columns. Legacy rows are READ as history: the old side column is
+# migrated to LineMoveSide; directive / composite-score / hit-rate-tier / model-probability / implied-point
+# columns are dropped on read and never written, shown or exported again.
+ELITE_ALERT_LEGACY_SIDE_COLUMN = 'SharpSide'   # legacy-column-migration: read-only name in pre-D14 archives
+ELITE_ALERT_RETIRED_COLUMNS = ('Urgency', 'Score', 'Reliability', 'TrueProb', 'OverMove', 'UnderMove',
+                               ELITE_ALERT_LEGACY_SIDE_COLUMN)
 
 # Alert HISTORY rule (v5 owner decision 6). A persisted alert is a record of what a book showed at capture
 # time -- never a current executable quote. It may show player + recorded line + recorded book ONLY when it
@@ -15622,11 +15623,8 @@ ELITE_ALERT_COLUMNS = [
 ELITE_ALERT_HISTORY_LABEL = 'Historical alert — not a current executable quote'
 ELITE_ALERT_PROVENANCE_UNAVAILABLE = 'Book and line withheld — provenance unavailable (no trustworthy capture time and source recorded)'
 ELITE_ALERT_SOURCE_PREFIX = 'props_feed:'
-ELITE_ALERT_QUOTE_COLUMNS = ('Book', 'OpenLine', 'CurrentLine', 'LineMove', 'OverMove', 'UnderMove',
-                             'OverPriceDeltaCents', 'UnderPriceDeltaCents')
-ELITE_ALERT_ACTION_COLUMNS = ('Urgency',)
-# Never exported (D14): composite score, the candidate-model hit-rate tier and model probability imply authority.
-ELITE_ALERT_AUTHORITY_COLUMNS = ('Score', 'Reliability', 'TrueProb')
+ELITE_ALERT_QUOTE_COLUMNS = ('Book', 'OpenLine', 'CurrentLine', 'LineMove', 'OverPriceDeltaCents',
+                             'UnderPriceDeltaCents')
 ELITE_ALERT_PROPS_SOURCE_FILES = {'NBA': 'NBA_Props.csv', 'WNBA': 'WNBA_Props.csv', 'MLB': 'MLB_Props.csv'}
 
 
@@ -15676,7 +15674,7 @@ def elite_alert_history_row(row) -> dict:
         'player': _elite_alert_text(row.get('Player')),
         'sport': _elite_alert_text(row.get('Sport')),
         'stat': _elite_alert_text(row.get('Stat')),
-        'side': _elite_alert_text(row.get('SharpSide')),
+        'side': _elite_alert_text(row.get('LineMoveSide')),
         'outcome_state': _elite_alert_text(row.get('OutcomeState')) or 'Pending',
         'provenance_ok': ok,
         'book': None, 'line': None, 'captured_at_utc': None, 'captured_display': None, 'source': None,
@@ -15693,22 +15691,31 @@ def elite_alert_history_row(row) -> dict:
     return out
 
 
-def elite_alert_export_frame(df):
-    """The CSV export under the history rule: every row labelled; rows without provenance have book and
-    line(-move) columns blanked; action labels never exported."""
+def migrate_elite_alert_frame(df):
+    """Any alert frame (incl. a pre-D14 archive) -> the current schema: the legacy side column becomes
+    LineMoveSide, every retired column is dropped, missing columns are blank. Old rows stay history."""
     out = df.copy() if df is not None else pd.DataFrame(columns=ELITE_ALERT_COLUMNS)
+    legacy = ELITE_ALERT_LEGACY_SIDE_COLUMN
+    if legacy in out.columns:
+        if 'LineMoveSide' not in out.columns:
+            out['LineMoveSide'] = out[legacy]
+        else:
+            blank = out['LineMoveSide'].fillna('').astype(str).str.strip().isin(['', 'nan'])
+            out.loc[blank, 'LineMoveSide'] = out.loc[blank, legacy]
+    out = out.drop(columns=[c for c in ELITE_ALERT_RETIRED_COLUMNS if c in out.columns])
     for column in ELITE_ALERT_COLUMNS:
         if column not in out.columns:
             out[column] = ''
-    out = out[ELITE_ALERT_COLUMNS].astype(object)
+    return out[ELITE_ALERT_COLUMNS]
+
+
+def elite_alert_export_frame(df):
+    """The CSV export under the history rule: every row labelled; rows without provenance have book and
+    line(-move) columns blanked; retired columns (directives, scores, tiers) never exported."""
+    out = migrate_elite_alert_frame(df).astype(object)
     ok = [elite_alert_has_provenance(r) for r in out.to_dict('records')]
     for column in ELITE_ALERT_QUOTE_COLUMNS:
         out[column] = [v if keep else '' for v, keep in zip(out[column].tolist(), ok)]
-    # D14: directive (Urgency) and authority columns (Score, Reliability, TrueProb) are never exported (legacy
-    # rows may still hold ACT/HOLD/WINDOW CLOSING/PASS, a score, ANCHOR/WATCH/AVOID); the storage column
-    # SharpSide is exported as LineMoveSide.
-    out = out.drop(columns=[c for c in ELITE_ALERT_ACTION_COLUMNS + ELITE_ALERT_AUTHORITY_COLUMNS if c in out.columns])
-    out = out.rename(columns={'SharpSide': 'LineMoveSide'})
     out.insert(0, 'ProvenanceStatus', ['RECORDED' if keep else 'UNAVAILABLE (book and line withheld)' for keep in ok])
     out.insert(0, 'HistoryLabel', ELITE_ALERT_HISTORY_LABEL)
     return out
@@ -15721,7 +15728,7 @@ def _elite_alert_id(row):
         row.get('stat'),
         row.get('book'),
         row.get('game'),
-        row.get('move_side', row.get('sharp_side')),   # same value as before -> alert ids stay stable
+        row.get('move_side'),
         row.get('current_line'),
     ]
     raw = '|'.join(str(part or '').strip().upper() for part in parts)
@@ -15733,10 +15740,9 @@ def load_elite_line_move_alerts():
     if not path.exists():
         return pd.DataFrame(columns=ELITE_ALERT_COLUMNS)
     df = _load_cached_csv(path, default=pd.DataFrame(columns=ELITE_ALERT_COLUMNS))
-    for column in ELITE_ALERT_COLUMNS:
-        if column not in df.columns:
-            df[column] = ''
-    return df[ELITE_ALERT_COLUMNS].copy()
+    # D14 final: old archives are read as history in the CURRENT schema (side migrated, retired columns dropped);
+    # the next persist rewrites the file without them.
+    return migrate_elite_alert_frame(df).copy()
 
 
 def persist_elite_line_move_alerts(scans):
@@ -15766,18 +15772,10 @@ def persist_elite_line_move_alerts(scans):
             'Game': scan.get('game', ''),
             'OpenLine': scan.get('open_line', ''),
             'CurrentLine': scan.get('current_line', ''),
-            # Storage column keeps its legacy name; it holds the line-move side (exported as LineMoveSide).
-            'SharpSide': scan.get('move_side', ''),
+            'LineMoveSide': scan.get('move_side', ''),
             'ModelSide': scan.get('model_side', ''),
             'Alignment': scan.get('alignment', ''),
-            # D14: no directive and no composite score are recorded any more (legacy rows are never exported).
-            'Urgency': '',
-            'OverMove': '',
-            'UnderMove': '',
-            'LineMove': scan.get('line_move', ''),
-            'Reliability': '',
-            'TrueProb': '',
-            'Score': '',
+            'LineMove': scan.get('line_move', ''),   # points
             'OutcomeState': row.get('OutcomeState') or 'Pending',
             'ActualValue': row.get('ActualValue') or '',
             'GameDate': row.get('GameDate') or '',
@@ -15834,7 +15832,7 @@ def grade_elite_line_move_alerts(alerts=None):
             'player': row.get('Player', ''),
             'stat': row.get('Stat', ''),
             'line': row.get('CurrentLine', ''),
-            'direction': row.get('SharpSide', ''),
+            'direction': row.get('LineMoveSide', ''),
             'matchup': row.get('Game', ''),
         }
         outcome = resolve_saved_leg_outcome(
@@ -15926,7 +15924,7 @@ def build_elite_alert_history_summary(alerts=None):
             'total': 0, 'pending': 0, 'hits': 0, 'misses': 0, 'pushes': 0,
             'hit_rate': None, 'aligned_hit_rate': None, 'recent': [], 'by_bucket': [],
         }
-    for col in ['Sport', 'Stat', 'SharpSide', 'Alignment', 'OutcomeState', 'LastSeen', 'Score']:
+    for col in ['Sport', 'Stat', 'LineMoveSide', 'Alignment', 'OutcomeState', 'LastSeen']:
         if col in df.columns:
             df[col] = df[col].fillna('').astype(str).str.strip()
     resolved = df[df['OutcomeState'].isin(['Hit', 'Miss', 'Push'])].copy()
@@ -15937,7 +15935,7 @@ def build_elite_alert_history_summary(alerts=None):
     aligned = decisive[decisive['Alignment'].eq('ALIGNED')].copy()
     buckets = []
     if not decisive.empty:
-        grouped = decisive.groupby(['Sport', 'Stat', 'SharpSide', 'Alignment'], dropna=False)
+        grouped = decisive.groupby(['Sport', 'Stat', 'LineMoveSide', 'Alignment'], dropna=False)
         for keys, sub in grouped:
             sub_hits = int((sub['OutcomeState'] == 'Hit').sum())
             sub_misses = int((sub['OutcomeState'] == 'Miss').sum())
@@ -15970,7 +15968,7 @@ def build_elite_alert_history_summary(alerts=None):
 
 def build_elite_matchup_builder_context(sport_filter='', matchup_filter=''):
     candidates = build_elite_cross_sport_candidates(limit=120)
-    sharp_money = build_elite_sharp_money_scanner(candidates)
+    line_moves = build_elite_line_move_scanner(candidates)
     best_books = build_elite_best_book_board(candidates)
 
     options_map = {}
@@ -16011,14 +16009,14 @@ def build_elite_matchup_builder_context(sport_filter='', matchup_filter=''):
         return bool(matchup_filter and row_matchup == matchup_filter)
 
     matchup_candidates = [row for row in candidates if _match(row)]
-    matchup_sharp_money = [row for row in sharp_money if _match(row)]
+    matchup_line_moves = [row for row in line_moves if _match(row)]
     matchup_best_books = [row for row in best_books if _match(row)]
     matchup_candidates.sort(key=lambda row: (row.get('reliability') == 'ANCHOR', float(row.get('score') or 0)), reverse=True)
 
     anchor_count = sum(1 for row in matchup_candidates if row.get('reliability') == 'ANCHOR')
     watch_count = sum(1 for row in matchup_candidates if row.get('reliability') == 'WATCH')
-    aligned_moves = sum(1 for row in matchup_sharp_money if row.get('alignment') == 'ALIGNED')
-    conflict_moves = sum(1 for row in matchup_sharp_money if row.get('alignment') == 'CONFLICT')
+    aligned_moves = sum(1 for row in matchup_line_moves if row.get('alignment') == 'ALIGNED')
+    conflict_moves = sum(1 for row in matchup_line_moves if row.get('alignment') == 'CONFLICT')
     avg_edge = None
     edge_values = [float(row.get('edge_pct')) for row in matchup_candidates if row.get('edge_pct') is not None]
     if edge_values:
@@ -16043,7 +16041,7 @@ def build_elite_matchup_builder_context(sport_filter='', matchup_filter=''):
         'matchup_filter': matchup_filter,
         'matchup_options': matchup_options[:80],
         'candidates': matchup_candidates[:30],
-        'sharp_money': matchup_sharp_money[:16],
+        'line_moves': matchup_line_moves[:16],
         'best_books': matchup_best_books[:12],
         'summary': {
             'candidate_count': len(matchup_candidates),
@@ -16999,7 +16997,7 @@ def build_elite_dashboard_context(current_user, focus_sport=''):
     )
     review = summarize_bet_review(user_tickets)
     clv_report = build_personal_clv_report(user_tickets)
-    # Cross-sport cockpit: candidate pool, parlay EV, sharp money, timing, best
+    # Cross-sport cockpit: candidate pool, parlay EV, line movement, timing, best
     # books and alert history are all cross-sport (ranked by model edge/EV across
     # sports). Team is backfilled from gamelogs so prop tables can show team+logo.
     candidates = attach_streak_heat_teams(build_elite_cross_sport_candidates(limit=200))
@@ -17013,8 +17011,8 @@ def build_elite_dashboard_context(current_user, focus_sport=''):
     parlay_ev = build_elite_parlay_ev(candidates, target_legs=4)
     actions = build_elite_action_queue(review, parlay_ev, candidates)
     timing_watch = build_elite_market_timing_watch(candidates)
-    sharp_money = build_elite_sharp_money_scanner(candidates)
-    alert_history_df = persist_elite_line_move_alerts(sharp_money)
+    line_moves = build_elite_line_move_scanner(candidates)
+    alert_history_df = persist_elite_line_move_alerts(line_moves)
     alert_history_df = grade_elite_line_move_alerts(alert_history_df)
     alert_history = build_elite_alert_history_summary(alert_history_df)
     # Auto-settle the user's manually-logged bets against gamelogs (cheap here:
@@ -17054,7 +17052,7 @@ def build_elite_dashboard_context(current_user, focus_sport=''):
         'parlay_ev': parlay_ev,
         'actions': actions,
         'timing_watch': timing_watch,
-        'sharp_money': sharp_money,
+        'line_moves': line_moves,
         'alert_history': alert_history,
         'best_books': best_books,
         'mlb_power_suppression': mlb_power_suppression,
@@ -23362,7 +23360,7 @@ GLOBAL_FEATURE_PREVIEWS = {
         'primary_cta': 'Open elite',
         'proof_label': 'Elite signals',
         'steps': [
-            ('Start with the alerts', 'Line-movement alerts show how each price or line changed from open to now, with a countdown to the verified start time.'),
+            ('Read the line movement', 'Line-movement rows show the actual line change (points) and price change (American-odds cents) from open to now, with their update times, and a countdown only for a verified start in the current Eastern slate.'),
             ('Check the model side', 'Each move states whether the model side matches the line-move side. That is a comparison, not an instruction to bet.'),
             ('Close the loop', 'Saved tickets, bankroll counter movement, leak finding, personal performance review, and weekly reports turn results into the next adjustment.'),
         ],
@@ -31606,7 +31604,7 @@ def free_sport_preview(sport_key):
 def global_feature_preview(feature_key):
     normalized_feature, feature = get_global_feature_preview(feature_key)
     # Elite is cross-sport (no sport pick needed), so members skip the preview
-    # and land on the live cockpit with the sharp-money/line-move alerts.
+    # and land on the live cockpit with the line-movement alerts.
     if normalized_feature == 'elite':
         if normalize_user_plan(get_current_user()) in ALL_SPORT_PLAN_KEYS:
             return redirect('/elite')
@@ -44542,8 +44540,9 @@ def elite_dashboard():
     focus_sport = normalize_sport_access_key(request.args.get('sport', '').strip())
     user_key = str((current_user or {}).get('user_id') or (current_user or {}).get('email') or 'anonymous')
     # v4: alert-history rows are display-safe (provenance rule); never serve a pre-rule v3 snapshot.
-    # v5 (D14): live scanner rows carry facts only (no urgency/sharp_side/score); never serve a v4 payload.
-    snapshot_key = f"elite_dashboard_v5_{focus_sport or 'all'}_{hashlib.md5(user_key.encode('utf-8')).hexdigest()}"
+    # v5 (D14): live scanner rows carry facts only (no urgency / retired side field / score).
+    # v6 (D14 final): context key renamed to line_moves + history schema migrated; never serve a v5 payload.
+    snapshot_key = f"elite_dashboard_v6_{focus_sport or 'all'}_{hashlib.md5(user_key.encode('utf-8')).hexdigest()}"
     snapshot = load_runtime_snapshot(snapshot_key, max_age_minutes=720)
     if snapshot:
         context = snapshot.get('payload') or {}
@@ -44555,7 +44554,7 @@ def elite_dashboard():
             pass
     context = dict(context)
     # Start-time countdowns are computed per REQUEST (aware UTC now), never frozen into the 12h snapshot.
-    context['sharp_money'] = annotate_elite_line_moves(context.get('sharp_money') or [],
+    context['line_moves'] = annotate_elite_line_moves(context.get('line_moves') or [],
                                                        sort=request.args.get('moves_sort'),
                                                        state=request.args.get('moves_state'))
     return render_template(
@@ -44576,7 +44575,7 @@ def elite_matchup_builder():
         sport_filter=request.args.get('sport', '').strip(),
         matchup_filter=request.args.get('matchup', '').strip(),
     )
-    context['sharp_money'] = annotate_elite_line_moves(context.get('sharp_money') or [],
+    context['line_moves'] = annotate_elite_line_moves(context.get('line_moves') or [],
                                                        sort=request.args.get('moves_sort'),
                                                        state=request.args.get('moves_state'))
     return render_template(

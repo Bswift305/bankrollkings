@@ -30,7 +30,7 @@ import math
 from datetime import datetime, timedelta, timezone
 
 from services.freshness_contract import LIVE_MARKET_MAX_AGE_HOURS
-from services.timeutils import format_eastern_display, utc_now
+from services.timeutils import format_eastern_display, to_eastern_date_str, utc_now
 
 SOURCE_PREFIX = "props_feed:"
 FUTURE_SKEW = timedelta(minutes=5)
@@ -41,6 +41,10 @@ QUOTE_TIME_MISSING = "QUOTE_TIME_MISSING"
 QUOTE_STALE = "QUOTE_STALE"
 SOURCE_MISSING = "SOURCE_MISSING"
 NO_EXECUTABLE_QUOTE = "NO_EXECUTABLE_QUOTE"
+OUTSIDE_SLATE = "OUTSIDE_SLATE"   # D14 Q4: countdown only inside the current (Eastern) slate day
+
+HISTORICAL_LABEL = "Historical -- event started; not a current executable quote"
+OPEN_TIME_NOTE = "open = first value this feed captured (capture time not recorded)"
 
 REASON_TEXT = {
     START_UNVERIFIED: "event start time not verified",
@@ -49,6 +53,7 @@ REASON_TEXT = {
     QUOTE_STALE: f"quote older than {LIVE_MARKET_MAX_AGE_HOURS:g}h",
     SOURCE_MISSING: "quote source not recorded",
     NO_EXECUTABLE_QUOTE: "no complete price on the line-move side",
+    OUTSIDE_SLATE: "start is outside today's Eastern slate",
 }
 
 ALIGNMENT_TEXT = {
@@ -194,6 +199,8 @@ def start_facts(row, now=None):
         reasons.append(START_UNVERIFIED)
     elif now >= commence:
         reasons.append(EVENT_STARTED)
+    elif to_eastern_date_str(commence.isoformat()) != to_eastern_date_str(now.isoformat()):
+        reasons.append(OUTSIDE_SLATE)   # a later slate shows its start time only, never a countdown
     quoted = strict_utc(row.get("quote_updated_utc"))
     if quoted is None or quoted - now > FUTURE_SKEW:
         reasons.append(QUOTE_TIME_MISSING)
@@ -250,7 +257,14 @@ def annotate(rows, now=None, sort=None, state=None):
         r["start_label"] = label
         r["start_display_et"] = display
         r["start_reasons"] = reasons
-        r["start_note"] = None if label else "No countdown: " + "; ".join(REASON_TEXT[c] for c in reasons) + "."
+        r["historical"] = EVENT_STARTED in reasons
+        if r["historical"]:
+            r["start_note"] = f"{HISTORICAL_LABEL} (started {display})."
+        else:
+            r["start_note"] = None if label else "No countdown: " + "; ".join(REASON_TEXT[c] for c in reasons) + "."
+        quoted = strict_utc(r.get("quote_updated_utc"))
+        r["quote_time_display"] = format_eastern_display(quoted, "%b %d, %I:%M %p ET") if quoted else None
+        r["open_time_note"] = OPEN_TIME_NOTE
         r["alignment_text"] = ALIGNMENT_TEXT.get(str(r.get("alignment") or "UNKNOWN"), ALIGNMENT_TEXT["UNKNOWN"])
         r["move_state_text"] = MOVE_STATE_TEXT.get(str(r.get("move_state") or ""), MOVE_STATE_TEXT[INSUFFICIENT_DATA])
         out.append(r)

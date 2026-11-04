@@ -61,6 +61,8 @@ ACTION_RE = re.compile(r"\b(act now|bet now|bet this|take it|hammer|lock|window 
 AUTHORITY_RE = re.compile(r"\b(ANCHOR|WATCH|AVOID|UNMATCHED|UNPROVEN|true prob|edge)\b", re.I)
 SHARP_RE = re.compile(r"sharp", re.I)
 SRC = "props_feed:NBA:data/props/NBA_Props.csv"
+# Route tests run at a FIXED instant (13:00 ET) so the Eastern-slate countdown window is deterministic.
+FIXED_NOW = datetime(2026, 11, 4, 18, 0, 0, tzinfo=timezone.utc)
 
 
 def check(cond, msg):
@@ -139,6 +141,14 @@ def qc_pure():
     src = inspect.getsource(ell)
     check("datetime.now(" not in src and ".astimezone()" not in src,
           "(6) label module never reads the ambient clock/zone (no datetime.now(), no bare astimezone())")
+    # (Q4) countdown only inside the current Eastern slate day; a later slate shows its start time only
+    noon = datetime(2026, 11, 4, 18, 0, tzinfo=timezone.utc)      # 13:00 ET
+    for cz, want_label, name in (("2026-11-05T04:30:00Z", "Starts in 10 h 30 min", "23:30 ET same day"),
+                                 ("2026-11-05T05:30:00Z", None, "00:30 ET next day"),
+                                 ("2026-11-05T18:00:00Z", None, "tomorrow afternoon")):
+        lab, disp, rs = ell.start_facts(_base(noon, event_commence_utc=cz, quote_updated_utc=_z(noon)), noon)
+        ok = (lab == want_label) and (want_label is not None or (rs == [ell.OUTSIDE_SLATE] and disp))
+        check(ok, f"(Q4) start {name}: {'countdown' if want_label else 'no countdown, start time shown'} ({lab!r}, {rs})")
     # (8) DEFAULT neutral order: start time, then most recent quote update -- never move size or a score
     q = lambda m: _z(now - timedelta(minutes=m))  # noqa: E731
     rows = [_base(now, player="Qc Unverified", event_commence_utc="", line_delta=5.0),
@@ -244,21 +254,24 @@ def _sandbox(now, candidates=None, snapshot=None):
     with tempfile.TemporaryDirectory(prefix="qc_elite_live_") as td:
         data = Path(td) / "data"
         (data / "tracking").mkdir(parents=True)
-        pd.DataFrame(LEGACY_ALERTS).reindex(columns=app.ELITE_ALERT_COLUMNS).to_csv(data / "tracking" / "Elite_LineMove_Alerts.csv",
+        # a PRE-D14 archive (retired columns present): it must be read as history in the current schema
+        pd.DataFrame(LEGACY_ALERTS).to_csv(data / "tracking" / "Elite_LineMove_Alerts.csv",
                                                                      index=False)
         names = ("DATA_DIR", "load_runtime_snapshot", "write_runtime_snapshot", "build_elite_cross_sport_candidates",
                  "build_streak_heat_chart_service", "grade_manual_bet_logs", "load_props", "load_wnba_props",
-                 "load_mlb_props", "build_elite_sharp_money_scanner")
+                 "load_mlb_props", "build_elite_line_move_scanner")
         saved = {n: getattr(app, n) for n in names}
         frame = _props_frame(now)
-        real_scanner = saved["build_elite_sharp_money_scanner"]
+        real_scanner = saved["build_elite_line_move_scanner"]
+        saved_clock = ell.utc_now
+        ell.utc_now = lambda: now          # render-time labels use the fixed instant
         app.DATA_DIR = data
         app.load_runtime_snapshot = (lambda *a, **k: snapshot) if snapshot is not None else (lambda *a, **k: None)
         app.write_runtime_snapshot = lambda *a, **k: None
         # The other cockpit builders get no candidates (they need full candidate rows); the REAL scanner gets
         # the synthetic model sides so model-vs-move is exercised.
         app.build_elite_cross_sport_candidates = lambda *a, **k: []
-        app.build_elite_sharp_money_scanner = lambda _c: real_scanner(list(candidates or []))
+        app.build_elite_line_move_scanner = lambda _c: real_scanner(list(candidates or []))
         app.build_streak_heat_chart_service = lambda *a, **k: []
         app.grade_manual_bet_logs = lambda *a, **k: 0
         app.load_props = lambda *a, **k: frame.copy()
@@ -268,6 +281,7 @@ def _sandbox(now, candidates=None, snapshot=None):
         finally:
             for n, v in saved.items():
                 setattr(app, n, v)
+            ell.utc_now = saved_clock
 
 
 def _block(html, start_marker, end_marker):
@@ -292,9 +306,9 @@ CANDS = [{"sport": "NBA", "player": "Qclive Ready", "stat": "PTS", "direction": 
 
 
 def qc_scanner_and_routes():
-    now = datetime.now(timezone.utc)
+    now = FIXED_NOW
     with _sandbox(now, candidates=CANDS):
-        scans = app.build_elite_sharp_money_scanner(CANDS)
+        scans = app.build_elite_line_move_scanner(CANDS)
         with qc_auth.isolated_owner_client() as client:
             resp = client.get("/elite")
             html = resp.get_data(as_text=True)
@@ -306,6 +320,8 @@ def qc_scanner_and_routes():
             only_price = client.get("/elite?moves_state=PRICE_MOVED").get_data(as_text=True)
             bogus = client.get("/elite?moves_sort=score&moves_state=ACT")
         persisted = pd.read_csv(app.DATA_DIR / "tracking" / "Elite_LineMove_Alerts.csv", keep_default_na=False)
+        migrated = app.load_elite_line_move_alerts()
+        hist_rows = [app.elite_alert_history_row(r) for r in migrated.to_dict("records")]
     # (1) payload
     bad_keys = [k for r in scans for k in r if k in {"urgency", "sharp_side", "score", "confidence"}]
     bad_vals = [v for r in scans for v in r.values() if isinstance(v, str) and (DIRECTIVE_RE.search(v) or SHARP_RE.search(v))]
@@ -325,8 +341,8 @@ def qc_scanner_and_routes():
           "(M) actual deltas kept per unit: line +2.0 pts, over -40 cents, under +30 cents")
     check(not any(k in r for r in scans for k in ("reliability", "true_prob", "over_move", "under_move")),
           "(5') scanner rows carry no hit-rate tier, model probability or implied-point move")
-    check(app.build_elite_line_move_scanner is app.build_elite_sharp_money_scanner,
-          "(1) neutral scanner name available (legacy name kept as internal alias)")
+    check(not hasattr(app, "build_elite_sharp" + "_money_scanner"),
+          "(1) the scanner exists only under its neutral name (retired internal name removed)")
     # /elite scanner block
     check(resp.status_code == 200, f"(1) /elite renders ({resp.status_code})")
     scan_block = _block(html, 'data-live-line-moves="1"', "</table>")
@@ -351,7 +367,7 @@ def qc_scanner_and_routes():
                         ("Qclive Stale", "quote older than 6h"), ("Qclive Noquotetime", "quote update time not recorded"),
                         ("Qclive Noevent", "quote source not recorded"),
                         ("Qclive Noprice", "no complete price on the line-move side"),
-                        ("Qclive Started", "event start time has passed")):
+                        ("Qclive Started", "Historical -- event started; not a current executable quote")):
         rh = _row_html(scan_block, player)
         check(rh and "Starts in" not in rh and why in rh and 'data-start-note="1"' in rh,
               f"(3) {player}: no countdown, neutral note says '{why}'")
@@ -384,7 +400,8 @@ def qc_scanner_and_routes():
     # (1) export
     rows = list(csv.DictReader(io.StringIO(csv_text)))
     header = list(rows[0]) if rows else []
-    check(exp.status_code == 200 and rows and not {"Urgency", "Score", "SharpSide", "Reliability", "TrueProb"} & set(header)
+    check(exp.status_code == 200 and rows and not {"Urgency", "Score", "Sharp" "Side", "Reliability", "TrueProb", "OverMove",
+                                                    "UnderMove"} & set(header)
           and {"LineMoveSide", "MoveState", "OverPriceDeltaCents", "UnderPriceDeltaCents"} <= set(header),
           "(1) export: no Urgency/Score/SharpSide/Reliability/TrueProb; LineMoveSide + MoveState + cent deltas present")
     check(not re.search(r"\b(ANCHOR|WATCH|AVOID)\b", csv_text), "(5') export text: no ANCHOR/WATCH/AVOID tier")
@@ -392,21 +409,33 @@ def qc_scanner_and_routes():
           "(1) export text: no ACT/HOLD/PASS/WINDOW CLOSING, no 'sharp', no legacy score value")
     # persisted new rows carry no directive/score
     new = persisted[persisted["Player"].astype(str).str.startswith("Qclive")]
-    check(len(new) > 0 and (new["Urgency"].astype(str) == "").all() and (new["Score"].astype(str) == "").all()
-          and (new["Reliability"].astype(str) == "").all() and (new["TrueProb"].astype(str) == "").all()
+    retired = {"Urgency", "Score", "Sharp" "Side", "Reliability", "TrueProb", "OverMove", "UnderMove"}
+    check(len(new) > 0 and not retired & set(persisted.columns) and list(persisted.columns) == app.ELITE_ALERT_COLUMNS
           and new["MoveState"].isin(["LINE_MOVED", "PRICE_MOVED", "LINE_AND_PRICE_MOVED"]).all(),
-          f"(1) newly persisted alerts: no Urgency/Score/Reliability/TrueProb; MoveState recorded ({len(new)} rows)")
+          f"(H) the archive is rewritten in the current schema: retired columns gone, MoveState recorded ({len(new)} rows)")
+    legacy_hist = [h for h in hist_rows if h["player"].startswith("Qchist")]
+    check(len(legacy_hist) == 4 and all(h["side"] == "OVER" for h in legacy_hist)
+          and list(migrated.columns) == app.ELITE_ALERT_COLUMNS and not retired & set(migrated.columns),
+          "(H) pre-D14 archive rows are read as history: old side migrated to LineMoveSide, ACT/HOLD/WINDOW CLOSING/"
+          "PASS urgencies, scores, ANCHOR/WATCH tiers and implied-point moves dropped")
+    check(all(h["history_label"] == app.ELITE_ALERT_HISTORY_LABEL for h in legacy_hist),
+          "(H) legacy rows keep only the explicit historical / non-executable label")
+    started = _row_html(scan_block, "Qclive Started")
+    check("Last captured" in started and 'data-historical="1"' in started and "Now 22.5" not in started,
+          "(5) a started event is shown as historical (last captured, not 'Now'), never live")
+    check("as of " in ready and "capture time not recorded" in ready,
+          "(T) the move shows its quote update time (ET) and discloses that the open capture time is not recorded")
 
 
 def qc_render_time():
     """(7) a snapshot built while the event was upcoming must not keep its countdown once it has started."""
-    now = datetime.now(timezone.utc)
+    now = FIXED_NOW
     upcoming = _base(now, player="Qcsnap Upcoming", event_commence_utc=_z(now + timedelta(minutes=90)))
     started = _base(now, player="Qcsnap Started", event_commence_utc=_z(now - timedelta(minutes=5)))
     with _sandbox(now):
         with app.app.test_request_context("/elite"):
             ctx = app.build_elite_dashboard_context(None, "")
-    ctx["sharp_money"] = [upcoming, started]          # as if frozen into a cached snapshot earlier
+    ctx["line_moves"] = [upcoming, started]          # as if frozen into a cached snapshot earlier
     payload = {"payload": ctx}
     with _sandbox(now, snapshot=payload):
         try:
@@ -419,7 +448,7 @@ def qc_render_time():
     st = _row_html(block, "Qcsnap Started")
     check(re.search(r"Starts in 1 h (29|30) min", up) is not None,
           "(7) snapshot row with a future start: countdown computed now ('Starts in 1 h 29/30 min')")
-    check(st and "Starts in" not in st and "event start time has passed" in st,
+    check(st and "Starts in" not in st and "Historical" in st,
           "(7) snapshot row whose start has passed: no countdown even though it came from a cached payload")
     check(block.find("Qcsnap Upcoming") < block.find("Qcsnap Started"), "(8) render-time order: upcoming before started")
 
@@ -441,7 +470,7 @@ def qc_static():
     ptxt = " ".join([str(prev.get("preview_copy")), str(prev.get("subtitle"))] +
                     [" ".join(s) for s in prev.get("steps", [])])
     check(prev and not SHARP_RE.search(ptxt), "(9) Elite preview copy: no 'sharp-money' / 'sharp side' wording")
-    scan_src = inspect.getsource(app.build_elite_sharp_money_scanner)
+    scan_src = inspect.getsource(app.build_elite_line_move_scanner)
     check(not DIRECTIVE_RE.search(scan_src.replace("ACT/HOLD/WINDOW CLOSING/PASS", "")) and "'score'" not in scan_src,
           "(9) scanner source assigns no directive and no composite score")
     hist = app.elite_alert_history_row(LEGACY_ALERTS[2])
