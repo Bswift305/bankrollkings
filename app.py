@@ -50711,6 +50711,16 @@ def _mc_mod(available, source='', as_of='', note='', **value):
     return cell
 
 
+# Matchup Center disk-cache identity, versioned on its own (NOT APP_CACHE_VERSION, which would purge every
+# board). src2 = the market module carries the feed's recorded book or the honest 'Unrecorded source' label
+# (build_football_live_games), never the old invented 'DraftKings' fallback. Entries written under the old
+# key ('nfl_matchup_center' -> data/cache/nfl_matchup_center.pkl) are never read again; nothing is deleted.
+# Bump the suffix whenever the cached value's source semantics change. The prewarm path
+# (refresh_runtime_snapshots.prewarm_nfl_tool_caches) calls this builder, so it writes the same key.
+NFL_MATCHUP_CENTER_CACHE_VERSION = 'src2'
+NFL_MATCHUP_CENTER_DISK_KEY = f'nfl_matchup_center::{NFL_MATCHUP_CENTER_CACHE_VERSION}'
+
+
 def build_nfl_matchup_center_context():
     """NFL Matchup Center: EVERY current-slate game as a card of FACTUAL modules, joined on one
     canonical identity (date + away/home ABBR). Facts create visibility; no model or missing module
@@ -50720,9 +50730,9 @@ def build_nfl_matchup_center_context():
     nine slate-wide feeds are built ONCE, not per game -- no cold-route regression."""
     odds_path = DATA_DIR / 'odds' / 'NFL_Odds.csv'
     inj_path = DATA_DIR / 'injuries' / 'NFL_Injuries.csv'
-    sig = (_build_file_token(odds_path, inj_path), _nfl_player_log_signature(),
+    sig = (NFL_MATCHUP_CENTER_CACHE_VERSION, _build_file_token(odds_path, inj_path), _nfl_player_log_signature(),
            str(sports_today_date()), _nfl_weather_signature())
-    _dkey = 'nfl_matchup_center'
+    _dkey = NFL_MATCHUP_CENTER_DISK_KEY
     if _NFL_MATCHUP_CENTER_CACHE.get('sig') == sig and 'data' in _NFL_MATCHUP_CENTER_CACHE:
         return _NFL_MATCHUP_CENTER_CACHE['data']
     _disk = _nfl_disk_cache_load(_dkey, sig)
