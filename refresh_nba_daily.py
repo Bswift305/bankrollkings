@@ -6,19 +6,20 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from services.nba_lines_publisher import EXIT_LOCK_UNAVAILABLE, EXIT_LOCKED, LOCK_UNAVAILABLE
+from services import nba_market
+from services import nba_market_budget as budget
 from services.run_outcomes import (
-    LINES_READY, NO_ACTIVE_EVENTS, NO_FRESH_AFTER_LOCK, PROVIDER_ERROR, REUSED_FRESH, REUSED_FRESH_AFTER_LOCK,
-    SCHEDULE_UNAVAILABLE, SKIPPED_BLOCKED_BY_LINES, SKIPPED_LOCKED, UPDATED, VALIDATION_FAILED, is_alerting,
-    props_step_outcome, record_child_outcomes,
+    LINES_READY, PROVIDER_ERROR, SCHEDULE_UNAVAILABLE, SKIPPED_BLOCKED_BY_LINES, VALIDATION_FAILED,
+    NO_FRESH_AFTER_LOCK, record_child_outcomes,
 )
 
-# bk-daily reuses a receipt-verified NBA lines publish from the 4-hourly job (REUSE_WINDOW_MINUTES in
-# services/nba_lines_publisher.py) and waits up to this long for that job's lock instead of racing it.
-LINES_LOCK_WAIT_SECONDS = 120
-# Same contract for NBA player props (services/nba_props_publisher.py, its OWN lock): bk-daily reuses a
-# receipt+sha-verified props publish from a props job (<= 90 min) and waits up to this long for its lock.
-PROPS_LOCK_WAIT_SECONDS = 120
+# v5: bk-daily's NBA lines + props steps call the SHARED ensure API (services/nba_market.ensure_nba_lines /
+# ensure_nba_props) -- the same canonical stage command, reuse/lock policy and timeouts as the orchestrator
+# (refresh_nba_market.py). Lock wait and step timeouts come from the ONE timeout table
+# (services/nba_market_budget.py); nothing here hard-codes them.
+LINES_LOCK_WAIT_SECONDS = budget.LOCK_WAIT_SECONDS
+PROPS_LOCK_WAIT_SECONDS = budget.LOCK_WAIT_SECONDS
+NBA_DAILY_CALLER = "nba_daily"
 
 BASE_DIR = Path(__file__).resolve().parent
 NON_BLOCKING_STEPS = {"runtime_snapshots"}
@@ -93,54 +94,10 @@ def _publish_receipt_path() -> Path:
 
 def classify_lines_step(returncode: int | None, timed_out: bool, receipt_mtime_before: float,
                         publish_receipt_mtime_before: float | None = None) -> tuple[str, str]:
-    """(outcome, detail) for the game-lines step, from the exit code AND the receipts THIS run wrote.
-
-    An exit code alone never proves a benign non-publish, and an old receipt can never excuse a new
-    failure (only a receipt whose mtime advanced during the step is read). Never VALIDATION_FAILED for a
-    provider-empty answer: that is SCHEDULE_UNAVAILABLE (no authoritative schedule) per the receipt.
-    Publisher exits: 75 = SKIPPED_LOCKED (another job held the lock; no paid request, nothing written),
-    76 = LOCK_UNAVAILABLE. REUSED_FRESH / REUSED_FRESH_AFTER_LOCK (benign, LINES_READY) and
-    NO_FRESH_AFTER_LOCK (alerting) are read from the publisher receipt written this run."""
-    if timed_out:
-        return PROVIDER_ERROR, "game-lines step timed out"
-    if returncode == EXIT_LOCKED:
-        return SKIPPED_LOCKED, "another NBA lines publisher held the shared lock; no paid request, nothing written"
-    if returncode == EXIT_LOCK_UNAVAILABLE:
-        return LOCK_UNAVAILABLE, "the shared NBA lines lock could not be opened; no paid request, nothing written"
-    if publish_receipt_mtime_before is not None and _mtime(_publish_receipt_path()) > publish_receipt_mtime_before:
-        try:
-            pub = json.loads(_publish_receipt_path().read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            pub = None
-        if pub:
-            got = str(pub.get("outcome") or "")
-            if returncode == 0 and got in LINES_READY:
-                return got, str(pub.get("detail") or ("published" if got == UPDATED else "reused"))
-            if returncode == 0:
-                return VALIDATION_FAILED, f"exit 0 but this run's publisher receipt says outcome={got}"
-            if got in _LINES_FAILURE_OUTCOMES:
-                return got, f"exit {returncode}, publisher receipt outcome={got}"
-    receipt = None
-    path = _lines_receipt_path()
-    if _mtime(path) > receipt_mtime_before:
-        try:
-            receipt = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            receipt = None
-    got = str((receipt or {}).get("outcome") or "")
-    if returncode == 0:
-        if receipt is not None and got and got != UPDATED:
-            # exit 0 with a fresh receipt that says something else: trust neither as success.
-            return VALIDATION_FAILED, f"exit 0 but this run's receipt says outcome={got}"
-        return UPDATED, "published" if receipt is not None else "published (no fresh receipt)"
-    if receipt is None:
-        return VALIDATION_FAILED, f"exit {returncode} and no receipt from this run proving a cause"
-    if got == NO_ACTIVE_EVENTS:
-        # An NBA receipt can no longer say this; an empty provider answer is not a no-game proof.
-        return SCHEDULE_UNAVAILABLE, "provider returned zero events; no authoritative schedule confirms a no-game day"
-    if got in _LINES_FAILURE_OUTCOMES:
-        return got, f"exit {returncode}, receipt outcome={got}"
-    return VALIDATION_FAILED, f"exit {returncode}, receipt outcome={got or 'missing'}"
+    """(outcome, detail) for the game-lines step -- the shared classifier (services.nba_market.classify_lines)
+    applied to this checkout's receipts."""
+    return nba_market.classify_lines(BASE_DIR, returncode, timed_out, receipt_mtime_before,
+                                     publish_receipt_mtime_before)
 
 
 def _props_publish_receipt_path() -> Path:
@@ -148,44 +105,20 @@ def _props_publish_receipt_path() -> Path:
 
 
 def classify_props_publisher(returncode: int | None, timed_out: bool, publish_receipt_mtime_before: float):
-    """Publisher-level props outcomes that the response-shape receipt cannot express (the fetch never ran):
-    75 SKIPPED_LOCKED, 76 LOCK_UNAVAILABLE, and -- from a props publisher receipt written THIS run --
-    REUSED_FRESH / REUSED_FRESH_AFTER_LOCK (benign) or NO_FRESH_AFTER_LOCK / SKIPPED_BLOCKED_BY_LINES
-    (alerting). Returns (outcome, detail) or None to fall through to the shape-receipt classifier."""
-    if timed_out or returncode is None:
-        return None
-    if returncode == EXIT_LOCKED:
-        return SKIPPED_LOCKED, "another NBA props publisher held the props lock; no paid request, nothing written"
-    if returncode == EXIT_LOCK_UNAVAILABLE:
-        return LOCK_UNAVAILABLE, "the NBA props lock could not be opened/validated; no paid request, nothing written"
-    if _mtime(_props_publish_receipt_path()) > publish_receipt_mtime_before:
-        try:
-            pub = json.loads(_props_publish_receipt_path().read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            pub = {}
-        got = str(pub.get("outcome") or "")
-        if got in (REUSED_FRESH, REUSED_FRESH_AFTER_LOCK):
-            if returncode == 0:
-                return got, str(pub.get("detail") or "reused")
-            return VALIDATION_FAILED, f"exit {returncode} but this run's props receipt says {got}"
-        if got in (NO_FRESH_AFTER_LOCK, SKIPPED_BLOCKED_BY_LINES):
-            return got, str(pub.get("detail") or got)
-    return None
+    """The shared props publisher classifier (services.nba_market.classify_props_publisher) on this checkout."""
+    return nba_market.classify_props_publisher(BASE_DIR, returncode, timed_out, publish_receipt_mtime_before)
 
 
 STEPS = [
     ("playoff_results", [sys.executable, "-X", "utf8", "refresh_playoff_results.py"], 240),
     ("playoff_player_logs", [sys.executable, "-X", "utf8", "refresh_playoff_player_logs.py"], 480),
-    # The shared NBA publisher (fetch_game_lines -> services.nba_lines_publisher): lock first, reuse a fresh
-    # publish by the 4-hourly job, else the one validated atomic publish. Timeout covers the lock wait.
-    ("game_lines", [sys.executable, "fetch_game_lines.py", "--bookmakers", "draftkings,caesars,fanduel,betmgm",
-                    "--days", "5", "--caller", "nba_daily", "--allow-reuse",
-                    "--lock-wait-seconds", str(LINES_LOCK_WAIT_SECONDS)], 240),
-    # The NBA props publisher (fetch_player_props -> services.nba_props_publisher): its own lock first, reuse a
-    # verified props publish by a props job, verify the lines event list, else the one validated publish.
-    ("player_props", [sys.executable, "fetch_player_props.py", "--bookmakers", "draftkings,caesars,fanduel,betmgm",
-                      "--days", "5", "--caller", "nba_daily", "--allow-reuse",
-                      "--lock-wait-seconds", str(PROPS_LOCK_WAIT_SECONDS)], 240),
+    # v5: the SHARED ensure API (services/nba_market.ensure_nba_lines) runs exactly this canonical stage
+    # command (fetch_game_lines -> services.nba_lines_publisher): lock first, reuse a fresh verified publish
+    # (e.g. the orchestrator's), else the one validated atomic publish. Timeout = lock wait + lines budget.
+    ("game_lines", nba_market.stage_command("lines", NBA_DAILY_CALLER), budget.stage_timeout("lines")),
+    # ensure_nba_props: its own lock first, reuse a verified props publish, verify the lines event list, else
+    # the one validated publish. Timeout = lock wait + props budget.
+    ("player_props", nba_market.stage_command("props", NBA_DAILY_CALLER), budget.stage_timeout("props")),
     ("injuries", [sys.executable, "-X", "utf8", "fetch_injuries.py"], 180),
     ("basketball_officiating", [sys.executable, "fetch_basketball_officiating_assignments.py"], 120),
     ("officiating_context", [sys.executable, "build_officiating_context.py"], 90),
@@ -229,30 +162,15 @@ def main() -> int:
 
         started = datetime.now()
         print(f"[STEP] {label} timeout={timeout}s", flush=True)
-        props_mtime_before = _mtime(PROPS_ARTIFACT) if label == PROPS_STEP else 0.0
-        props_pub_before = _mtime(_props_publish_receipt_path()) if label == PROPS_STEP else 0.0
-        lines_receipt_before = _mtime(_lines_receipt_path()) if label == LINES_STEP else 0.0
-        publish_receipt_before = _mtime(_publish_receipt_path()) if label == LINES_STEP else 0.0
-        try:
-            result = subprocess.run(command, timeout=timeout)
-            timed_out = False
-        except subprocess.TimeoutExpired:
-            result = None
-            timed_out = True
-        elapsed = (datetime.now() - started).total_seconds()
 
         if label == PROPS_STEP:
-            # Classify from the response-shape receipt (directive #2/#3). Benign -> continue cleanly;
-            # alerting -> degrade the run but DO NOT abort the safe downstream steps.
-            exit_code = result.returncode if not timed_out else 1
-            special = classify_props_publisher(None if timed_out else result.returncode, timed_out,
-                                               props_pub_before)
-            if special:
-                outcome, detail = special
-                alerting = is_alerting(outcome)
-            else:
-                outcome, detail, alerting = props_step_outcome(BASE_DIR, PROPS_SPORT_SLUG, PROPS_ARTIFACT,
-                                                               props_mtime_before, exit_code, timed_out)
+            # The shared ensure API (same command/policy/timeout as the orchestrator). Classified from the
+            # publisher receipt, else the response-shape receipt (directive #2/#3). Benign -> continue
+            # cleanly; alerting -> degrade the run but DO NOT abort the safe downstream steps.
+            stage = nba_market.ensure_nba_props(NBA_DAILY_CALLER, base_dir=BASE_DIR, command=command,
+                                                timeout=timeout, props_artifact=PROPS_ARTIFACT)
+            elapsed = (datetime.now() - started).total_seconds()
+            outcome, detail, alerting = stage["outcome"], stage["detail"], stage["alerting"]
             child_outcomes["player_props"] = outcome
             step_results[label] = outcome
             record_child_outcomes(BASE_DIR, "nba_daily", child_outcomes)
@@ -267,17 +185,19 @@ def main() -> int:
 
         if label == LINES_STEP:
             # Isolated: a failed lines publish never aborts independent work; dependents skip honestly.
-            outcome, detail = classify_lines_step(None if timed_out else result.returncode, timed_out,
-                                                  lines_receipt_before, publish_receipt_before)
+            stage = nba_market.ensure_nba_lines(NBA_DAILY_CALLER, base_dir=BASE_DIR, command=command,
+                                                timeout=timeout)
+            elapsed = (datetime.now() - started).total_seconds()
+            outcome, detail, timed_out = stage["outcome"], stage["detail"], stage["timed_out"]
             child_outcomes["game_lines"] = outcome
             step_results[label] = outcome
             record_child_outcomes(BASE_DIR, "nba_daily", child_outcomes)
             if outcome not in LINES_READY:
                 lines_ok = False
-                lines_exit = 124 if timed_out else (int(result.returncode) or 1)
+                lines_exit = 124 if timed_out else (int(stage["exit_code"]) or 1)
                 degraded = True
                 print()
-                print(f"[{outcome}] {label} {'timed out' if timed_out else f'exited with code {result.returncode}'} "
+                print(f"[{outcome}] {label} {'timed out' if timed_out else 'exited with code ' + str(stage['exit_code'])} "
                       f"after {elapsed:.1f}s: {detail} ({_lines_receipt_detail()}). Previous lines files "
                       "preserved; lines-dependent steps will be SKIPPED_BLOCKED_BY_LINES, independent steps "
                       "continue.", flush=True)
@@ -287,6 +207,13 @@ def main() -> int:
             print()
             continue
 
+        try:
+            result = subprocess.run(command, timeout=timeout)
+            timed_out = False
+        except subprocess.TimeoutExpired:
+            result = None
+            timed_out = True
+        elapsed = (datetime.now() - started).total_seconds()
         if timed_out:
             print()
             print(f"[FAIL] {label} timed out after {elapsed:.1f}s", flush=True)
