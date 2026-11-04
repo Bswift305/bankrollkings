@@ -28,6 +28,8 @@
   Current sportsbook markets are shown as factual quotes and are not recommendations.
 </div>
 
+{% include "_props_feed_status.html" %}
+
 {% if rows %}
 <div class="mob-meta">Showing {{ rows|length }} current market quote{{ '' if rows|length == 1 else 's' }} from the licensed odds provider. Each row is a single sportsbook's two-sided quote; a missing side is shown as &ldquo;&mdash;&rdquo;, not estimated.</div>
 <div class="mob-scroll">
@@ -52,7 +54,7 @@
 </table>
 </div>
 <div class="mob-meta" style="margin-top:12px;"><b>Book Updated</b> is the Odds API bookmaker&rsquo;s reported quote-update time &mdash; not when Bankroll Kings ingested or when you viewed it. Where the source provides no timezone it is marked &ldquo;tz unknown&rdquo; rather than assumed. Source: Odds API (licensed). Quotes are point-in-time and may move. No model read, ranking, confidence, edge, or recommendation is shown or implied.</div>
-{% else %}
+{% elif not (props_status and props_status.prices_withheld) %}
 <div class="mob-empty">No current licensed {{ sport_label }} markets are available right now. Check back when today&rsquo;s slate is live.</div>
 {% endif %}
 </div>
