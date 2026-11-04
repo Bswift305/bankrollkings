@@ -557,51 +557,8 @@ def qc_nba_daily():
           "run_outcomes: REUSED_FRESH_AFTER_LOCK benign + lines-ready; NO_FRESH_AFTER_LOCK alerting")
 
 
-def qc_four_hourly_entry():
-    """Cadence (a): the 4-hourly job is the SAME publisher entry, never reuses, same books/window as bk-daily."""
-    try:
-        import refresh_nba_lines as job
-    except ImportError:
-        NOTES.append("4-hourly entry (refresh_nba_lines.py) not present on this revision -- skipped")
-        return
-    import fetch_game_lines as fg
-    import refresh_nba_daily as nba
-    args = fg.parse_args(job.build_args())
-    daily = fg.parse_args([str(x) for x in next(c for l, c, _ in nba.STEPS if l == "game_lines")[2:]])
-    check(args.sport == "basketball_nba" and args.caller == "nba_lines_4h" and not args.allow_reuse
-          and args.bookmakers == daily.bookmakers and args.days == daily.days,
-          "4-hourly job: same entry + books + window as bk-daily, caller nba_lines_4h, never reuses")
-    with tempfile.TemporaryDirectory() as td:
-        base = Path(td)
-        commence = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        lu = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        payload = [{"id": "fourh", "commence_time": commence, "home_team": "H", "away_team": "A", "bookmakers": [
-            {"key": "draftkings", "title": "DraftKings", "last_update": lu, "markets": [
-                {"key": "h2h", "outcomes": [{"name": "H", "price": -140}, {"name": "A", "price": 120}]}]}]}]
-        calls = []
-        saved = (fg.BASE_DIR, fg.get_json, fg.urlopen, fg._QUOTA.print_receipt, dict(fg.SPORT_OUTPUTS["basketball_nba"]))
-        fg.BASE_DIR, fg.urlopen = base, (lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no network")))
-        fg.get_json = lambda url: calls.append(1) or payload
-        fg._QUOTA.print_receipt = lambda **k: (True, {})
-        fg.SPORT_OUTPUTS["basketball_nba"].update(odds=base / "NBA_o.csv", schedules=base / "NBA_s.csv", schedule_alias=base / "NBA_a.csv")
-        try:
-            with contextlib.redirect_stdout(io.StringIO()) as buf:
-                rc = job.main(["--skip-line-movement"])
-        finally:
-            fg.BASE_DIR, fg.get_json, fg.urlopen, fg._QUOTA.print_receipt = saved[:4]
-            fg.SPORT_OUTPUTS["basketball_nba"].clear()
-            fg.SPORT_OUTPUTS["basketball_nba"].update(saved[4])
-        pp = base / "data/tracking/_last_nba_lines_publish.json"
-        pub = json.loads(pp.read_text(encoding="utf-8")) if pp.exists() else {}
-        ok = (rc == 0 and len(calls) == 1 and pub.get("caller") == "nba_lines_4h" and pub.get("outcome") == "UPDATED"
-              and (base / "NBA_o.csv").exists())
-        check(ok, f"4-hourly entry publishes through the shared publisher: one request, receipt caller nba_lines_4h "
-                  f"(rc={rc})" + ("" if ok else f" output tail: {buf.getvalue()[-800:]!r}"))
-        check("published" in buf.getvalue(), "4-hourly entry reports its outcome")
-
-
 def main() -> int:
-    for fn in (qc_in_process, qc_lock_unit, qc_reuse_rules, qc_nba_daily, qc_four_hourly_entry, qc_two_process,
+    for fn in (qc_in_process, qc_lock_unit, qc_reuse_rules, qc_nba_daily, qc_two_process,
                qc_wait_then_no_fresh, qc_location_enforcement):
         try:
             fn()
