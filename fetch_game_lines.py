@@ -96,8 +96,10 @@ EVENT_TIME_COL = "EventCommenceAtUTC"
 # NO_ACTIVE_EVENTS (provider answered: zero events in the window) from a failure.
 _FETCH_FACTS: dict = {}
 
-# Receipt outcome vocabulary for _last_game_lines_fetch_<sport>.json. Only NO_ACTIVE_EVENTS is a proven
-# benign non-publish; every other non-UPDATED outcome is a failure.
+# Receipt outcome vocabulary for _last_game_lines_fetch_<sport>.json. Only NO_ACTIVE_EVENTS (non-event-aware
+# sports) is a proven benign non-publish; every other non-UPDATED outcome is a failure. Event-aware sports
+# (NBA) never record NO_ACTIVE_EVENTS: an empty provider answer there is SCHEDULE_UNAVAILABLE
+# (services/nba_schedule_authority.py) unless an authoritative independent schedule says otherwise.
 LINES_UPDATED = "UPDATED"
 LINES_NO_ACTIVE_EVENTS = "NO_ACTIVE_EVENTS"
 LINES_PROVIDER_ERROR = "PROVIDER_ERROR"
@@ -479,6 +481,14 @@ def main() -> int:
     all_rows: list[dict] = []
     fetch_failed = False
     _FETCH_FACTS.clear()
+    # Governed no-game decision (docs/game_lines_event_contract.md "Governed no-game result"): consult the
+    # independent schedule authority BEFORE any paid call. No authoritative source exists (audit in
+    # services/nba_schedule_authority.py), so the verdict is SCHEDULE_UNAVAILABLE and the provider is
+    # always asked; an empty answer is then classified from this verdict, never assumed to be a no-game day.
+    schedule_verdict = None
+    if event_spec is not None:
+        from services.nba_schedule_authority import schedule_verdict as _schedule_verdict
+        schedule_verdict = _schedule_verdict()
     try:
         all_rows = fetch_odds_rows(api_key, sport, args.bookmakers, markets, args.regions, args.days)
         print(f"Loaded {len(all_rows)} bookmaker rows from the standard /odds endpoint")
@@ -508,6 +518,7 @@ def main() -> int:
             "published_rows": int(published_rows) if outcome == LINES_UPDATED else 0,
             "validation_errors": [str(e) for e in list(errors)[:12]],
             "validation": vreceipt,
+            "schedule_verdict": schedule_verdict,
             "outputs": {k: {"path": str(p.name), "sha256_before": sha_before[k], "sha256_after": _sha256_file(p)}
                         for k, p in outputs.items()},
         })
@@ -529,6 +540,16 @@ def main() -> int:
     if not cost_ok:
         print("Cost receipt FAILED (missing usage headers or cost over budget). Preserving existing files.")
         return finish(LINES_COST_RECEIPT_FAILED, 1, errors=["cost receipt failed"])
+    if not fetch_failed and _FETCH_FACTS.get("events_returned") == 0 and event_spec is not None:
+        # Event-aware (NBA): an empty provider answer is NOT proof of a no-game day. Without a fresh
+        # authoritative independent schedule it is SCHEDULE_UNAVAILABLE (alerting, fail closed); when the
+        # schedule expected games it is a validation failure. Existing files preserved either way.
+        from services.nba_schedule_authority import zero_event_outcome
+        outcome, reason = zero_event_outcome(schedule_verdict)
+        print()
+        print(f"Provider returned zero events and no authoritative schedule confirms a no-game day "
+              f"({outcome}: {reason}). Preserving existing files; this is NOT a benign skip.")
+        return finish(outcome, 1, errors=[f"provider returned zero events ({reason})"])
     if not fetch_failed and _FETCH_FACTS.get("events_returned") == 0:
         # The provider ANSWERED with zero events in the window (off-season / between slates). Proven benign
         # non-publish: nothing to add, existing files preserved. Exit code unchanged (1) for every caller;
