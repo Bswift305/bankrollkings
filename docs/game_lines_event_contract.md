@@ -121,6 +121,35 @@ anything else skips the lines-dependent steps as `SKIPPED_BLOCKED_BY_LINES`.
 QC: `qc_nba_lines_lock.py` (real two-process contention, waiting after a failed holder, crash release,
 location/symlink enforcement with a call-counting stub provider, POSIX permission rules, reuse rules).
 
+## NBA player props: single publisher + its own lock
+
+Owner decision (v4): NBA props get their **own** publisher lock, separate from the lines lock, with the same
+kernel-lock design. Code: `services/nba_props_publisher.py`, entered from `fetch_player_props.main` for
+`basketball_nba` (`run_fetch` refuses an NBA props fetch when the props lock is not held). WNBA, MLB and
+football props are unchanged. QC: `qc_nba_props_lock.py`.
+
+| | |
+|---|---|
+| Lock | `$BK_RUNTIME_DIR/locks/nba_player_props.lock` (POSIX default `/opt/bankrollkings-runtime/locks/`), same `services/process_lock` enforcement as lines: contained under the runtime root, no symlink escape, dir `0700` / file `0600`, kernel release on exit/crash. QC override `$BK_NBA_PROPS_LOCK_PATH` honoured only inside the runtime root or a `qc_*` temp dir. |
+| No request before ownership | The lock is taken before **any** provider request, including the free `/events` listing. |
+| Lines first | Props never take the lines lock (no lock-ordering surface). Under the props lock, before any request, the lines event list (`data/odds/NBA_Odds.csv`, the props validation manifest) must be a receipt-verified `game_lines_event_v1` publish no older than `LINES_PREREQ_MAX_AGE_MINUTES` = 120, with its sha256 equal to the lines receipt. Otherwise `SKIPPED_BLOCKED_BY_LINES`, exit 1, zero requests. |
+| Reuse | `--allow-reuse` (bk-daily): a props publish from the last 90 minutes whose props fetch receipt (`data/tracking/_last_nba_props_fetch.json`) is `UPDATED` / exit 0 / `nba_props_slate_v1` / valid UTC time, and whose `sha256_after` equals `NBA_Props.csv` on disk. Duplicate-fetch suppression only; customers keep the 6h rule. |
+| Window | bk-daily keeps the full **five-day** props window (`--days 5`). Not narrowed to save credits (owner decision). |
+
+| State | Condition | Outcome | Exit | Class | Requests |
+|---|---|---|---|---|---|
+| S0 | props lock location rejected / unopenable | `LOCK_UNAVAILABLE` | 76 | alerting | none |
+| S1 | props lock held by another process after the wait | `SKIPPED_LOCKED` | 75 | alerting | none |
+| S2a | acquired without waiting, verified fresh publish | `REUSED_FRESH` | 0 | benign | none |
+| S2b | acquired after waiting, receipt + sha re-read under the lock and valid | `REUSED_FRESH_AFTER_LOCK` | 0 | benign | none |
+| S2b' | acquired after waiting, nothing valid, `--no-fetch-after-lock` | `NO_FRESH_AFTER_LOCK` | 1 | alerting | none |
+| S3 | lines event list not a verified recent publish | `SKIPPED_BLOCKED_BY_LINES` | 1 | alerting | none |
+| S4 | fetch + slate-aware validation + atomic publish | `UPDATED`, else receipt-classified (`NO_MARKETS_POSTED` / `NO_ACTIVE_EVENTS` benign; `VALIDATION_FAILED` / `PROVIDER_ERROR` / `STALE` alerting) | 0 / non-zero | | `/events` + one `/events/{id}/odds` per event |
+
+`refresh_nba_daily.classify_props_publisher` maps 75 / 76 and this run's props publisher receipt
+(`data/tracking/_last_nba_props_publish.json`) before the shape-receipt classifier, so a lock skip or a
+reuse is never misread from an older shape receipt.
+
 ## Stale NBA/WNBA props: central enforcement
 
 The 6h rule is enforced in the **loaders**, not per page: `load_props` / `load_wnba_props` /
