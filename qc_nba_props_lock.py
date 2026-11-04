@@ -91,16 +91,61 @@ def _odds_payload():
     return {"id": "propsgame", "bookmakers": books}
 
 
+BARRIER_DEADLINE_SECONDS = 120.0   # a barrier that never opens fails the run loudly; it is never a pass
+
+
+def _await_file(path, deadline_seconds: float = BARRIER_DEADLINE_SECONDS) -> bool:
+    """Hard-condition poll (no fixed-sleep assumption): True as soon as `path` exists, False at the deadline."""
+    end = time.monotonic() + deadline_seconds
+    while time.monotonic() < end:
+        if Path(path).exists():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def _install_contention_signal() -> None:
+    """Waiter side of the deterministic barrier: when this publisher's FIRST lock attempt finds the lock held, write
+    the file named by QC_CONTENDED_SIGNAL, then wait for the lock exactly as production does. `contended` stays
+    True (set by the failed first attempt); waited_seconds covers the whole wait from the first attempt."""
+    sig = os.environ.get("QC_CONTENDED_SIGNAL")
+    if not sig:
+        return
+    from services import process_lock
+    orig = process_lock.ExclusiveLock.acquire
+
+    def acquire(self, wait_seconds=0.0, poll_seconds=0.2):
+        t0 = time.monotonic()
+        if orig(self, 0.0, poll_seconds):
+            return True
+        Path(sig).write_text(str(os.getpid()), encoding="utf-8")
+        got = orig(self, max(0.0, float(wait_seconds or 0.0) - (time.monotonic() - t0)), poll_seconds)
+        self.waited_seconds = round(time.monotonic() - t0, 3)
+        return got
+    process_lock.ExclusiveLock.acquire = acquire
+
+
+def _hold(spec: str) -> None:
+    """Holder side: 'file:<path>' keeps the lock until that file exists (the waiter's signal or a parent release
+    file); a number is a plain delay used only where no other process depends on it."""
+    if spec.startswith("file:"):
+        if not _await_file(spec[5:]):
+            raise RuntimeError(f"qc barrier never opened: {spec[5:]}")
+    else:
+        time.sleep(float(spec))
+
+
 def child_main(argv) -> int:
-    base, counter, hold, extra = Path(argv[0]), Path(argv[1]), float(argv[2]), argv[3:]
+    base, counter, hold, extra = Path(argv[0]), Path(argv[1]), argv[2], argv[3:]
     _block_network()
     sys.path.insert(0, str(HERE))
+    _install_contention_signal()
     import fetch_player_props as fp
 
     def stub_get_json(url):
         with open(counter, "a", encoding="utf-8") as fh:   # one line per provider request (free or paid)
             fh.write(f"{os.getpid()}\n")
-        time.sleep(hold)
+        _hold(hold)
         if os.environ.get("QC_STUB_FAIL") == "1":
             raise RuntimeError("qc stub provider error")
         return _odds_payload() if "/odds" in url else [_event()]
@@ -180,7 +225,9 @@ def qc_contention_reuse_crash():
         counter = root / "counter.txt"
         env = {"BK_NBA_PROPS_LOCK_PATH": str(root / "locks" / "nba_player_props.lock")}
 
-        a = _spawn(base, counter, 4.0, "--caller", "qc_A", env_extra=env)
+        release_a = root / "release-a"
+        # Barriers, never sleeps: A keeps the props lock until the parent has finished B.
+        a = _spawn(base, counter, f"file:{release_a}", "--caller", "qc_A", env_extra=env)
         check(_wait_calls(counter, 1), "A acquired the props lock and entered its /events request")
         before = _snapshot(base)
         b = _spawn(base, counter, 0.0, "--caller", "qc_B", env_extra=env)
@@ -191,6 +238,7 @@ def qc_contention_reuse_crash():
         check(_snapshot(base) == before, "B wrote NOTHING (props file, receipts byte-identical)")
         check(_never_ok(b_out), "B's output never says OK / PASS / UPDATED / REUSED")
         check(a_alive, "A was still holding the props lock while B was refused (real overlap)")
+        release_a.write_text("go", encoding="utf-8")
         a_out, _ = a.communicate(timeout=120)
         pub = _pub(base)
         n_after_a = _calls(counter)
@@ -206,10 +254,12 @@ def qc_contention_reuse_crash():
               and _pub(base).get("lock_contended") is False and _calls(counter) == n_after_a,
               "uncontended reuse: REUSED_FRESH, zero calls")
 
-        a2 = _spawn(base, counter, 3.0, "--caller", "qc_A2", env_extra=env)
+        sig2 = root / "b2-contended"
+        # A2 keeps the props lock until B2 has provably found it held.
+        a2 = _spawn(base, counter, f"file:{sig2}", "--caller", "qc_A2", env_extra=env)
         check(_wait_calls(counter, n_after_a + 1), "A2 holds the props lock mid-request")
         b2 = _spawn(base, counter, 0.0, "--caller", "nba_daily", "--allow-reuse", "--lock-wait-seconds", "60",
-                    env_extra=env)
+                    env_extra={**env, "QC_CONTENDED_SIGNAL": str(sig2)})
         b2_out, _ = b2.communicate(timeout=180)
         a2.communicate(timeout=120)
         n_after_a2 = _calls(counter)
@@ -220,7 +270,7 @@ def qc_contention_reuse_crash():
               f"waiter re-read receipt + sha under the props lock: REUSED_FRESH_AFTER_LOCK, zero own calls "
               f"(waited {p2.get('lock_waited_seconds')}s)")
 
-        k = _spawn(base, counter, 60.0, "--caller", "qc_killed", env_extra=env)
+        k = _spawn(base, counter, f"file:{root / 'never-opens'}", "--caller", "qc_killed", env_extra=env)
         check(_wait_calls(counter, n_after_a2 + 1), "victim holds the props lock mid-request")
         snap_k = _snapshot(base)
         k.kill()
@@ -240,20 +290,22 @@ def qc_failed_holder():
         _seed_lines(base)
         counter = root / "counter.txt"
         env = {"BK_NBA_PROPS_LOCK_PATH": str(root / "locks" / "nba_player_props.lock")}
-        h = _spawn(base, counter, 3.0, "--caller", "qc_fail_holder", env_extra={**env, "QC_STUB_FAIL": "1"})
+        sig1 = root / "w-contended"
+        h = _spawn(base, counter, f"file:{sig1}", "--caller", "qc_fail_holder", env_extra={**env, "QC_STUB_FAIL": "1"})
         check(_wait_calls(counter, 1), "failing props holder holds the lock")
         w = _spawn(base, counter, 0.0, "--caller", "nba_daily", "--allow-reuse", "--lock-wait-seconds", "60",
-                   "--no-fetch-after-lock", env_extra=env)
+                   "--no-fetch-after-lock", env_extra={**env, "QC_CONTENDED_SIGNAL": str(sig1)})
         w_out, _ = w.communicate(timeout=180)
         h.communicate(timeout=120)
         n = _calls(counter)
         check(w.returncode == 1 and "[NO_FRESH_AFTER_LOCK]" in w_out and _pub(base).get("outcome") == "NO_FRESH_AFTER_LOCK"
               and not (base / "data/props/NBA_Props.csv").exists() and _never_ok(w_out),
               f"after a FAILED holder: NO_FRESH_AFTER_LOCK exit {w.returncode}, nothing published, never OK")
-        h2 = _spawn(base, counter, 3.0, "--caller", "qc_fail_holder2", env_extra={**env, "QC_STUB_FAIL": "1"})
+        sig3 = root / "w2-contended"
+        h2 = _spawn(base, counter, f"file:{sig3}", "--caller", "qc_fail_holder2", env_extra={**env, "QC_STUB_FAIL": "1"})
         check(_wait_calls(counter, n + 1), "second failing props holder holds the lock")
         w2 = _spawn(base, counter, 0.0, "--caller", "nba_daily", "--allow-reuse", "--lock-wait-seconds", "60",
-                    env_extra=env)
+                    env_extra={**env, "QC_CONTENDED_SIGNAL": str(sig3)})
         w2_out, _ = w2.communicate(timeout=180)
         h2.communicate(timeout=120)
         check(w2.returncode == 0 and _pub(base).get("outcome") == "UPDATED" and _pub(base).get("lock_contended") is True,
