@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from season_utils import active_sports, sport_for_label
+from services.operator_run import env_run_id, log_tag_line
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -64,6 +65,9 @@ def main() -> int:
         "Bankroll Kings Edge Engine Pipeline",
         "=" * 42,
         f"Started: {datetime.now().isoformat(timespec='seconds')}",
+        # D11: attribute this log to the operator run (BK_OPERATOR_RUN_ID, inherited) so Run Status
+        # identifies "current" by run id, not by newest mtime.
+        *log_tag_line(env_run_id()),
         "",
     ]
     active = active_sports()

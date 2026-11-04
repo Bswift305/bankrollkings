@@ -17,6 +17,8 @@ from qc_odds_feed import (
     _state as _odds_state,
 )
 from services.freshness_contract import LIVE_MARKET_MAX_AGE_HOURS, refresh_cadence_hours
+from services import operator_run
+from services.run_outcomes import partition_child_outcomes
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -25,6 +27,14 @@ TRACKING_DIR = BASE_DIR / "data" / "tracking"
 JSON_PATH = TRACKING_DIR / "Run_Status.json"
 CSV_PATH = TRACKING_DIR / "Run_Status.csv"
 OPERATOR_SUMMARY_PATH = TRACKING_DIR / "Last_Operator_Summary.json"
+# D11: the operator's current-run marker (services/operator_run.py). "Current" is keyed on its run id.
+OPERATOR_MARKER_PATH = TRACKING_DIR / operator_run.MARKER_FILENAME
+# Patchable seams (offline QC): process liveness + this host's name for the killed-run check.
+_PID_ALIVE = operator_run.pid_alive
+_HOSTNAME = None   # None -> socket.gethostname()
+# Log checks whose current-run log is written by the operator run itself (attributed by the
+# "Operator run: <id>" header line), mapped to the row status used while that run has not produced it.
+_OPERATOR_LOG_PENDING_STATUS = {"Daily Operator": "IN_PROGRESS", "Edge Engine": "PENDING", "Scorecards": "PENDING"}
 
 
 CHECKS = [
@@ -187,6 +197,9 @@ def _status_note(status: str) -> str:
         "AGING": "Watch",
         "STALE": "Needs refresh",
         "MISSING": "Missing",
+        "IN_PROGRESS": "In progress",
+        "PENDING": "Pending (this run)",
+        "INCOMPLETE": "Incomplete (run did not finish)",
     }.get(status, "Unknown")
 
 
@@ -257,15 +270,9 @@ def _odds_family_signals() -> tuple[list[dict], list[str]]:
     return rows, reasons
 
 
-def _operator_signals() -> tuple[list[str], dict]:
-    """Read the structured operator summary (written by run_daily) for blocking failures and provider
-    exhaustion. Machine-readable -- never parse the free-text operator log."""
+def _summary_reasons(payload: dict) -> tuple[list[str], dict]:
+    """(reasons, info) from ONE operator summary -- the pre-D11 fold, unchanged."""
     reasons: list[str] = []
-    info: dict = {}
-    try:
-        payload = json.loads(OPERATOR_SUMMARY_PATH.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return reasons, info
     info = {
         "finished_at": payload.get("finished_at", ""),
         "blocking_failure": bool(payload.get("blocking_failure")),
@@ -282,36 +289,218 @@ def _operator_signals() -> tuple[list[str], dict]:
     return reasons, info
 
 
-def build_run_status() -> dict:
-    now = datetime.now(timezone.utc)
+def _previous_run_block(summary: dict | None) -> dict | None:
+    """The last FINISHED run, kept visibly separate from the current run (never folded into its reasons)."""
+    if not summary:
+        return None
+    reasons, info = _summary_reasons(summary)
+    return {
+        "label": "previous run",
+        "run_id": summary.get("run_id"),          # None for a pre-D11 (unidentified) summary
+        "started_at": summary.get("started_at"),
+        "finished_at": summary.get("finished_at", ""),
+        "log": summary.get("log", ""),
+        "reasons": reasons,
+        **{k: v for k, v in info.items() if k != "finished_at"},
+    }
+
+
+def _operator_context(now: datetime | None = None) -> tuple[list[str], dict]:
+    """Decide WHICH operator run is current (by run id, from the marker) and what may be reported as its
+    state. Returns (current degraded reasons, operator info).
+
+    operator.state:
+      LEGACY      no marker (pre-D11 tree): the summary is folded exactly as before.
+      PENDING     the marker's run is RUNNING and has not written its final summary -> status IN PROGRESS;
+                  the previous run's summary is shown only under `previous_run`, never as current.
+      INCOMPLETE  RUNNING past its deadline / its process is gone, with no matching summary.
+      COMPLETE/FAILED  the summary carries the marker's run id -> its reasons are current.
+      UNKNOWN     the marker is unreadable -> nothing is folded as current.
+    """
+    now = now or datetime.now(timezone.utc)
+    m_status, marker = operator_run.read_json_status(OPERATOR_MARKER_PATH)
+    if m_status == "ok" and not (operator_run.valid_run_id(marker.get("run_id"))
+                                 and marker.get("state") in (operator_run.RUNNING, *operator_run.TERMINAL)
+                                 and operator_run.parse_utc(marker.get("started_at"))):
+        m_status, marker = "corrupt", None
+    s_status, summary = operator_run.read_json_status(OPERATOR_SUMMARY_PATH)
+    if s_status != "ok":
+        summary = None
+
+    if m_status == "absent":
+        # Pre-D11 behaviour, unchanged (no run identity exists on this tree yet).
+        if summary is None:
+            return [], {}
+        reasons, info = _summary_reasons(summary)
+        info["state"] = "LEGACY"
+        info["run_id"] = summary.get("run_id")
+        return reasons, info
+
+    if m_status == "corrupt":
+        return (["operator run marker unreadable (current run unknown)"],
+                {"state": "UNKNOWN", "status_label": "UNKNOWN", "current_run": None,
+                 "previous_run": _previous_run_block(summary)})
+
+    run_id = marker["run_id"]
+    env_id = operator_run.env_run_id()
+    if env_id and env_id != run_id:
+        # This caller belongs to run `env_id` but the marker names another run: report THIS caller's run
+        # as pending; never borrow the other run's state.
+        marker = {"run_id": env_id, "state": operator_run.RUNNING, "started_at": None, "deadline_at": None}
+        run_id = env_id
+    current = {
+        "run_id": run_id,
+        "started_at": marker.get("started_at"),
+        "deadline_at": marker.get("deadline_at"),
+        "finished_at": marker.get("finished_at"),
+        "log": marker.get("log"),
+    }
+    matching = summary if (summary and summary.get("run_id") == run_id) else None
+    previous = None if matching else _previous_run_block(summary)
+
+    if matching:
+        # The final summary of THIS run exists (it is what closes the run): its reasons are current.
+        reasons, info = _summary_reasons(matching)
+        state = matching.get("state") if matching.get("state") in operator_run.TERMINAL else (
+            operator_run.FAILED if info["blocking_failure"] else operator_run.COMPLETE)
+        current["started_at"] = matching.get("started_at") or current["started_at"]
+        current["finished_at"] = matching.get("finished_at")
+        info.update({"state": state, "status_label": state, "run_id": run_id, "current_run": current,
+                     "not_run_this_run": matching.get("not_run_this_run") or {}})
+        return reasons, info
+
+    if marker.get("state") in operator_run.TERMINAL:
+        # Closed, but its summary is missing/foreign: never substitute the older summary.
+        return ([f"operator run {run_id} closed {marker.get('state')} but its final summary is missing"],
+                {"state": marker.get("state"), "status_label": marker.get("state"), "run_id": run_id,
+                 "current_run": current, "previous_run": previous})
+
+    if marker.get("started_at") is None:   # env-only identity (marker names another run)
+        verdict, why = operator_run.RUNNING, "in progress"
+    else:
+        verdict, why = operator_run.assess_running(marker, now, host=_HOSTNAME, alive_fn=_PID_ALIVE)
+    if verdict == operator_run.INCOMPLETE:
+        return ([f"operator run {run_id} (started {current['started_at']}) did not finish (INCOMPLETE: {why})"],
+                {"state": "INCOMPLETE", "status_label": "INCOMPLETE", "run_id": run_id,
+                 "incomplete_reason": why, "current_run": current, "previous_run": previous})
+
+    # RUNNING: interim child outcomes of THIS run are shown as interim only -- not final, not folded.
+    try:
+        interim, _ = partition_child_outcomes(BASE_DIR, run_id)
+    except OSError:
+        interim = {}
+    return ([], {"state": "PENDING", "status_label": "IN PROGRESS", "run_id": run_id,
+                 "current_run": current, "previous_run": previous,
+                 "in_progress_child_outcomes": {p: (v.get("outcomes") or {}) for p, v in interim.items()}})
+
+
+def _operator_signals() -> tuple[list[str], dict]:
+    """Read the structured operator summary (written by run_daily) for blocking failures and provider
+    exhaustion. Machine-readable -- never parse the free-text operator log. Run-aware since D11: only the
+    CURRENT run's summary contributes reasons (see _operator_context)."""
+    return _operator_context()
+
+
+def _find_tagged_log(patterns: list[str], run_id: str) -> Path | None:
+    """The log attributed to `run_id` by its "Operator run: <id>" header -- identity, not mtime/filename."""
+    for pattern in patterns:
+        for path in LOG_DIR.glob(pattern):
+            if path.is_file() and operator_run.read_log_tag(path) == run_id:
+                return path
+    return None
+
+
+def _artifact_row(check: dict, artifact: Path | None, now: datetime) -> dict:
+    age = _age_hours(artifact, now) if artifact else None
+    status = _classify(age, int(check["fresh_hours"]), int(check["aging_hours"]))
+    modified = datetime.fromtimestamp(artifact.stat().st_mtime, timezone.utc) if artifact else None
+    return {
+        "Name": check["name"],
+        "Status": status,
+        "StatusNote": _status_note(status),
+        "LastRunAt": modified.astimezone().isoformat(timespec="seconds") if modified else "",
+        "AgeHours": round(age, 2) if age is not None else "",
+        "Artifact": str(artifact.relative_to(BASE_DIR)) if artifact else "",
+        "Note": check["note"],
+    }
+
+
+def _operator_log_row(check: dict, now: datetime, op: dict) -> dict:
+    """A log row while an identified operator run is current. The current run's own log (by run id) is
+    classified normally; otherwise the row states the current run's status and the newest other log is
+    shown ONLY as `Previous*` fields, labelled previous run."""
+    state = op.get("state")
+    cur = op.get("current_run") or {}
+    run_id = cur.get("run_id")
+    patterns = check.get("patterns", [])
+    own = _find_tagged_log(patterns, run_id) if run_id else None
+    if own is not None:
+        row = _artifact_row(check, own, now)
+        row["RunId"] = run_id
+        return row
+    if state in (operator_run.COMPLETE, operator_run.FAILED) and check["name"] != "Daily Operator":
+        # Finished run that legitimately did not produce this log (--skip-edge/--skip-scorecards, an
+        # aborted chain, or a standalone run): pre-D11 newest-by-mtime behaviour.
+        return _artifact_row(check, _latest_file(patterns, LOG_DIR), now)
+    if state == "PENDING":
+        status = _OPERATOR_LOG_PENDING_STATUS.get(check["name"], "PENDING")
+        note = (f"{'In progress' if status == 'IN_PROGRESS' else 'Pending'}: run {run_id}, "
+                f"started {cur.get('started_at')}")
+    elif state == "INCOMPLETE":
+        status = "INCOMPLETE"
+        note = f"Incomplete: run {run_id} started {cur.get('started_at')} did not finish"
+    else:   # finished run whose own operator log is missing
+        status = "MISSING"
+        note = f"Missing: no log attributed to run {run_id}"
+    started = operator_run.parse_utc(cur.get("started_at"))
+    row = {
+        "Name": check["name"],
+        "Status": status,
+        "StatusNote": note,
+        "LastRunAt": started.astimezone().isoformat(timespec="seconds") if started else "",
+        "AgeHours": round(max(0.0, (now - started).total_seconds() / 3600), 2) if started else "",
+        "Artifact": "",
+        "Note": check["note"],
+        "RunId": run_id,
+    }
+    prev = _latest_file(patterns, LOG_DIR)
+    if prev is not None:
+        prev_row = _artifact_row(check, prev, now)
+        row.update({
+            "PreviousRunLabel": "previous run",
+            "PreviousRunId": operator_run.read_log_tag(prev),
+            "PreviousArtifact": prev_row["Artifact"],
+            "PreviousLastRunAt": prev_row["LastRunAt"],
+            "PreviousAgeHours": prev_row["AgeHours"],
+        })
+    return row
+
+
+def build_run_status(now: datetime | None = None) -> dict:
+    now = now or datetime.now(timezone.utc)
+    # D11: decide which operator run is CURRENT (by run id) before classifying the operator's own logs.
+    op_reasons, op_info = _operator_context(now)
+    identified = op_info.get("state") in ("PENDING", "INCOMPLETE", "COMPLETE", "FAILED")
     rows = []
     for check in CHECKS:
+        if check["kind"] == "log" and identified and check["name"] in _OPERATOR_LOG_PENDING_STATUS:
+            rows.append(_operator_log_row(check, now, op_info))
+            continue
         if check["kind"] == "log":
             artifact = _latest_file(check.get("patterns", []), LOG_DIR)
         else:
             artifact = _latest_artifact(check.get("paths", []))
-
-        age = _age_hours(artifact, now) if artifact else None
-        status = _classify(age, int(check["fresh_hours"]), int(check["aging_hours"]))
-        modified = datetime.fromtimestamp(artifact.stat().st_mtime, timezone.utc) if artifact else None
-        rows.append({
-            "Name": check["name"],
-            "Status": status,
-            "StatusNote": _status_note(status),
-            "LastRunAt": modified.astimezone().isoformat(timespec="seconds") if modified else "",
-            "AgeHours": round(age, 2) if age is not None else "",
-            "Artifact": str(artifact.relative_to(BASE_DIR)) if artifact else "",
-            "Note": check["note"],
-        })
+        rows.append(_artifact_row(check, artifact, now))
 
     # Fold in the Odds-feed families + the structured operator summary -- the signals whose absence let
     # the Oct 2026 incident read GREEN while props were days stale and CFBD was quota-exhausted.
     odds_rows, odds_reasons = _odds_family_signals()
-    op_reasons, op_info = _operator_signals()
     rows.extend(odds_rows)
     degraded_reasons = odds_reasons + op_reasons
 
     counts = {status: sum(1 for row in rows if row["Status"] == status) for status in ["FRESH", "AGING", "STALE", "MISSING"]}
+    for extra in ("IN_PROGRESS", "PENDING", "INCOMPLETE"):   # D11 run-state rows (additive keys)
+        counts[extra] = sum(1 for row in rows if row["Status"] == extra)
     # Severity: RED (nothing fresh at all) > DEGRADED (a current-market feed is stale, a required refresh
     # was skipped by provider exhaustion, or a blocking step failed) > WATCH (aging artifacts) > GREEN.
     # DEGRADED supersedes a false GREEN/WATCH -- that is the whole point of the incident fix.
@@ -335,10 +524,11 @@ def build_run_status() -> dict:
 
 def write_outputs(payload: dict) -> None:
     TRACKING_DIR.mkdir(parents=True, exist_ok=True)
-    JSON_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    operator_run.atomic_write_json(JSON_PATH, payload)   # the site reads this file; never a torn read
     rows = payload.get("rows", [])
     with CSV_PATH.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["Name", "Status", "StatusNote", "LastRunAt", "AgeHours", "Artifact", "Note"])
+        writer = csv.DictWriter(handle, fieldnames=["Name", "Status", "StatusNote", "LastRunAt", "AgeHours", "Artifact", "Note"],
+                                extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -350,8 +540,18 @@ def main() -> int:
     print("BANKROLL KINGS - RUN STATUS")
     print("=" * 60)
     print(f"Overall: {payload['overall']}")
+    op = payload.get("operator") or {}
+    cur = op.get("current_run") or {}
+    if op.get("state") and op.get("state") != "LEGACY":
+        print(f"Operator: {op.get('status_label') or op.get('state')} -- current run {cur.get('run_id')} "
+              f"started {cur.get('started_at')}" + (f" finished {cur.get('finished_at')}" if cur.get("finished_at") else ""))
     for reason in payload.get("degraded_reasons", []):
         print(f"  DEGRADED: {reason}")
+    prev = op.get("previous_run")
+    if prev:
+        print(f"Previous run (not current): {prev.get('run_id') or 'unidentified'} finished {prev.get('finished_at')}")
+        for reason in prev.get("reasons") or []:
+            print(f"  previous run: {reason}")
     print(f"Output: {JSON_PATH}")
     for row in payload["rows"]:
         print(f"{row['Status']:<7} {row['Name']:<24} {row['AgeHours']}h {row['Artifact']}")

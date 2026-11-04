@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import argparse
-import json
+import os
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from season_utils import active_sports, is_preseason_step, nfl_preseason_active, sport_for_label
 from services.env_loader import load_local_env
+from services import operator_run
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -288,10 +289,27 @@ def main() -> int:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = LOG_DIR / f"daily_operator_{stamp}.log"
+    # D11: give THIS run an immutable identity at START -- an atomic RUNNING marker + BK_OPERATOR_RUN_ID
+    # exported to every child (they inherit os.environ). Run Status keys "current" on this id, never on
+    # the newest log mtime or a filename date, so a mid-run read can no longer present the previous run.
+    # The cap is the sum of the planned step timeouts (+ post-refresh health + Run Status + slack).
+    max_runtime = sum(int(t) for _, _, t in steps) + 120 + 300 + operator_run.SLACK_SECONDS
+    try:
+        run = operator_run.begin_run(BASE_DIR, log_name=log_path.name, sports=sports,
+                                     max_runtime_seconds=max_runtime)
+    except (OSError, ValueError) as exc:
+        # Never block the refresh on the marker; the id is still exported so children/summary carry it.
+        print(f"[WARN] could not write the current-run marker: {exc}")
+        run = {"run_id": operator_run.new_run_id(), "started_at": None}
+        os.environ[operator_run.RUN_ID_ENV] = run["run_id"]
+    run_id = run["run_id"]
+    print(f"Operator run: {run_id} (started {run.get('started_at')})")
     lines = [
         "Bankroll Kings Daily Operator",
         "=" * 31,
         f"Started: {datetime.now().isoformat(timespec='seconds')}",
+        *operator_run.log_tag_line(run_id),
+        f"Started (UTC): {run.get('started_at')}",
         f"Sports: {', '.join(sorted(sports)).upper()}",
         "",
     ]
@@ -384,16 +402,23 @@ def main() -> int:
     failed_steps = [o["label"] for o in step_outcomes if o["status"] == "FAIL"]
     # Record the per-sport CHILD OUTCOMES the parents wrote (the vocabulary), not merely the parent exit
     # code (directive #3): e.g. football_props -> {nfl=..., ncaaf=...}, nba_daily -> {player_props=...}.
-    from services.run_outcomes import load_all_child_outcomes, is_alerting
-    child_outcomes = load_all_child_outcomes(BASE_DIR)
+    from services.run_outcomes import partition_child_outcomes, is_alerting
+    # Only sidecars stamped with THIS run's id are current (D11). A stale sidecar from a parent that did
+    # not run this time (aborted chain, out-of-set sport) is listed as not_run_this_run, never folded in.
+    child_outcomes, not_run_this_run = partition_child_outcomes(BASE_DIR, run_id)
     degraded_children = sorted({
         f"{parent}:{label}={o}"
         for parent, payload in child_outcomes.items()
         for label, o in (payload.get("outcomes") or {}).items()
         if is_alerting(o)
     })
+    finished = datetime.now(timezone.utc)
     summary = {
-        "finished_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "schema": operator_run.SCHEMA,
+        "run_id": run_id,
+        "started_at": run.get("started_at"),
+        "finished_at": operator_run.utc_iso(finished),
+        "state": operator_run.FAILED if failed else operator_run.COMPLETE,
         "log": log_path.name,
         "sports": sorted(sports),
         "blocking_failure": bool(failed),
@@ -401,17 +426,25 @@ def main() -> int:
         "provider_exhausted_steps": provider_exhausted,
         "child_outcomes": child_outcomes,
         "degraded_child_outcomes": degraded_children,
+        "not_run_this_run": not_run_this_run,
         "steps": step_outcomes,
     }
     summary_path = BASE_DIR / "data" / "tracking" / "Last_Operator_Summary.json"
+    summary_written = False
     try:
-        summary_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = summary_path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-        tmp.replace(summary_path)
+        operator_run.atomic_write_json(summary_path, summary)
+        summary_written = True
         print(f"Summary saved: {summary_path}")
     except OSError as exc:
         print(f"[WARN] could not write operator summary: {exc}")
+    # The final summary CLOSES the run: flip the marker RUNNING -> COMPLETE/FAILED atomically (never
+    # clobbering a marker that already belongs to a newer run).
+    if run.get("started_at"):
+        try:
+            operator_run.close_run(BASE_DIR, run, summary["state"] if summary_written else operator_run.FAILED,
+                                   summary_written=summary_written, finished_at=finished)
+        except (OSError, ValueError) as exc:
+            print(f"[WARN] could not close the current-run marker: {exc}")
 
     print("[RUN] Run status")
     ok, output = _run_step("Run status", _python("generate_run_status.py"), 300)

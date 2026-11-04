@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from season_utils import active_sports, sport_for_label
+from services.operator_run import env_run_id, log_tag_line
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -104,6 +105,11 @@ SCORECARDS = [
     # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages
     # + the structured operator summary; proves the severity ladder RED>DEGRADED>WATCH>GREEN. Pure/offline.
     ("Run Status DEGRADED QC", "qc_run_status_degraded.py", 60),
+    # Run Status = CURRENT operator run (D11, 2026-11-04): a mid-run Run Status (the nested Edge call) read
+    # the previous run's log + summary as current. Identity is now an immutable run id (atomic marker +
+    # BK_OPERATOR_RUN_ID); mid-run -> PENDING/IN PROGRESS, killed run -> INCOMPLETE, previous run labelled
+    # separately, stale child-outcome sidecars ignored. Offline temp tree + in-process mutation checks.
+    ("Run Status Current-Run QC", "qc_run_status_current_run.py", 300),
     # Zero-network paid-fetch gate (Oct 24): before spending a credit, classify each sport from the local
     # schedule + feed ages as PROBE_JUSTIFIED / NO_FETCH / FRESH / NO_SCHEDULE, so a blanket "refetch
     # everything" can't burn credits on a sport with no in-window events. Pure/offline (temp fixtures).
@@ -372,6 +378,8 @@ def main() -> int:
         "Bankroll Kings Scorecard Runner",
         "=" * 35,
         f"Started: {datetime.now().isoformat(timespec='seconds')}",
+        # D11: attribute this log to the operator run (BK_OPERATOR_RUN_ID, inherited).
+        *log_tag_line(env_run_id()),
         "",
     ]
     active = active_sports()

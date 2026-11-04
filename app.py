@@ -29949,6 +29949,13 @@ def load_run_status_context(limit=8) -> dict:
         return fallback
     if not isinstance(payload, dict):
         return fallback
+    # D11: a Run_Status.json written mid-run (operator PENDING) by a run that was then killed must read
+    # INCOMPLETE once that run's recorded deadline passes -- never "in progress" forever.
+    try:
+        from services.operator_run import expire_pending_payload
+        payload = expire_pending_payload(payload)
+    except Exception:
+        pass
     rows = payload.get('rows') if isinstance(payload.get('rows'), list) else []
     decorated = []
     for row in rows:

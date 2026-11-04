@@ -109,13 +109,16 @@ def props_step_outcome(base_dir, sport_slug: str, artifact_path, mtime_before: f
 def record_child_outcomes(base_dir, parent: str, outcomes: dict[str, str]) -> None:
     """Write a structured per-parent child-outcome sidecar so the operator summary records the CHILD
     OUTCOME (the vocabulary) -- not merely the parent exit code (directive #3). Best-effort; one file per
-    parent so parents never clobber each other."""
+    parent so parents never clobber each other. Stamped with the operator run id inherited from run_daily
+    (BK_OPERATOR_RUN_ID; None when run outside the operator) so readers accept it only for that run (D11)."""
+    from services.operator_run import env_run_id
     path = Path(base_dir) / "data" / "tracking" / f"_child_outcomes_{parent}.json"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps({
             "parent": parent,
+            "run_id": env_run_id(),
             "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "outcomes": outcomes,
             "degraded": any(is_alerting(o) for o in outcomes.values()),
@@ -125,22 +128,37 @@ def record_child_outcomes(base_dir, parent: str, outcomes: dict[str, str]) -> No
         pass
 
 
-def load_all_child_outcomes(base_dir) -> dict[str, dict]:
-    """Merge every _child_outcomes_<parent>.json for the operator summary. Returns {parent: payload}."""
-    out: dict[str, dict] = {}
+def partition_child_outcomes(base_dir, run_id) -> tuple[dict[str, dict], dict[str, dict]]:
+    """Split every _child_outcomes_<parent>.json into (this_run, not_this_run) by EXACT run id. A sidecar
+    with no run id, or another run's id (a parent that did not run this time: an aborted chain, an
+    out-of-set sport), is never a current outcome -- it is returned in not_this_run as {parent: {run_id,
+    at}} for labelling only. No run id -> nothing is current."""
+    current: dict[str, dict] = {}
+    other: dict[str, dict] = {}
     tracking = Path(base_dir) / "data" / "tracking"
     try:
         files = sorted(tracking.glob("_child_outcomes_*.json"))
     except OSError:
-        return out
+        return current, other
     for f in files:
         try:
             payload = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
+        if not isinstance(payload, dict):
+            continue
         parent = payload.get("parent") or f.stem.replace("_child_outcomes_", "")
-        out[parent] = payload
-    return out
+        if run_id and payload.get("run_id") == run_id:
+            current[parent] = payload
+        else:
+            other[parent] = {"run_id": payload.get("run_id"), "at": payload.get("at")}
+    return current, other
+
+
+def load_all_child_outcomes(base_dir, run_id) -> dict[str, dict]:
+    """The CURRENT run's child outcomes for the operator summary: {parent: payload}, only sidecars stamped
+    with exactly `run_id` (D11: a stale sidecar from a step that did not run is never folded in)."""
+    return partition_child_outcomes(base_dir, run_id)[0]
 
 
 def aggregate_parent(child_outcomes: dict[str, str]) -> tuple[str, bool]:
