@@ -17,6 +17,15 @@ build_free_sport_prop_rows) · /elite (sharp-money scanner + best-book board) ·
 command center (build_live_prop_runtime_context 12h disk cache) · NBA/WNBA/Elite runtime snapshots (72h) ·
 Green Light / King's Tickets / Daily Card (+png) / Menu (no NBA/WNBA props input -- static proof).
 
+v4 (owner decisions 5 + 6): qc_skew_contract proves the clock-skew contract (+<=5 min tolerated AND labelled,
+beyond fails closed, a single beyond-allowance row dropped); qc_route_matrix renders EVERY route above over
+HTTP in four feed states -- stale (10h), fresh (1h), skew_ok (+3 min), skew_fail (+10 min) -- and prints a
+route -> fixture -> stale / fresh / skew_ok / skew_fail table. Stale and skew_fail: no price, no fixture row,
+no executable/ticket control (data-*/value/onclick/form markup naming the fixture player), and the builder
+behind a "builder:" route exposes nothing executable (for /parlay the payout read returns NO PRICE READ).
+Fresh and skew_ok: the fixture quote renders (or the builder control proves the executable input); skew_ok is
+labelled (props_feed_status flag + data-props-clock-skew on the pages carrying the status partial).
+
 Auth via services.qc_auth (in-memory principals); no user-store writes (heartbeat redirected to temp); no
 network; nothing under the real data/ is read or written. Exit 0 on pass, 1 otherwise.
 """
@@ -319,11 +328,232 @@ def qc_central_contract():
           "build_market_only_board no longer calls require_fresh=False and re-verifies the frame it receives")
 
 
+# ------------------------------------------------------------------------------------------------ v4 matrix
+# Four feed states per route (owner decision 5 + 6). Ages in hours; negative = the provider clock is AHEAD.
+STATES = {"stale": STALE_H, "fresh": 1.0, "skew_ok": -3.0 / 60.0, "skew_fail": -10.0 / 60.0}
+MATRIX: list[dict] = []     # one row per route for the printed table
+
+# (route, fixture name, sports whose fixture the route reads, fresh-control kind, allowed stale name echo)
+#   kind "quote": fixture player AND price render over HTTP when executable (fresh / skew_ok)
+#   kind "name":  fixture player renders (the page shows no price column at all)
+#   kind "builder:<check>": the page shows no fixture row even when fresh in this config (gate off = prod),
+#                 so its executable input is proven by the named builder-level check in the same 4 states
+ROUTE_MATRIX = [
+    ("/", "rt_root_redirect", ("nba", "wnba"), "builder:cross_sport_snapshots", False),
+    ("/dashboard", "rt_dashboard", ("nba", "wnba"), "quote", False),
+    ("/free", "rt_free", ("nba", "wnba"), "name", False),
+    ("/free/nba", "rt_free_nba", ("nba",), "quote", False),
+    ("/free/wnba", "rt_free_wnba", ("wnba",), "quote", False),
+    ("/home/props", "rt_home_props", ("nba", "wnba"), "quote", False),
+    ("/home/elite", "rt_home_elite_redirect", ("nba", "wnba"), "builder:elite_builders", False),
+    ("/derivatives", "rt_derivatives", ("nba", "wnba"), "quote", False),
+    ("/elite", "rt_elite", ("nba", "wnba"), "name", True),           # alert HISTORY may echo a name; never a price
+    ("/sports/nba", "rt_sports_nba", ("nba",), "builder:nba_runtime_context", False),
+    ("/sports/wnba", "rt_sports_wnba", ("wnba",), "quote", False),
+    ("/sports/nba/props", "rt_nba_props_board", ("nba",), "quote", False),
+    ("/sports/wnba/props", "rt_wnba_props_board", ("wnba",), "quote", False),
+    ("/parlay", "rt_parlay_nba", ("nba",), "builder:nba_runtime_context+payout", False),
+    ("/parlay?sport=wnba", "rt_parlay_wnba", ("wnba",), "quote", False),
+    ("/sports/nba/market-edge", "rt_nba_market_edge", ("nba",), "builder:nba_runtime_context", False),
+    ("/sports/wnba/market-edge", "rt_wnba_market_edge", ("wnba",), "quote", False),
+    ("/sports/wnba/floor", "rt_wnba_floor", ("wnba",), "builder:wnba_prop_board", False),
+    ("/sports/wnba/trends", "rt_wnba_trends", ("wnba",), "builder:wnba_prop_board", False),
+    ("/sports/wnba/matchup/qca-at-qcb", "rt_wnba_matchup", ("wnba",), "quote", False),
+    ("/tools/nba-player?q=Qcnba+Stalecheck", "rt_nba_player", ("nba",), "quote", True),   # echoes the query
+    ("/tools/wnba-player?q=Qcwnba+Stalecheck", "rt_wnba_player", ("wnba",), "quote", True),
+    ("/tools/best-lines", "rt_best_lines", ("nba", "wnba"), "quote", False),
+    ("/tools/risk-radar", "rt_risk_radar", ("nba", "wnba"), "name", False),
+    ("/tools/slate-pulse", "rt_slate_pulse", ("nba", "wnba"), "builder:slate_pulse_counts", False),
+    # controls that were already strict before v3 (no NBA/WNBA props input): must render in every state
+    ("/tools/green-light", "rt_ctrl_green_light", (), "control", False),
+    ("/tools/menu", "rt_ctrl_menu", (), "control", False),
+]
+_SKEW_LABEL_ROUTES = ("/sports/nba/props", "/sports/wnba/props", "/tools/nba-player", "/tools/wnba-player")
+
+
+def _control_echo(html: str, names) -> list[str]:
+    """Any executable/ticket control carrying a fixture player: a data-* / value= / onclick= attribute or a
+    form/button whose markup names the player (add-to-ticket, leg, payout inputs)."""
+    import re
+    hits = []
+    for n in names:
+        pat = re.escape(n)
+        if re.search(r'(data-[a-z0-9_-]+|value|onclick|name)\s*=\s*"[^"]*' + pat, html, re.I) or \
+                re.search(r"<(button|form|input)[^>]*" + pat, html, re.I):
+            hits.append(n)
+    return hits
+
+
+def _write_wnba_odds(root: Path):
+    now = datetime.now(timezone.utc) + timedelta(hours=5)
+    et = now.astimezone(DISPLAY_TZ)
+    pd.DataFrame([{"GameID": "qcw1", "Date": et.strftime("%Y-%m-%d"), "Time": et.strftime("%H:%M"), "Away": "QCA",
+                   "Home": "QCB", "Book": "DraftKings", "AwayML": 120, "HomeML": -140, "Spread": -2.5,
+                   "SpreadOdds": -110, "Total": 160.5, "OverOdds": -110, "UnderOdds": -110,
+                   "LastUpdated": _et(datetime.now(timezone.utc))}]).to_csv(root / "odds" / "WNBA_Odds.csv", index=False)
+
+
+def _builder_probe(kind: str):
+    """(leaked, fresh_ok) -- see _builder_probe_raw."""
+    got = _builder_probe_raw(kind)
+    return got if isinstance(got, tuple) else (bool(got), bool(got))
+
+
+def _builder_probe_raw(kind: str):
+    """Executable-input proof for routes that show no fixture row in this config. True when the fixture's
+    executable data reached the builder (expected in fresh/skew_ok, never in stale/skew_fail)."""
+    if kind == "cross_sport_snapshots":
+        snap = {x["key"]: x for x in app.build_cross_sport_dashboard_snapshots(False)}
+        n, w = snap.get("nba", {}), snap.get("wnba", {})
+        return bool((n.get("best_prop") or n.get("best_over") or n.get("best_under")) and int(n.get("props_rows") or 0) > 0)
+    if kind == "elite_builders":
+        cand = [{"sport": "NBA", "player": PLAYER["nba"], "stat": "PTS", "direction": "OVER", "line": 24.5}]
+        saved = app.load_mlb_props
+        app.load_mlb_props = lambda: pd.DataFrame()
+        try:
+            return bool(app.build_elite_best_book_board(cand))
+        finally:
+            app.load_mlb_props = saved
+    if kind.startswith("nba_runtime_context"):
+        os.environ["BK_NBA_STATS_ENABLED"] = "1"
+        try:
+            ctx = app.build_live_prop_runtime_context(postseason_only=False)
+        finally:
+            os.environ.pop("BK_NBA_STATS_ENABLED", None)
+        has = (not getattr(ctx["props_df"], "empty", True)) and PLAYER["nba"] in set(ctx["props_df"]["Player"].astype(str))
+        if kind.endswith("+payout"):
+            # The parlay payout read prices a leg from the EXECUTABLE frame only; no price -> it refuses.
+            frame = app.load_props()
+            leg = frame[frame["Player"].astype(str) == PLAYER["nba"]] if not frame.empty else frame
+            price = float(leg["OverOdds"].iloc[0]) if not leg.empty else None
+            read = app.calculate_bankroll_iq(true_probability=0.55, decimal_odds=app._american_decimal_odds(price))
+            priced = read.get("label") != "NO PRICE READ"
+            return (has or priced), (has and priced)   # (anything executable leaked, full fresh control)
+        return has
+    if kind == "wnba_prop_board":
+        board = app.build_wnba_prop_board(app.load_wnba_props(), app.load_wnba_game_market_odds(),
+                                          app.load_wnba_schedule(), date_filter="all", featured_top_n=0)
+        return any(r.get("player") == PLAYER["wnba"] for r in board)
+    if kind == "slate_pulse_counts":
+        ctx = app.build_slate_pulse_context()
+        rows = {r["key"]: r for r in (ctx.get("rows", []) if isinstance(ctx, dict) else [])}
+        return int(rows.get("nba", {}).get("props") or 0) > 0
+    raise ValueError(kind)
+
+
+def qc_route_matrix():
+    """Every NBA/WNBA stale-props route x {stale, fresh, skew_ok (+3 min), skew_fail (+10 min)} over HTTP,
+    through the real loaders. Stale and skew_fail: no price, no fixture row, no executable/ticket control;
+    fresh and skew_ok: the fresh control renders (or the builder control proves the executable input), and
+    skew_ok is LABELLED (props_feed_status flag; status partial on the pages that carry it)."""
+    _write_wnba_odds(Path(app.DATA_DIR))
+    results = {r[0]: {} for r in ROUTE_MATRIX}
+    for state, age in STATES.items():
+        _write_props("nba", age)
+        _write_props("wnba", age)
+        app.RUNTIME_TTL_CACHE.clear()
+        status = {s: app.props_feed_status(s) for s in ("nba", "wnba")}
+        executable = state in ("fresh", "skew_ok")
+        # central verdict per state
+        for s in ("nba", "wnba"):
+            st = status[s]
+            want = {"stale": (False, "stale"), "fresh": (True, None), "skew_ok": (True, None),
+                    "skew_fail": (False, "future_timestamp")}[state]
+            check(st["executable"] is want[0] and st["unavailable_reason"] == want[1]
+                  and bool(st.get("clock_skew_tolerated")) is (state == "skew_ok")
+                  and (state != "skew_ok" or (st.get("status_reason") == "clock_skew_tolerated"
+                                              and 0 < st.get("clock_skew_seconds", 0) <= 300)),
+                  f"central gate [{s}/{state}]: executable={st['executable']} reason={st['unavailable_reason']} "
+                  f"skew_tolerated={st.get('clock_skew_tolerated')} skew_s={st.get('clock_skew_seconds')}")
+        for route, fixture, sports, kind, echo_ok in ROUTE_MATRIX:
+            names = [PLAYER[s] for s in sports]
+            with isolated_owner_client() as c:
+                r = c.get(route)
+            html = r.get_data(as_text=True)
+            ok_status = r.status_code in (200, 302)
+            if kind == "control":
+                good = r.status_code == 200
+                note = f"HTTP {r.status_code}"
+            elif not executable:
+                leaked_price = str(PRICE) in html
+                leaked_name = [n for n in names if n in html]
+                ctrl = _control_echo(html, names)
+                good = ok_status and not leaked_price and not ctrl and (echo_ok or not leaked_name)
+                if kind.startswith("builder:"):
+                    good = good and not _builder_probe(kind.split(":", 1)[1])[0]
+                if state == "skew_fail" and route.split("?")[0] in _SKEW_LABEL_ROUTES and r.status_code == 200:
+                    good = good and ('data-props-reason="future_timestamp"' in html or "prices are withheld" in html)
+                note = (f"HTTP {r.status_code}, price={'LEAK' if leaked_price else 'none'}, "
+                        f"controls={ctrl or 'none'}, name={'echo(no price)' if leaked_name else 'none'}")
+            else:
+                if kind == "quote":
+                    good = r.status_code == 200 and all(n in html for n in names) and str(PRICE) in html
+                elif kind == "name":
+                    good = r.status_code == 200 and all(n in html for n in names)
+                else:
+                    good = ok_status and _builder_probe(kind.split(":", 1)[1])[1]
+                if state == "skew_ok":
+                    good = good and all(status[s].get("clock_skew_tolerated") for s in sports)
+                    if route.split("?")[0] in _SKEW_LABEL_ROUTES:
+                        good = good and 'data-props-clock-skew="1"' in html
+                note = f"HTTP {r.status_code}, {kind}"
+            results[route][state] = "PASS" if good else "FAIL"
+            check(good, f"{route} [{fixture}] {state}: {note}")
+    for route, fixture, sports, kind, _ in ROUTE_MATRIX:
+        MATRIX.append({"route": route, "fixture": fixture, "kind": kind, **results[route]})
+    try:
+        (Path(app.DATA_DIR) / "odds" / "WNBA_Odds.csv").unlink()
+    except OSError:
+        pass
+
+
+def qc_skew_contract():
+    """Clock-skew contract (owner decision 5): +<=5 min tolerated AND labelled; beyond fails closed; a single
+    row beyond the allowance is dropped from an otherwise executable feed."""
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    iso = lambda dt: dt.strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
+    mk = lambda *lus: pd.DataFrame([{"Player": f"p{i}", "Book": "b", "LastUpdated": lu} for i, lu in enumerate(lus)])  # noqa: E731
+    ok3 = app.props_executable_meta(mk(iso(now + timedelta(minutes=3))), now=now)
+    edge = app.props_executable_meta(mk(iso(now + timedelta(minutes=5))), now=now)
+    bad = app.props_executable_meta(mk(iso(now + timedelta(minutes=5, seconds=1))), now=now)
+    plain = app.props_executable_meta(mk(iso(now - timedelta(minutes=30))), now=now)
+    check(ok3["executable"] and ok3["clock_skew_tolerated"] and ok3["status_reason"] == "clock_skew_tolerated"
+          and ok3["clock_skew_seconds"] == 180, "skew +3 min: executable, clock_skew_tolerated, status_reason, 180 s")
+    check(edge["executable"] and edge["clock_skew_tolerated"] and edge["clock_skew_seconds"] == 300,
+          "skew exactly +5 min: still tolerated (inclusive boundary)")
+    check(not bad["executable"] and bad["unavailable_reason"] == "future_timestamp" and bad["prices_withheld"]
+          and not bad["clock_skew_tolerated"], "skew +5 min 1 s: fails closed (future_timestamp, prices withheld)")
+    check(plain["executable"] and not plain["clock_skew_tolerated"] and plain["status_reason"] is None,
+          "no skew: no skew label")
+    frame, meta = app._executable_props_frame("nba", mk(iso(now - timedelta(minutes=20)), iso(now + timedelta(minutes=30))),
+                                              now=now)
+    check(meta["executable"] and len(frame) == 1 and meta["future_rows_dropped"] == 1
+          and list(frame["Player"]) == ["p0"],
+          "row level: a row stamped +30 min is dropped from an otherwise executable feed (fail closed per row)")
+    with app.app.test_request_context():
+        label = app.render_template("_props_feed_status.html", props_status={**ok3, "last_updated": "x"})
+        withheld = app.render_template("_props_feed_status.html", props_status={**bad, "last_updated": "y"})
+    check('data-props-clock-skew="1"' in label and "clock skew tolerated" in label,
+          "the status partial LABELS a tolerated skew")
+    check('data-props-executable="0"' in withheld and 'data-props-reason="future_timestamp"' in withheld
+          and "beyond the 5-minute clock-skew allowance" in withheld,
+          "the status partial explains a beyond-allowance future timestamp and withholds prices")
+
+
+def print_matrix():
+    print("-" * 110)
+    print(f"{'route':42} {'fixture':24} {'stale':6} {'fresh':6} {'skew_ok':8} {'skew_fail':9} control")
+    for m in MATRIX:
+        print(f"{m['route']:42} {m['fixture']:24} {m.get('stale','-'):6} {m.get('fresh','-'):6} "
+              f"{m.get('skew_ok','-'):8} {m.get('skew_fail','-'):9} {m['kind']}")
+    print("-" * 110)
+
+
 def main() -> int:
     with sandbox():
-        for fn in (qc_central_contract, qc_market_only_boards, qc_market_player_pages, qc_quick_tools,
-                   qc_derivatives_and_free, qc_elite, qc_wnba_board_cache, qc_nba_runtime_cache, qc_snapshots,
-                   qc_no_props_input_surfaces):
+        for fn in (qc_central_contract, qc_skew_contract, qc_market_only_boards, qc_market_player_pages,
+                   qc_quick_tools, qc_derivatives_and_free, qc_elite, qc_wnba_board_cache, qc_nba_runtime_cache,
+                   qc_snapshots, qc_no_props_input_surfaces, qc_route_matrix):
             try:
                 fn()
             except Exception as exc:  # a crash is a failure, never a pass
@@ -336,6 +566,7 @@ def main() -> int:
         print(f"[OK]   {n}")
     for f in FAILS:
         print(f"[FAIL] {f}")
+    print_matrix()
     print(f"\n{len(NOTES)} passed, {len(FAILS)} failed")
     return 1 if FAILS else 0
 
