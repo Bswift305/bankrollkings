@@ -15,9 +15,87 @@
 > **NBA timeout contract approved:** lines 30 s, props 60 s, lock wait 30 s, daily lines 60 s, daily props 90 s,
 > orchestrator 180 s.
 
+## FINAL RESULT — successor `4afcab9` (quote-change atomicity + exact `/parlay/save` + 2–8 legs)
+
+**Verdict: PASS for exact `4afcab9178f189341140223eecb7f5f96ce67f6e`** — the final deployment candidate. It supersedes
+`86b6aae` and `e1e33dc`. Gate only: nothing is deployed, and `master` and production remain `6bdb73f`. Under the owner's
+direction ("if green, the already-approved deployment plan may proceed with no cache purge"), deployment now waits only
+on the owner's go-ahead (`docs/integrity_d4_deploy_plan_20261104.md`).
+
+**Successor commits on `86b6aae`** (fast-forward; no amend, rewrite or force push):
+
+| Commit | Change |
+|---|---|
+| `1b1eb03` | A changed quote rejects the whole ticket. Price (worse **or** better), line or book changed, or the quote stale or missing → sanitized 409 with per-leg `PRICE_CHANGED` / `LINE_CHANGED` / `BOOK_CHANGED` / `QUOTE_STALE` / `QUOTE_UNAVAILABLE` and the current safe display terms. Never a silent reprice. Executable range frozen at 2–8 legs (`TICKET_SUBMIT_MIN_LEGS` / `TICKET_SUBMIT_MAX_LEGS`). |
+| `268ba20` | `/parlay/save` stores exactly the accepted picks. The frozen range is 1–20 (`PARLAY_REVIEW_MIN_PICKS` / `PARLAY_REVIEW_MAX_PICKS`). 0 or 21+ picks → 422; an invalid pick → 422 with indexed reasons. Nothing saved, trimmed or dropped. |
+| `63adfa3` | QCs `qc_ticket_quote_change.py` and `qc_parlay_save_exact.py` (registered additively). |
+| `4afcab9` | `docs/ticket_submission_contract.md` |
+
+**How formatting is canonicalized before the comparison:**
+- **Price:** whole American odds (`150 == "+150" == 150.0`); a fractional, boolean or text price → 422.
+- **Line:** numeric (`-3.5 == "-3.50"`).
+- **Book:** case, spacing and punctuation folded, plus a provider-alias table checked against
+  `fetch_player_props.BOOKMAKER_TITLES`; "consensus" is never a book.
+- **Event, market and selection:** case, spacing, `_` and punctuation folded.
+
+**Extras beyond the owner's list, for review:**
+- `QUOTE_MISMATCH` — the event, market or selection differs.
+- `QUOTE_UNCONFIRMED` — a leg was sent with no confirmed terms (an older client). It is rejected, and the current terms
+  come back for confirmation.
+
+**Gate environment and run:**
+
+| Item | Value |
+|---|---|
+| Host | AWS CloudShell us-east-1, kernel `6.1.188-233.393.amzn2023.x86_64`, Python 3.13.16 |
+| Clone | fresh anonymous clone; work dir `/tmp/integgate4` |
+| Gate script | sha256 `e54b6eab…61c03b6aa8` (identical on both sides; differs from the `86b6aae` script only in `EXPECT`, work dir, the commit list, `SCOPE_62` and the two added QCs) |
+| Log | sha256 `0723ae62…5f0c60f744a` |
+| Time | 2026-11-04 13:24:49Z → 13:28:15Z |
+
+**Results:**
+
+| Check | Result |
+|---|---|
+| Identity | `IDENTITY_OK`; `ORIGIN_MASTER_IS_BASE_OK` (`6bdb73f`); `BASE_ANCESTOR_OK`; commits `6bdb73f..HEAD` = 28; all 18 named SHAs present (no `MISSING`) |
+| Scope | **62 files, +7111/−399** (`SCOPE_62_OK`) |
+| D1 preserved | 8 D1-only files `identical_to_base`; union hunk 4/4 markers; `run_all_scorecards.py` `removed_lines=0`, `d1_registration=1` |
+| Tree | before / after install / after QCs = 0 / 0 / 0 entries; HEAD after = exact `4afcab9…` |
+| `pip install` | rc 0 |
+| No network | `sudo unshare --net`, loopback up, no routes: `NO_NETWORK_CONFIRMED: gaierror [Errno -2]`, `lo: UNKNOWN` (up), `curl_http=000`, curl rc 6 |
+| `py_compile` | 45 changed `.py` files, rc 0 |
+| QCs | **`QC_TOTAL=45 QC_FAIL=0`.** The 43 prior QCs all rc 0, incl. `unpriced_line_legs` 173/173, `ticket_submission_atomic` 68/68, `ticket_kickoff_gate` 119/119, `sgp_kickoff_gate` 53/53, `props_slate_turnover` 77/77, `matchup_center_cache_version` 16/16, D1 `nfl_weather_venue_integrity` 275/275, `route_qc_harness` 8/8, `ncaaf_odds_single_writer` ok=65 fail=0, `nfl_roster_single_writer` ok=36 fail=0. New: **`ticket_quote_change` 114/114**, **`parlay_save_exact` 117/117**. |
+| Blocked connections | 5, all inside `unpriced_line_legs`' own socket-guard self-tests (expected); 0 in every other QC |
+| Warnings (rc 0) | `wnba_readiness` (off-season WNBA props absent) and `nba_visual_trust` (gated route), as before |
+| `qc_odds_feed` via `qc_offline.py` | **rc 3** — `NOT RUN: … REQUIRES_NETWORK = True` |
+
+**Also green:**
+- the builder's gate in the worktree and in a clean `git archive` export (45/45, `qc_odds_feed` exit 3, export tree =
+  HEAD tree);
+- my own local re-run of `ticket_quote_change` 114/114, `parlay_save_exact` 117/117, `ticket_submission_atomic` 68/68
+  and `unpriced_line_legs` 173/173.
+
+**Mutation checks (builder):**
+- repricing restored → 24/24 image checks fail and 8/8 SGP checks fail;
+- leg-count gate removed → 4/4 fail;
+- 20-pick truncation restored → 2/2 fail;
+- silent drop of invalid picks restored → 60/60 fail.
+
+**Not covered:**
+- No real-browser run of the "Confirm current terms" resubmission flows (editor, Menu slip, SGP). This is acceptance
+  matrix rows A12–A14 after deploy.
+- No deploy; no production data.
+
+**Owner items:**
+- The two extra reason codes listed above.
+- The shared editor still *builds* at most 5 legs (`TICKET_EDITOR_MAX_LEGS`, King's Tickets "2–5"). This is inside the
+  frozen 2–8 contract; the server accepts 2–8. Raising the editor cap to 8 is the owner's call.
+
+---
+
 ## SUPERSEDED RESULT — successor `86b6aae` (atomic submission + Matchup Center cache isolation)
 
-**Verdict: PASS for exact `86b6aae902d8f0ff938c4f538bdc5601f120d948`** — the current deployment candidate.
+**Verdict: PASS for exact `86b6aae902d8f0ff938c4f538bdc5601f120d948`** — superseded by `4afcab9` (above).
 `e1e33dc` (below) is superseded and must not be deployed on its own. Gate only; nothing deployed; `master` and
 production remain `6bdb73f`.
 

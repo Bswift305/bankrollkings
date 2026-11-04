@@ -611,3 +611,103 @@ On `f06e568` (→ exact `6bdb73f`). Commits: `394c12f` governed no-game result, 
   flag change.
 - **Held:** no Linux gate and no merge until **D4 is corrected** (§3 D4, ledger 1.5u). Fixing payout provenance while
   started legs can still be proposed would leave a P0 trust failure in the same ticket workflow.
+
+## 5. NBA v5 owner decisions + read-only production timer audit (2026-11-04)
+
+**Owner decisions on v5 (`3403f4a`, branch-only; rebuilt on master after the Integrity release):**
+- `--no-fetch-after-lock` **APPROVED**. Lock holder succeeds → the waiter verifies and reuses
+  (`REUSED_FRESH_AFTER_LOCK`). Lock holder fails → the waiter reports `NO_FRESH_AFTER_LOCK`, makes no paid retry and
+  writes nothing; the next scheduled cycle may try again.
+- Historical Elite alerts **APPROVED**. A valid capture time plus a recorded source → historical book/line may show,
+  labelled `Historical alert — not a current executable quote`. Missing provenance → book/line withheld.
+- **NBA gets no Linux gate on `3403f4a`.** The rebuild on the accepted master must include this timer audit, the
+  credit-accounting proof and the D14 resolution.
+
+### 5a. Production timer audit — read-only
+
+- **Run details:** SSM `ee808b49-5d86-420e-9783-4a73ec08136e`, snapshot 2026-11-04 13:19:57Z. Script sha256
+  `02c3963a…74ac41c`, verified identical on both sides.
+- **What it ran:** `systemctl cat` / `show` / `list-timers`, the timer stamp files, `last -x` and the journal.
+- **No unit, timer or file was changed.**
+
+| Unit | Schedule (UTC) | `Persistent` | Service |
+|---|---|---|---|
+| `bk-daily.timer` | `*-*-* 13:00:00` | **`true`** (`Persistent=yes`) | oneshot, `User=ubuntu`, `TimeoutStartSec=3600`, `run_daily.py --sports nba,wnba,mlb --continue-on-error`; stamp `stamp-bk-daily.timer` 11-04 13:00. Run in progress at the snapshot, so `NextElapse` was empty. |
+| `bk-linemove.timer` | `00,04,08,12,16,20:00` | `true` | `refresh_line_movement_snapshots.py`, `TimeoutStartSec=600` — MLB + WNBA game lines only, **no NBA** |
+| `bk-deploy.timer` | `OnBootSec=3min`, `OnUnitActiveSec=2min` | n/a | auto-deploy |
+| `bk-nfl-postweek.timer` | Tue/Wed `11,14,17,20,23:00` | `true` | installed and enabled; last 11-04 11:00 |
+| `bk-nba-market-refresh.timer` | — | — | **not installed** (`No files found`), as intended. The v5 proposal is `OnCalendar=*-*-* 00/4:15:00`, **`Persistent=false`**, service `TimeoutStartSec=180`. |
+
+- **Boot history:** current boot 2026-08-13 14:54, still running. Earlier boots: 07-26, 07-04, 06-08.
+- **Lock directory:** `/opt/bankrollkings-runtime` holds `cfbd_quota_state.json` and `scenarios/` only. No NBA lock
+  files exist; production is `6bdb73f`, without v5.
+- **Disclosed script defect:** the step that greps `run_daily.py` printed nothing. As root, `git rev-parse` short-
+  circuited the `&&` chain. That step was not needed: production does not run v5.
+
+### 5b. Catch-up and ordering — what follows from the units above plus the v5 code
+
+**Catch-up after downtime:**
+- `bk-daily` is `Persistent=true`. If the box is down across 13:00Z, systemd fires **one** catch-up run at boot,
+  however many days were missed.
+- The proposed orchestrator is `Persistent=false`. It never catches up, so its first run is the next `HH:15` tick
+  (HH ∈ 00/04/08/12/16/20) after boot. Stale NBA prices are withheld by the 6h executable-price rule until then.
+
+**Can both start together after a reboot?** Yes. A boot shortly before an `HH:15` tick starts the `bk-daily`
+catch-up and the orchestrator within minutes of each other. On a normal day they do not overlap: the 12:15 run
+finishes long before 13:00, and `bk-daily` then reuses it.
+
+**Every ordering, under v5's shared per-stage locks** (lines and props each have their own lock; lock wait 30 s):
+
+| # | Ordering | Outcome | Paid requests | Reported as |
+|---|---|---|---|---|
+| 1 | Separate runs; the earlier publish is valid and ≤ 90 min old | `REUSED_FRESH` | 0 | benign |
+| 2 | Separate runs; the earlier publish is > 90 min old or invalid | normal fetch | the scheduled cost (not a duplicate) | its real outcome |
+| 3 | Overlapping; the holder succeeds | waiter `REUSED_FRESH_AFTER_LOCK` (receipt + hash verified) | 0 | benign |
+| 4 | Overlapping; the holder fails, times out or crashes (the kernel releases the lock on exit) | waiter `NO_FRESH_AFTER_LOCK`, no write | 0 | alerting |
+| 5 | Overlapping; the wait exceeds 30 s | `LOCK_UNAVAILABLE` | 0 | alerting |
+| 6 | Lines not ready (either caller) | props `SKIPPED_BLOCKED_BY_LINES` | 0 props | alerting |
+
+**Duplicate credits:**
+- No ordering spends twice for the same data: the waiter never fetches after a lock wait (`--no-fetch-after-lock`).
+- Within the 90-minute window, a later run reuses instead of fetching.
+- A stage's own timeout is the lock wait plus its execution budget, so a waiter is never killed while it is still
+  waiting.
+
+**False success:**
+- Reuse counts as success only when the reused publish is receipt- and hash-verified.
+- Every failure, lock-wait and blocked outcome is alerting.
+
+**Limits:**
+- These properties come from the v5 code and its QCs. The POSIX lock tests SKIP on Windows, so they must run in the
+  NBA Linux gate.
+- None of this has been exercised in production; the orchestrator is not installed.
+
+### 5c. Credit accounting — what was found and what is required
+
+- **Today, v5 (`services/nba_market.py` `_ledger_credits`):** sums per-response `x-requests-last` from the shared
+  quota ledger, not a global before/after quota delta.
+- **The gap:**
+  - It selects rows **by position** (rows appended after the stage started) **and sport** only. Another NBA writer
+    running at the same time, such as a manual props fetch or another caller's stage, could inflate a receipt.
+  - The `x_requests_remaining` it reports is account-wide.
+- **Required, now being built branch-only:**
+  - a per-stage attribution token stamped on that stage's own ledger rows, summed exclusively;
+  - remaining quota reported separately, labelled as an account-wide snapshot;
+  - concurrency QC `qc_nba_credit_attribution.py`.
+
+### 5d. D14 / P1 — Elite live directive labels (`ACT`, `WINDOW CLOSING`) — audit in progress
+
+- **The labels today** (`app.py` ≈15495–15530, the live line-movement scanner):
+  - `ACT` is the default;
+  - `HOLD` when the model side conflicts with the move;
+  - `WINDOW CLOSING` when `abs(move) ≥ 5` and reliability is ANCHOR or WATCH — **not time-based; no kickoff check**;
+  - `PASS` when reliability is AVOID.
+- **Related problems:**
+  - the list sorts `WINDOW CLOSING` first, then by a composite `score`;
+  - the row field is named `sharp_side`;
+  - on-page guidance at ≈16748 says "Start with WINDOW CLOSING alerts…";
+  - the badge is rendered at `templates/elite_dashboard.html:347`.
+- **Requirement:** neutral factual wording, a factual countdown only with a verified kickoff, fresh quote, recorded
+  source and executable quote, fail-closed otherwise, historical alerts never take live labels, and no score or
+  "sharp" authority.
+- **Next:** a proposed contract and an adversarial QC, branch-only, before any NBA gate.

@@ -1,5 +1,15 @@
 # Integrity + D4 — final cache audit and deployment plan (for owner approval)
 
+> **Status 2026-11-04 13:28Z: final candidate `4afcab9` — LINUX GATE PASS (45/45, receipt
+> `docs/integrity_d4_linux_gate_receipt_20261104.md`). Awaiting the owner's deploy go-ahead.** Owner direction: "If
+> green, the already-approved deployment plan may proceed with no cache purge." The candidate is **`4afcab9`**, not
+> `e1e33dc` or `86b6aae`. It adds the Matchup Center cache isolation (closes R1), atomic whole-ticket submission (closes
+> R2), quote-change atomicity, exact `/parlay/save` and the frozen 2–8 leg contract. Cache audit delta since `e1e33dc`:
+> the only new cache is `nfl_matchup_center::src2` (new key; the old pkl is never read and is not deleted); no static
+> file changed (`git diff --name-only 6bdb73f 4afcab9 -- static` = 0); floor key `q1k2` still at `app.py:31532`; the
+> image route is still `max_age=0` (now `:35129`). Verdict unchanged: **no purge required.**
+>
+> Superseded hold note (for the record):
 > **Owner decision 2026-11-04: deployment of `e1e33dc` is HELD.** The rest of this plan is approved (restart
 > invalidation, `q1k2` floor cache, server-side kickoff checks, scoped rollback, signed-in acceptance matrix, no cache
 > purge). Two residuals must be closed first in a successor commit, then the complete offline gate and all Linux QCs
@@ -14,7 +24,7 @@
 >    (no deletion, no broad purge); QC proves a planted pre-fix entry with a false DraftKings attribution is ignored
 >    and the rebuilt entry uses honest source wording.
 
-Candidate: exact **`e1e33dc32777e2a9ec69f04293dbbc546eb00faf`** — LINUX GATE PASS / DEPLOYMENT CANDIDATE
+Candidate: exact **`4afcab9178f189341140223eecb7f5f96ce67f6e`** — LINUX GATE PASS / FINAL DEPLOYMENT CANDIDATE (supersedes `e1e33dc`, `86b6aae`)
 (`docs/integrity_d4_linux_gate_receipt_20261104.md`). **Not deployed.** Production and `origin/master` = `6bdb73f`.
 
 ## 1. Cache audit (read-only; static code analysis at `e1e33dc` vs `6bdb73f` + production inventory)
@@ -85,21 +95,22 @@ Preconditions (re-check immediately before the push; abort if any fails):
 3. No producer job running: `systemctl list-units 'bk-*.service' --state=activating,active` empty, and the push is
    timed away from timers — not within 13:00–13:35Z (`bk-daily`), not at :00 of 00/04/08/12/16/20Z (`bk-linemove`),
    not 18:30/00:30Z (`bk-nfl-games`), not Tue/Wed 11/14/17/20/23Z (`bk-nfl-postweek`), not 01:00Z (`bk-injuries`).
-4. `git diff --name-only 6bdb73f e1e33dc | wc -l` = 55; `git merge-base --is-ancestor 6bdb73f e1e33dc`.
+4. `git diff --name-only 6bdb73f 4afcab9 | wc -l` = 62; `git merge-base --is-ancestor 6bdb73f 4afcab9`.
 5. Capture OFF: no `BK_RESEARCH_CANDIDATE*` in `.env`, unit `Environment`, or the `bankrollkings` MainPID + children
    (use `systemctl show bankrollkings -p MainPID` + `pgrep -P`, not `pgrep -f gunicorn`).
 6. Local D1/integ worktree clean.
 
-Push (no force): `git push origin e1e33dc32777e2a9ec69f04293dbbc546eb00faf:refs/heads/master` (fast-forward).
+Push (no force): `git push origin 4afcab9178f189341140223eecb7f5f96ce67f6e:refs/heads/master` (fast-forward).
 No paid calls, no regeneration, no cache purge, no flag change.
 
 Post-deploy (read-only SSM + public checks):
-1. `bk-deploy` journal shows `deployed e1e33dc | service: active | probe: HTTP 200`; prewarm OK.
-2. Production HEAD = `origin/master` = exact `e1e33dc`; tracked tree clean.
+1. `bk-deploy` journal shows `deployed 4afcab9 | service: active | probe: HTTP 200`; prewarm OK.
+2. Production HEAD = `origin/master` = exact `4afcab9`; tracked tree clean.
 3. `bankrollkings` active/running, `NRestarts=0`, workers booted, no Traceback/ERROR since the push; no earlyoom SIGTERM.
 4. `/` and `/healthz` 200.
 5. Capture OFF in `.env`, unit and live MainPID + workers.
-6. `ls data/cache/nfl_floor_board_q1k2_*` appears only after prewarm/first request (proves new key path).
+6. `ls data/cache/nfl_floor_board_q1k2_*` and `data/cache/nfl_matchup_center_src2.pkl` appear only after
+   prewarm/first request (proves the new key paths); the old `nfl_matchup_center.pkl` is left in place, unread.
 
 Rollback (only if verification fails): no manual production patch; preserve evidence; `git revert` of the release as
 a normal commit on `master` (for the merge commits, `git revert -m 1` in reverse order, or a single revert of the range
@@ -120,3 +131,6 @@ via a new commit restoring `6bdb73f`'s tree), pushed without force; auto-deploy 
 | A9 | CFBD consensus remains unpriced context | CFB best spots / matchup / totals |
 | A10 | D1 weather behaviour intact ("Weather unavailable" / "No forecast available", no 0 mph/calm/indoor/dome) | the 7 D1 pages |
 | A11 | No console errors, failed resources (Resource Timing ≥ 400) or unexpected redirects | every page above |
+| A12 | Quote change rejects the whole ticket: a moved price (worse **or** better), line or book, or a stale/missing quote → sanitized 409 with `PRICE_CHANGED` / `LINE_CHANGED` / `BOOK_CHANGED` / `QUOTE_STALE` / `QUOTE_UNAVAILABLE` and the current safe terms; no image, payout or partial save; "Confirm current terms" then resubmit succeeds | editor (Daily Card / King's Tickets), Green Light ticket, Menu slip, SGP |
+| A13 | `/parlay/save`: 1–20 picks stored exactly as submitted; 0 or 21+ → 422, an invalid pick → 422 with indexed reasons, nothing saved, nothing trimmed or dropped | NBA Parlay Builder |
+| A14 | Executable range 2–8: 1 leg → clear minimum message; 9+ → rejected, never truncated | image POST, SGP export/handoff |
