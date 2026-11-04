@@ -27,6 +27,7 @@
     <div class="mp-empty"><b>{{ player }}</b> doesn&rsquo;t resolve to a current {{ sport_label }} player with live
       markets, so no page is shown. Browse the <a href="/sports/{{ sport }}/props" style="color:#4ed48a;">{{ sport_label }} props</a>.</div>
   {% else %}
+  {% if props_status and props_status.clock_skew_tolerated %}{% include "_props_feed_status.html" %}{% endif %}
   <div class="mp-banner">
     This is a <b>market-only</b> page built from licensed Odds-API player props. Detailed player
     <b>statistics are not available here</b> &mdash; it shows this player&rsquo;s currently posted prop
