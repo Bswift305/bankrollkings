@@ -118,6 +118,12 @@ SCORECARDS = [
     # NBA v4: the NBA player-props publisher's OWN kernel lock (real two-process contention, reuse under
     # the lock, lines-event-list prerequisite, crash release, location enforcement). Offline stub provider.
     ("NBA Props Lock QC", "qc_nba_props_lock.py", 300),
+    # NBA v5: ONE sequential market orchestrator (lines, then props only after verified lines, one atomic
+    # receipt) sharing the ensure API with bk-daily; real processes, stub provider counting calls, temp
+    # runtime dir: ordering, lines-failure blocks props, reuse, contention with/without a valid receipt,
+    # no concurrent catch-up (Persistent=false + run lock), stage timeout, measured timeout contract.
+    ("NBA Market Orchestrator QC", "qc_nba_market_orchestrator.py", 600),
+
     # Run Status DEGRADED (Oct 24 monitoring-truth fix): overall must read DEGRADED -- never GREEN -- when
     # a current-market Odds family is stale (a sport whose game lines are fresh but props are stale), a
     # refresh was skipped by provider exhaustion, or a blocking step failed. Reads the per-family feed ages
