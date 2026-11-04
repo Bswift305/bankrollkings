@@ -63,50 +63,21 @@ STEP_LINES_DEPENDENCY = {
 }
 
 
-def _mtime(path: Path) -> float:
-    try:
-        return path.stat().st_mtime
-    except OSError:
-        return 0.0
-
-
 def _lines_receipt_path() -> Path:
     return Path(BASE_DIR) / "data" / "tracking" / f"_last_game_lines_fetch_{LINES_SPORT_SLUG}.json"
 
 
-def _lines_receipt_detail() -> str:
-    """Best-effort one-liner from fetch_game_lines' receipt (outcome + reason code)."""
+def _lines_history_note() -> str:
+    """LEGACY OPERATIONAL HISTORY ONLY: a one-liner from the shared, tokenless game-lines fetch receipt, printed
+    beside a failed step for the operator. It never determines the stage outcome (that comes only from the
+    stage's own per-run receipt -- services/nba_market.classify_stage)."""
     try:
         r = json.loads(_lines_receipt_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return "no game-lines receipt"
+        return "history: no shared game-lines receipt"
     v = r.get("validation") or {}
-    return f"outcome={r.get('outcome')} reason={v.get('reason_code')} run={str(r.get('run_id'))[:8]}"
-
-
-# Receipt outcomes passed through verbatim for a FAILED lines step; anything else is VALIDATION_FAILED.
-_LINES_FAILURE_OUTCOMES = frozenset({PROVIDER_ERROR, VALIDATION_FAILED, SCHEDULE_UNAVAILABLE, NO_FRESH_AFTER_LOCK})
-
-
-def _publish_receipt_path() -> Path:
-    return Path(BASE_DIR) / "data" / "tracking" / "_last_nba_lines_publish.json"
-
-
-def classify_lines_step(returncode: int | None, timed_out: bool, receipt_mtime_before: float,
-                        publish_receipt_mtime_before: float | None = None) -> tuple[str, str]:
-    """(outcome, detail) for the game-lines step -- the shared classifier (services.nba_market.classify_lines)
-    applied to this checkout's receipts."""
-    return nba_market.classify_lines(BASE_DIR, returncode, timed_out, receipt_mtime_before,
-                                     publish_receipt_mtime_before)
-
-
-def _props_publish_receipt_path() -> Path:
-    return Path(BASE_DIR) / "data" / "tracking" / "_last_nba_props_publish.json"
-
-
-def classify_props_publisher(returncode: int | None, timed_out: bool, publish_receipt_mtime_before: float):
-    """The shared props publisher classifier (services.nba_market.classify_props_publisher) on this checkout."""
-    return nba_market.classify_props_publisher(BASE_DIR, returncode, timed_out, publish_receipt_mtime_before)
+    return (f"history only, last shared lines receipt: outcome={r.get('outcome')} reason={v.get('reason_code')} "
+            f"run={str(r.get('run_id'))[:8]}")
 
 
 STEPS = [
@@ -198,7 +169,7 @@ def main() -> int:
                 degraded = True
                 print()
                 print(f"[{outcome}] {label} {'timed out' if timed_out else 'exited with code ' + str(stage['exit_code'])} "
-                      f"after {elapsed:.1f}s: {detail} ({_lines_receipt_detail()}). Previous lines files "
+                      f"after {elapsed:.1f}s: {detail} [{_lines_history_note()}]. Previous lines files "
                       "preserved; lines-dependent steps will be SKIPPED_BLOCKED_BY_LINES, independent steps "
                       "continue.", flush=True)
                 print()

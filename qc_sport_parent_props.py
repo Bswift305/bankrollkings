@@ -24,7 +24,8 @@ class _Fake:
 def _drive(parent_mod, slug, plan, env_key=False):
     """Run a parent.main() with faked subprocess.run. plan controls the props child: whether it advances
     the artifact + the receipt it writes. Returns (exit_code, steps_run_after_props, child_sidecar)."""
-    with tempfile.TemporaryDirectory() as td:
+    from services.qc_run_receipts import lines_receipt, props_receipt, receipt_sandbox
+    with tempfile.TemporaryDirectory() as td, receipt_sandbox():
         base = Path(td)
         (base / "data/props").mkdir(parents=True, exist_ok=True)
         (base / "data/tracking").mkdir(parents=True, exist_ok=True)
@@ -49,7 +50,11 @@ def _drive(parent_mod, slug, plan, env_key=False):
                 (base / "data/tracking" / f"_last_props_fetch_{slug}.json").write_text(json.dumps(receipt), encoding="utf-8")
                 if plan.get("advance"):
                     pd.DataFrame([{"Player": "x"}]).to_csv(parent_mod.PROPS_ARTIFACT, index=False)
+                # NBA (governed): the publisher's OWN per-run receipt (no token for MLB -> nothing written)
+                props_receipt(env, base, plan["exit"], parent_mod.PROPS_ARTIFACT, advanced=bool(plan.get("advance")))
                 return _Fake(plan["exit"])
+            if "fetch_game_lines" in joined:
+                lines_receipt(env, base, 0, wrote_fetch_receipt=False)
             if props_seen["v"]:
                 steps_after["count"] += 1
             return _Fake(0)

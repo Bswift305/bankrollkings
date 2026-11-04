@@ -431,7 +431,7 @@ def qc_holder_killed_while_waiting():
         lines = _stages(_receipt(receipt)).get("lines", {})
         # Whichever order the two parents classify in, the killed stage wrote no receipt of its own: it must fail
         # closed, never inherit the waiter's NO_FRESH_AFTER_LOCK (and never reference the waiter's receipt).
-        check(lines.get("outcome") == "VALIDATION_FAILED" and lines.get("publisher_receipt") is None,
+        check(lines.get("outcome") == "RUN_RECEIPT_MISSING" and lines.get("publisher_receipt") is None,
               f"(5b) the killed holder's stage never adopts the waiter's receipt as its own "
               f"({lines.get('outcome')}: {lines.get('detail')})")
         check(not (base / "data/odds/NBA_Odds.csv").exists(), "(5b) nothing published by either process")
@@ -462,12 +462,11 @@ def qc_receipt_attribution():
     R1 Windows: os.replace onto a receipt another handle has open fails (PermissionError) -- the publisher used to
        swallow that, leaving the PREVIOUS holder's receipt in the shared slot; replace_with_retry now waits it out
        (bounded) and still raises once the budget is spent.
-    R2 classify_lines / classify_props_publisher: with a stage-run token, the per-run copy is authoritative and a
-       shared receipt carrying another run's token is never adopted; the legacy (no token) path is unchanged --
-       and is shown to adopt the foreign receipt, which is exactly the flake."""
+    R2 classify_stage: the outcome comes ONLY from this run's own per-run receipt; the shared slot (the flake's
+       source) is never read for an outcome."""
     import threading
     sys.path.insert(0, str(HERE))
-    from services import nba_market, receipt_io
+    from services import nba_market, receipt_io  # noqa: F401
     with tempfile.TemporaryDirectory(prefix="qc_nba_market_attr_") as td:
         d = Path(td)
         target, tmp = d / "r.json", d / "r.json.tmp"
@@ -508,36 +507,34 @@ def qc_receipt_attribution():
                 receipt_io.replace_with_retry(tmp, target, budget_seconds=0.2)
             check(target.read_text(encoding="utf-8") == '{"a": 1}', "(R1) POSIX: rename over an open file succeeds")
 
+        # R2: the stage outcome comes ONLY from this run's own per-run receipt (owner contract 2026-11-04). The
+        # shared single-slot file -- whatever it says, token or not -- never decides it.
+        from services import run_receipts
         base = d / "base"
         (base / "data" / "tracking").mkdir(parents=True)
         mine, theirs = "a" * 32, "b" * 32
-        shared = nba_market.lines_publish_receipt_path(base)
-        shared.write_text(json.dumps({"outcome": "PROVIDER_ERROR", "stage_run_id": theirs}), encoding="utf-8")
-        legacy = nba_market.classify_lines(base, 1, False, 0.0, 0.0)
-        check(legacy[0] == "PROVIDER_ERROR",
-              f"(R2) legacy mtime-only attribution adopts the other run's PROVIDER_ERROR -- the flake ({legacy[0]})")
-        fixed = nba_market.classify_lines(base, 1, False, 0.0, 0.0, stage_run_id=mine)
-        check(fixed[0] == "VALIDATION_FAILED" and "not adopted" in fixed[1],
-              f"(R2) with a token, another run's receipt is never adopted: fail closed ({fixed[0]})")
-        own = receipt_io.stage_run_receipt_path(shared, mine, "lines")
-        own.parent.mkdir(parents=True, exist_ok=True)
-        own.write_text(json.dumps({"outcome": "NO_FRESH_AFTER_LOCK", "stage_run_id": mine}), encoding="utf-8")
-        got = nba_market.classify_lines(base, 1, False, 0.0, 0.0, stage_run_id=mine)
-        check(got[0] == "NO_FRESH_AFTER_LOCK",
-              f"(R2) this run's own per-run receipt wins even though the shared slot holds another run's ({got[0]})")
-        shared.write_text(json.dumps({"outcome": "NO_FRESH_AFTER_LOCK"}), encoding="utf-8")
-        own.unlink()
-        leg = nba_market.classify_lines(base, 1, False, 0.0, 0.0, stage_run_id=mine)
-        check(leg[0] == "NO_FRESH_AFTER_LOCK", "(R2) a token-less (legacy) receipt keeps the legacy mtime rule")
-        pshared = nba_market.props_publish_receipt_path(base)
-        pshared.write_text(json.dumps({"outcome": "REUSED_FRESH", "stage_run_id": theirs}), encoding="utf-8")
-        pf = nba_market.classify_props_publisher(base, 0, False, 0.0, stage_run_id=mine)
-        check(pf and pf[0] == "VALIDATION_FAILED",
-              f"(R2) props: another run's REUSED_FRESH is never adopted as this run's ({pf})")
-        pown = receipt_io.stage_run_receipt_path(pshared, mine, "props")
-        pown.write_text(json.dumps({"outcome": "UPDATED", "stage_run_id": mine}), encoding="utf-8")
-        check(nba_market.classify_props_publisher(base, 0, False, 0.0, stage_run_id=mine) is None,
-              "(R2) props: this run's own UPDATED receipt falls through to the shape classifier as before")
+        saved = os.environ.get(run_receipts.RECEIPT_DIR_OVERRIDE_ENV)
+        os.environ[run_receipts.RECEIPT_DIR_OVERRIDE_ENV] = str(d / "receipts")
+        try:
+            (base / "data/tracking/_last_nba_lines_publish.json").write_text(
+                json.dumps({"outcome": "PROVIDER_ERROR", "stage_run_id": theirs}), encoding="utf-8")
+            got = nba_market.classify_stage("lines", 1, False, mine)
+            check(got[0] == "RUN_RECEIPT_MISSING",
+                  f"(R2) the flake's shape (shared slot holds the HOLDER's PROVIDER_ERROR, no own receipt) -> "
+                  f"RUN_RECEIPT_MISSING, never adopted ({got[0]})")
+            run_receipts.write(mine, "lines", {"outcome": "NO_FRESH_AFTER_LOCK", "exit_code": 1})
+            got = nba_market.classify_stage("lines", 1, False, mine)
+            check(got[0] == "NO_FRESH_AFTER_LOCK",
+                  f"(R2) this run's own receipt decides, whatever the shared slot holds ({got[0]})")
+            run_receipts.write(theirs, "props", {"outcome": "REUSED_FRESH", "exit_code": 0})
+            got = nba_market.classify_stage("props", 0, False, mine)
+            check(got[0] == "RUN_RECEIPT_MISSING",
+                  f"(R2) props: another run's REUSED_FRESH receipt is never this run's ({got[0]})")
+        finally:
+            if saved is None:
+                os.environ.pop(run_receipts.RECEIPT_DIR_OVERRIDE_ENV, None)
+            else:
+                os.environ[run_receipts.RECEIPT_DIR_OVERRIDE_ENV] = saved
 
 
 def qc_stage_timeout():
@@ -609,9 +606,16 @@ def qc_shared_api():
     class _R:
         returncode = 75
     saved = nba_market.subprocess.run
-    nba_market.subprocess.run = lambda command, timeout=None, **k: seen.append((command, timeout)) or _R()
+    from services import run_receipts
+    from services.qc_run_receipts import receipt_sandbox
+
+    def fake(command, timeout=None, env=None, **k):   # a publisher that exits 75 writes its OWN receipt
+        seen.append((command, timeout))
+        run_receipts.write(env[run_receipts.STAGE_RUN_ENV], "lines", {"outcome": "SKIPPED_LOCKED", "exit_code": 75})
+        return _R()
+    nba_market.subprocess.run = fake
     try:
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, receipt_sandbox():
             st = nba_market.ensure_nba_lines("qc_default", base_dir=td)
     finally:
         nba_market.subprocess.run = saved

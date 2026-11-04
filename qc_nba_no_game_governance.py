@@ -199,8 +199,10 @@ def qc_fetcher():
 def qc_nba_daily():
     import refresh_nba_daily as nba
 
-    def drive(lines_rc, receipt_outcome, pre_existing=None):
-        with tempfile.TemporaryDirectory() as td:
+    from services.qc_run_receipts import lines_receipt, props_receipt, receipt_sandbox
+
+    def drive(lines_rc, receipt_outcome, pre_existing=None, write_own=True):
+        with tempfile.TemporaryDirectory() as td, receipt_sandbox():
             base = Path(td)
             (base / "data/tracking").mkdir(parents=True)
             (base / "data/props").mkdir(parents=True)
@@ -212,17 +214,21 @@ def qc_nba_daily():
             saved = (nba.BASE_DIR, nba.PROPS_ARTIFACT, nba.subprocess.run)
             ran = []
 
-            def fake_run(command, timeout=None, **kw):
+            def fake_run(command, timeout=None, env=None, **kw):
                 joined = " ".join(map(str, command))
                 label = next(l for l, c, _ in nba.STEPS if next(x for x in c if str(x).endswith(".py")) in joined)
                 ran.append(label)
                 if label == "game_lines":
                     if receipt_outcome:
                         rp.write_text(json.dumps({"outcome": receipt_outcome, "exit_code": lines_rc}), encoding="utf-8")
+                    if write_own:   # the publisher's own per-run receipt, via the REAL fetch-outcome mapping
+                        lines_receipt(env, base, lines_rc, wrote_fetch_receipt=bool(receipt_outcome))
                     return _Fake(lines_rc)
                 if label == "player_props":
                     (base / "data/tracking/_last_props_fetch_basketball_nba.json").write_text(
                         json.dumps({"events_found": 0}), encoding="utf-8")
+                    props_receipt(env, base, 1, base / "data/props/NBA_Props.csv", advanced=False)
+                    return _Fake(1)
                 return _Fake(0)
 
             nba.BASE_DIR, nba.PROPS_ARTIFACT = base, base / "data/props/NBA_Props.csv"
@@ -243,6 +249,10 @@ def qc_nba_daily():
     rc, ran, outs, degraded, _ = drive(1, None, pre_existing="NO_ACTIVE_EVENTS")
     check(outs.get("game_lines") == "VALIDATION_FAILED" and rc != 0,
           "nba_daily: an OLD receipt cannot classify this run's failure (no fresh proof -> VALIDATION_FAILED)")
+    rc, ran, outs, degraded, _ = drive(1, "NO_ACTIVE_EVENTS", write_own=False)
+    check(outs.get("game_lines") == "RUN_RECEIPT_MISSING" and rc != 0 and degraded,
+          "nba_daily: a shared/tokenless fetch receipt without this run's OWN receipt -> RUN_RECEIPT_MISSING "
+          f"(never adopted) ({outs.get('game_lines')})")
     rc, ran, outs, degraded, _ = drive(1, "NO_ACTIVE_EVENTS")
     check(outs.get("game_lines") == "SCHEDULE_UNAVAILABLE",
           "nba_daily: a fresh NBA NO_ACTIVE_EVENTS receipt is treated as SCHEDULE_UNAVAILABLE, never benign")
