@@ -36,6 +36,13 @@ SKIP = "SKIP"
 BENIGN = frozenset({UPDATED, NO_ACTIVE_EVENTS, NO_MARKETS_POSTED, SKIP})
 ALERTING = frozenset({VALIDATION_FAILED, PROVIDER_ERROR, STALE})
 
+# A fetcher asked for a sport it has no declared paths for (services.fetch_sport_guard) refuses before any
+# request or write, prints `OUTCOME: VALIDATION_FAILED reason_code=UNCONFIGURED_SPORT` and exits 2. That is
+# a configuration error: ALERTING everywhere, never benign, never "no new rows", never off-season.
+UNCONFIGURED_SPORT_REASON = "UNCONFIGURED_SPORT"
+UNCONFIGURED_SPORT_MARKER = "reason_code=" + UNCONFIGURED_SPORT_REASON
+EXIT_UNCONFIGURED_SPORT = 2
+
 
 def is_alerting(outcome: str) -> bool:
     return outcome in ALERTING
@@ -56,6 +63,11 @@ def classify_props_child(exit_code: int, artifact_advanced: bool, receipt: dict 
     any requested market was present, provider errors); exit_code + artifact_advanced say whether the
     child published. NO_MARKETS_POSTED requires the receipt to PROVE it; absent proof, zero rows is
     VALIDATION_FAILED (directive #2)."""
+    if exit_code == EXIT_UNCONFIGURED_SPORT:
+        # The child refused before fetching or writing anything, so any receipt on disk is from an EARLIER
+        # run and proves nothing about this one (a stale events_found=0 would otherwise read as benign).
+        return VALIDATION_FAILED, (f"{UNCONFIGURED_SPORT_REASON}: child refused an unconfigured sport "
+                                   f"(exit {EXIT_UNCONFIGURED_SPORT}); any shape receipt is from an earlier run")
     if receipt is None:
         # No evidence file. Do not invent a benign outcome.
         if exit_code == 0 and artifact_advanced:

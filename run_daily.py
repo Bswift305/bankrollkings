@@ -9,6 +9,7 @@ from pathlib import Path
 
 from season_utils import active_sports, is_preseason_step, nfl_preseason_active, sport_for_label
 from services.env_loader import load_local_env
+from services.run_outcomes import UNCONFIGURED_SPORT_MARKER
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -332,6 +333,11 @@ def main() -> int:
             # is a pre-flight WARNING; the authoritative check is "Odds feed health (post-refresh)" after
             # all refreshes (added below), whose result does block.
             status = "WARN (pre-refresh; authoritative check runs post-refresh)"
+        elif UNCONFIGURED_SPORT_MARKER in (output or ""):
+            # A fetcher refused an UNCONFIGURED sport (exit 2, OUTCOME VALIDATION_FAILED). That is a
+            # configuration error, not an outage and not the off-season: it must FAIL even when the step's
+            # sport is out of season (the season gate below would otherwise turn it into a benign SKIP).
+            status = "FAIL"
         elif "PROVIDER_QUOTA_EXHAUSTED" in (output or ""):
             # A provider's monthly quota is exhausted (e.g. CFBD 429). This is a documented EXTERNAL
             # outage with a persistent backoff, not a code failure to retry -- report it truthfully as a
