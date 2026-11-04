@@ -318,6 +318,11 @@ SCORECARDS = [
     ("Model Registry QC", "qc_model_registry.py", 120),
     ("Unqualified Authority Containment QC", "qc_unqualified_authority_containment.py", 120),
     ("Model Observations QC", "qc_model_observations.py", 120),
+    # D4 residual R2: a user-submitted ticket (image POST, SGP export/handoff) is accepted whole or
+    # rejected whole (409/422 + per-leg reasons) -- never a silently trimmed image. Synthetic, offline.
+    ("Atomic Ticket Submission QC", "qc_ticket_submission_atomic.py", 180),
+    # D4 residual R1: the Matchup Center disk cache is version-isolated from pre-fix entries.
+    ("Matchup Center Cache Version QC", "qc_matchup_center_cache_version.py", 120),
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),
