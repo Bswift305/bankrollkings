@@ -13,13 +13,35 @@
 
 ---
 
+## Amendment 2026-11-04 (binding owner corrections)
+
+Applied from the ledger rows "NCAAB design corrections", "Quote freshness semantics", "NCAAB cost probe" and
+"NCAAB book policy (first slice)". Where this amendment and older text disagree, the amendment wins.
+
+| # | Correction | Where it landed |
+|---|---|---|
+| C1 | **Immutable BK team id** is primary identity: an opaque id (`ncaam_t_000123`) allocated once, never reused, never derived from a name. Name slugs are display/routing aliases only; a slug change never changes identity. The shared school id is kept for women's readiness, also opaque (`ncaa_s_000123`), not slug-derived | §3.1, §3.2, §3.3, §3.6, §16 `qc_ncaamb_identity.py` |
+| C2 | **Grade every captured book/line separately** (per book, per line, per side) | §8.3, §16 `qc_ncaamb_grading.py` |
+| C3 | **Removed** the "count an ATS result only when all books agree" rule (selection bias) | §8.3, §11.3, §11.5, §16 |
+| C4 | Cross-book grading shows a **distribution** of cover/push/fail across captured book/lines, never a consensus result; team ATS displays state the distribution and the reference (per-book records), never one consensus record | §8.3, §11.3, §11.5, §16 `qc_ncaamb_grading.py`, `qc_ncaamb_pages.py` |
+| C5 | **Freshness/current availability uses `FetchedAtUTC`** (BK observed the quote within 6h); movement and `Book updated` displays use `SourceUpdatedAtUTC`; labels `Observed by BK` vs `Book updated`; missing fetched time → unavailable; an old source time does not make a recently observed unchanged quote stale. Resolves former open question 3 | §0, §7.3, §10, §11.1, §11.2, §11.6, §13.3, §16 `qc_ncaamb_freshness.py`, §18 Q3 |
+| C6 | **Moneyline is context-only** in the first slice until the ticket contract gains a reviewed market-type identity that does not require a numeric line | §11.1, §11.6, §16 `qc_ncaamb_ticket_handoff.py`, §17, §18 Q8 |
+| C7 | **Unresolved provider team names** appear only as clearly labelled raw context: no stats join, no grading, no ticket action | §3.4, §8.3, §11.1, §11.3, §16 `qc_ncaamb_identity.py`, `qc_ncaamb_grading.py`, §18 Q7 |
+| C8 | The four registry CSVs get narrow `.gitignore` exceptions **only after** a schema/content review proves they hold no secrets or generated runtime data | §15, §16 `qc_ncaamb_reference_review.py`, §18 Q12, §19 step 3 |
+| C9 | **Cost probe conditionally approved:** Probe A + Probe B only, max 5 credits, `us` region only, no extras/`us2`; stop on any unexpected response or charge; preconditions: Safeguard A passes, 11-05 checkpoint reviewed, probe proven unable to write NBA/WNBA production paths. A4/A5/C and `us2`/hourly options are **rejected for the probe**; the budget table keeps them only as future options labelled "not approved" | §7.2, §14.1, §14.3, §14.5, §16 `qc_ncaamb_probe_script.py`, §18 Q2/Q4/Q5, §19 step 2 |
+| C10 | **Book policy:** ingest all books returned under the provider `us` region, each separate; never claim a book is legal or available in the user's state; an owner-reviewed provider-book allowlist gates publication; never a default book. The former `LICENSED_US` / "not licensed" legal-status framing is replaced by allowlist status | §0, §2, §4, §5.2, §6.2, §6.4, §11.1, §11.2, §11.6, §13.3, §14.5, §16 `qc_ncaamb_books.py`, `qc_ncaamb_pages.py`, §18 Q1, §19 step 3 |
+
+No new scope is added by this amendment.
+
+---
+
 ## 0. Binding inputs
 
 | # | Owner decision (2026-11-04) | Where this design enforces it |
 |---|---|---|
 | 1 | Men's first; registry ready for women's; not combined in release 1 | §3.6, §12 (`Competition` key everywhere; no women's rows, keys or routes in release 1) |
 | 2 | 4h freshness target; provisional cap **7,500 credits/month**; no timer/paid call until per-call cost verified | §13 (4h cadence, designed not enabled), §14 (budget guard + probe) |
-| 3 | Every licensed book the provider returns, each separately; no consensus-as-price; no invented default book | §4 (book registry), §6 (one row per book/market/selection; no medians) |
+| 3 | Every licensed book the provider returns, each separately; no consensus-as-price; no invented default book. **Refined by the first-slice book policy (C10):** ingest every book returned under the `us` region, each separate; owner-reviewed allowlist gates publication; never a legal/availability claim; never a default book | §4 (book allowlist registry), §6 (one row per book/market/selection; no medians), §8.3 (per-book grading, distribution display) |
 | 4 | Scores from Odds API `/scores`, after a separately approved cost probe; no ESPN/unofficial data | §8, §14 Probe B |
 | 5 | No external efficiency metric; only facts derived from our licensed scores | §11.3, §17 |
 | 6 | Neutral site = `UNKNOWN` unless an authoritative source confirms; no manual guessing | §9.3 |
@@ -28,7 +50,7 @@
 | 9 | Shell cleanup (separate: Safeguard B `fix/ncaab-shell-honesty`) | §1 prerequisite |
 | 10 | Shared stale-line contract fixed first (separate: "Game-lines consolidated correction") | §1 prerequisite |
 | 11 | "Injuries unavailable" stated plainly; never zeros or inferred availability | §10, §11 |
-| — | Frozen timestamp direction: `SourceUpdatedAtUTC` = provider time, `FetchedAtUTC` = our ingestion time, both tz-aware ISO-Z; never infer a zone; `LastUpdated` never used for authority | §6.2, §9.1, §15 (every NCAAMB artifact has **no** `LastUpdated` column) |
+| — | Frozen timestamp direction: `SourceUpdatedAtUTC` = provider time, `FetchedAtUTC` = our ingestion time, both tz-aware ISO-Z; never infer a zone; `LastUpdated` never used for authority. **Quote freshness semantics (C5):** current availability = fresh `FetchedAtUTC` (≤ 6h); movement and `Book updated` = `SourceUpdatedAtUTC` | §6.2, §9.1, §10, §15 (every NCAAMB artifact has **no** `LastUpdated` column) |
 
 Doctrine filters applied (`BANKROLL_KINGS_DOCTRINE.md` §6): every component maps to a loop step (Discover
 = slate; Evaluate = matchup + evidence; Build/Save = ticket handoff; Track/Learn = grading + CLV), and no
@@ -76,7 +98,7 @@ component makes a claim we cannot prove out-of-sample. Nothing on the do-not-bui
 | Module | Role | Imports `app`? |
 |---|---|---|
 | `services/ncaamb_identity.py` | team registry + alias resolver (§3) | no |
-| `services/sportsbook_registry.py` | shared book licence registry (§4) | no |
+| `services/sportsbook_registry.py` | shared provider-book allowlist registry (§4) | no |
 | `services/ncaamb_contract.py` | column specs, enums, validators, fact-state function (§6, §10) | no |
 | `fetch_ncaamb_market.py` | events + lines fetch, validate, atomic publish, snapshot append (§5–§7) | no |
 | `fetch_ncaamb_scores.py` | `/scores` fetch + finals publish (§8) | no |
@@ -99,7 +121,8 @@ Runtime jobs **never** write these files (deploy dirty-tree trap: a tracked file
 
 | Column | Type | Rule |
 |---|---|---|
-| `SchoolId` | str | `sch:<slug>`, lowercase ASCII `[a-z0-9-]`, immutable once published (e.g. `sch:miami-fl`, `sch:miami-oh`) |
+| `SchoolId` | str | **opaque** `ncaa_s_<6 digits>` (e.g. `ncaa_s_000123`), allocated once by reviewed commit as the next unused number, immutable, **never reused** (C1). Never derived from a name |
+| `SchoolSlug` | str | lowercase ASCII `[a-z0-9-]` (e.g. `miami-fl`); display/routing alias only, may change by reviewed commit without changing `SchoolId` |
 | `SchoolName` | str | official short name, display only |
 | `State` | str | 2-letter, display + disambiguation evidence only |
 | `ReviewedBy` / `ReviewedAtUTC` | str / ISO-Z | required |
@@ -109,7 +132,9 @@ Runtime jobs **never** write these files (deploy dirty-tree trap: a tracked file
 | Column | Type | Rule |
 |---|---|---|
 | `Competition` | enum | `NCAAMB` (release 1: the only value permitted) |
-| `TeamId` | str | `ncaam:<slug>`, immutable; the slug equals the school slug (`ncaam:miami-fl`) |
+| `TeamId` | str | **opaque** `ncaam_t_<6 digits>` (e.g. `ncaam_t_000123`), allocated once by reviewed commit as the next unused number, immutable, **never reused** (a `RETIRED` team keeps its id forever). **Primary identity** (C1): every join, grade, snapshot and ticket leg keys on `TeamId`, never on a slug or name |
+| `Slug` | str | lowercase ASCII `[a-z0-9-]`, unique among `ACTIVE` rows (e.g. `miami-fl`); **display/routing alias only**. A slug change is a reviewed edit of this column and never changes `TeamId` |
+| `PriorSlugs` | str | `;`-separated slugs this team used before; kept so an old route resolves to the **same** `TeamId`. A slug (current or prior) is never reassigned to a different `TeamId` |
 | `SchoolId` | str | FK to `ncaa_schools.csv` |
 | `DisplayName` | str | e.g. `Miami (FL)` — **never** a bare ambiguous string (§3.3) |
 | `Conference` | str or `UNKNOWN` | owner-reviewed; `UNKNOWN` allowed; display/filter only |
@@ -125,7 +150,7 @@ Runtime jobs **never** write these files (deploy dirty-tree trap: a tracked file
 | `Provider` | enum | `oddsapi` (release 1) |
 | `ProviderName` | str | the provider string **exactly as observed** (e.g. `Miami (OH) RedHawks`) |
 | `NormalizedKey` | str | `normalize_provider_name(ProviderName)` (§3.2), stored so review diffs show it |
-| `TeamId` | str | FK to `ncaamb_teams.csv` |
+| `TeamId` | str | FK to `ncaamb_teams.csv` (the opaque id, never the slug) |
 | `Status` | enum | `ACTIVE` · `RETIRED` |
 | `Evidence` | str | where the string was observed (probe run id / receipt id) and why it maps to this team |
 | `ReviewedBy` / `ReviewedAtUTC` | str / ISO-Z | required; an alias without review is not loaded |
@@ -149,6 +174,10 @@ mascots, `St.`/`Saint`, or `State`, and it never matches by prefix, token, subst
 "contains". `Miami (OH) RedHawks` and `Miami OH RedHawks` are different keys; if the provider ever emits
 both, each needs its own reviewed alias row.
 
+The resolver returns the opaque `TeamId` only. Slugs are not resolver keys and are never consulted for
+identity; a slug lookup (`team_by_slug`, routing only) checks `Slug` then `PriorSlugs` and returns the same
+`TeamId` either way.
+
 `BLOCKED_BARE_NAMES['NCAAMB']` (normalized) = `miami`, `usc`, `st. mary's`, `saint mary's`, `st mary's`,
 `loyola`, `texas a&m-c`, `unc`, `penn`, `liu`. A blocked key is `AMBIGUOUS` even if someone adds an alias row,
 and the alias QC fails if such a row exists. The list only grows by reviewed commit.
@@ -157,14 +186,15 @@ and the alias QC fails if such a row exists. The list only grows by reviewed com
 
 Provider strings below are **[I]** (the probe's `team_names.csv` gives the real ones). The rule is what is
 binding: each distinct provider string gets its own reviewed alias row; no row is created by inference.
+Teams below are named by **slug for readability only**; each is a distinct opaque `TeamId` (C1).
 
 | Case | Required outcome |
 |---|---|
-| Miami (FL) vs Miami (OH) | Two teams, `ncaam:miami-fl` / `ncaam:miami-oh`, display names `Miami (FL)` / `Miami (OH)`. Bare `Miami` is blocked → `AMBIGUOUS`. A mascot-bearing string (e.g. `Miami Hurricanes`, `Miami (OH) RedHawks`) maps only by its own alias row |
-| St. John's vs Saint Joseph's | `ncaam:st-johns` and `ncaam:saint-josephs` are distinct. `St. John's Red Storm` never resolves to Saint Joseph's (different `NormalizedKey`, no fuzzy step). `Saint John's` (a D-III school) is not aliased; if seen it is `UNMATCHED` |
-| Saint Mary's vs Mount St. Mary's | `ncaam:saint-marys-ca` and `ncaam:mount-st-marys` are distinct. Bare `Saint Mary's` / `St. Mary's` are blocked → `AMBIGUOUS`. `Mount St. Mary's Mountaineers` is a different key from any `Saint Mary's …` string by construction |
-| USC vs South Carolina vs USC Upstate | Three teams: `ncaam:usc` (Southern California), `ncaam:south-carolina`, `ncaam:usc-upstate`. Bare `USC` is blocked. `USC Trojans` → `ncaam:usc` only by alias row; `South Carolina Upstate Spartans` / `USC Upstate Spartans` → `ncaam:usc-upstate` only by alias rows; `South Carolina Gamecocks` → `ncaam:south-carolina` |
-| UConn vs Connecticut | One team, `ncaam:uconn`. Both `UConn Huskies` and `Connecticut Huskies` (if observed) are alias rows to the **same** `TeamId`. The QC asserts both resolve to the same id |
+| Miami (FL) vs Miami (OH) | Two teams (slugs `miami-fl` / `miami-oh`, two distinct `TeamId`s), display names `Miami (FL)` / `Miami (OH)`. Bare `Miami` is blocked → `AMBIGUOUS`. A mascot-bearing string (e.g. `Miami Hurricanes`, `Miami (OH) RedHawks`) maps only by its own alias row |
+| St. John's vs Saint Joseph's | Slugs `st-johns` and `saint-josephs`, distinct `TeamId`s. `St. John's Red Storm` never resolves to Saint Joseph's (different `NormalizedKey`, no fuzzy step). `Saint John's` (a D-III school) is not aliased; if seen it is `UNMATCHED` |
+| Saint Mary's vs Mount St. Mary's | Slugs `saint-marys-ca` and `mount-st-marys`, distinct `TeamId`s. Bare `Saint Mary's` / `St. Mary's` are blocked → `AMBIGUOUS`. `Mount St. Mary's Mountaineers` is a different key from any `Saint Mary's …` string by construction |
+| USC vs South Carolina vs USC Upstate | Three teams: slugs `usc` (Southern California), `south-carolina`, `usc-upstate`, three distinct `TeamId`s. Bare `USC` is blocked. `USC Trojans` → the `usc` team only by alias row; `South Carolina Upstate Spartans` / `USC Upstate Spartans` → the `usc-upstate` team only by alias rows; `South Carolina Gamecocks` → the `south-carolina` team |
+| UConn vs Connecticut | One team (slug `uconn`, one `TeamId`). Both `UConn Huskies` and `Connecticut Huskies` (if observed) are alias rows to the **same** `TeamId`. The QC asserts both resolve to the same id |
 
 Also in the adversarial fixture (audit §1.13): Texas A&M vs Texas A&M-Corpus Christi vs Texas A&M-Commerce;
 Loyola Chicago vs Loyola (MD) vs Loyola Marymount; Saint Louis vs SIU-Edwardsville; UNC vs UNC Asheville /
@@ -179,15 +209,20 @@ Each event carries `IdentityStatus`:
 - `AMBIGUOUS`: at least one side `AMBIGUOUS`.
 - `SELF_MATCH`: both sides resolve to the same `TeamId` (an alias error). Fail closed, alerting.
 
-Consequences of anything other than `RESOLVED`:
+Consequences of anything other than `RESOLVED` (C7, binding — unresolved provider names are **raw context
+only**):
 
-- The event's market facts are still **shown**, with the provider names verbatim and a chip `Team identity
-  unverified`. The price is a real book quote.
-- The event is **non-executable** (`TEAM_IDENTITY_UNRESOLVED`): it cannot be added to a ticket. This is the
-  fail-closed choice; see open question Q7.
-- All team context abstains: form, records, streaks and evidence panel team items read `Unavailable — team
-  identity unverified`.
-- The event's finals and grades are stored by `EventId` but excluded from every per-team aggregate.
+- The provider team names appear only verbatim inside a clearly labelled raw-context block: `Provider listing
+  — team identity unverified` (e.g. `Provider name (unverified): Miami RedHawks`). They are never rendered as
+  a BK team name, never linked, and never used as a slug or route.
+- The event's book quotes may appear in that block as raw provider context, with no payout, no implied
+  probability and no best-available selection.
+- **No ticket action** (`TEAM_IDENTITY_UNRESOLVED`): it cannot be added to a ticket or the Bet Tracker
+  prefill. (Former open question Q7 is closed by the owner: fail-closed.)
+- **No stats join:** the provider string is never joined to finals, records, form, streaks, rest days or the
+  evidence panel. Those modules read `Unavailable — team identity unverified`.
+- **No grading:** the grader emits only `EXCLUDED_IDENTITY` for the event (§8.3); no cover/push/fail is
+  computed. Its finals may be stored by `EventId` as raw provider facts, but never enter any team aggregate.
 
 ### 3.5 How unmatched names surface
 
@@ -205,11 +240,12 @@ Consequences of anything other than `RESOLVED`:
 
 ### 3.6 Women's later (designed for, not built)
 
-- Same schema with `Competition=NCAAWB`, `TeamId` prefix `ncaaw:`, files `ncaawb_teams.csv` and
+- Same schema with `Competition=NCAAWB`, opaque `TeamId` prefix `ncaaw_t_` (own sequence), files `ncaawb_teams.csv` and
   `ncaawb_team_aliases.csv`, provider sport key `basketball_wncaab` ([I]: absent from code today, to be
   verified with a free `/v4/sports` call at that time).
-- `ncaa_schools.csv` is shared, so `ncaam:uconn` and `ncaaw:uconn` both point to `sch:uconn`.
-- The resolver's `competition` argument is mandatory, so a men's lookup can never return an `ncaaw:` id. QC
+- `ncaa_schools.csv` is shared, so the men's and women's UConn `TeamId`s (different opaque ids) both point to
+  the same opaque `SchoolId`. The shared id is never derived from a slug.
+- The resolver's `competition` argument is mandatory, so a men's lookup can never return an `ncaaw_t_` id. QC
   asserts this.
 - Every NCAAMB artifact path, lock, receipt family and route carries `ncaamb`/`NCAAMB`. Women's gets parallel
   `ncaawb` paths. There is no combined file and no gender-agnostic path.
@@ -218,31 +254,40 @@ Consequences of anything other than `RESOLVED`:
 
 ## 4. Sportsbook registry (decision 3)
 
-`regions=us` without a `bookmakers` filter returns **every** bookmaker the provider has in that region [I].
-Some of them may not be US-licensed sportsbooks (the region mixes regulated and offshore books [I]).
-"Track every **licensed** sportsbook" therefore needs an explicit, reviewed licence list. Whether a given book
-is licensed is a legal determination for the owner (Phase 5); this design does not make it.
+**Book policy (owner, first slice — C10):** ingest **every** book returned under the provider `us` region,
+each stored separately; an **owner-reviewed provider-book allowlist** gates publication; BK **never** claims
+that a book is legal, licensed or available in the user's state; there is **never** a default book.
 
-**`data/reference/sportsbooks.csv`** (tracked, shared by every sport, owner-reviewed):
+`regions=us` without a `bookmakers` filter returns **every** bookmaker the provider has in that region [I].
+This design makes no legal determination about any of them. The allowlist is a publication decision by the
+owner, not a statement about legality or availability.
+
+**`data/reference/sportsbooks.csv`** (tracked after the §15 review gate, shared by every sport, owner-reviewed):
 
 | Column | Type | Rule |
 |---|---|---|
 | `BookKey` | str | provider key, exact (e.g. `draftkings`) |
 | `Provider` | enum | `oddsapi` |
+| `ProviderRegion` | enum | `us` (release 1: the only value permitted) |
 | `DisplayTitle` | str | e.g. `DraftKings` |
-| `LicenseStatus` | enum | `LICENSED_US` · `NOT_US_LICENSED` · `UNREVIEWED` |
-| `Source` | str | evidence for the status |
-| `ReviewedBy` / `ReviewedAtUTC` | str / ISO-Z | required for `LICENSED_US` and `NOT_US_LICENSED` |
+| `AllowlistStatus` | enum | `ALLOWLISTED` · `NOT_ALLOWLISTED` · `UNREVIEWED` |
+| `ReviewNote` | str | why the owner allowlisted or held the book (publication reasoning only; never a legality claim) |
+| `ReviewedBy` / `ReviewedAtUTC` | str / ISO-Z | required for `ALLOWLISTED` and `NOT_ALLOWLISTED` |
 
 Rules:
 
-- Only `LICENSED_US` books are written to `NCAAMB_GameLines.csv` and snapshots.
-- A `NOT_US_LICENSED` or unknown book key is **not published**. Its quote count is recorded in the run receipt
-  (`books_excluded: {key: {status, quotes}}`), so nothing disappears silently. An unknown key is treated as
-  `UNREVIEWED` and raises `WATCH`.
+- **Ingest:** every `us`-region book key is ingested into `NCAAMB_GameLines.csv` and snapshots as its own rows,
+  carrying `BookAllowlist` (§6.2). Nothing is merged across books.
+- **Publish:** only `ALLOWLISTED` rows reach pages, book counts, best-available, evidence, grading displays,
+  ticket/Bet Tracker handoff. `NOT_ALLOWLISTED` and unknown keys stay internal; their quote counts are
+  recorded in the run receipt (`books.not_published: {key: {status, quotes}}`), so nothing disappears
+  silently. An unknown key is treated as `UNREVIEWED` and raises `WATCH`.
+- **No legal/availability claim:** no NCAAMB page, label or receipt says a book is `licensed`, `legal`,
+  `available in your state` or similar. Pages state once: `Books shown are returned by our odds provider's US
+  feed. Availability varies by state; BK does not determine where any book is legal or available to you.`
 - No default book anywhere. A row without a `BookKey` is rejected (§6.4 D1). The display title comes from this
-  registry, never from a hard-coded fallback such as `or 'DraftKings'`.
-- `SINGLE BOOK`: an event/market priced by exactly one licensed book carries `BookCount=1` and the label
+  registry, never from a hard-coded fallback such as `or 'DraftKings'`. No book is pre-selected on any page.
+- `SINGLE BOOK`: an event/market priced by exactly one allowlisted book carries `BookCount=1` and the label
   `Single book — CONFLICTED` (CLAUDE.md §10.3, an MLB/WNBA-derived rule, labelled as such on NCAAMB pages).
 
 ---
@@ -274,7 +319,7 @@ Rules:
 | `NeutralSite` | enum | `TRUE` · `FALSE` · `UNKNOWN`. **Release 1 writes `UNKNOWN` only** (§9.3) |
 | `NeutralSiteSource` | str | blank in release 1 |
 | `ListingStatus` | enum | §5.3 |
-| `LinesPosted` | bool | at least one licensed book quote in the latest successful lines run |
+| `LinesPosted` | bool | at least one `ALLOWLISTED` book quote in the latest successful lines run |
 | `PriorCommenceAtUTC` | ISO-Z or blank | most recent previous commence value, if it changed |
 | `CommenceChangeCount` | int | ≥ 0 |
 | `DuplicateGroupId` | str or blank | §5.5 |
@@ -346,7 +391,8 @@ One row per **(EventId, BookKey, MarketKey, Side)**.
 | `EventId` | str | FK to `NCAAMB_Events.csv` |
 | `EventCommenceAtUTC` | ISO-Z | copied from the event, every row |
 | `EventDateET` | `YYYY-MM-DD` | derived (§9.2) |
-| `BookKey` / `BookTitle` | str | from the registry, `LICENSED_US` only |
+| `BookKey` / `BookTitle` | str | every `us`-region book returned; title from the registry, else the provider title verbatim for an `UNREVIEWED` key (internal only) |
+| `BookAllowlist` | enum | `ALLOWLISTED` · `NOT_ALLOWLISTED` · `UNREVIEWED`, copied from the registry at write time; only `ALLOWLISTED` rows are published (§4) |
 | `MarketKey` | enum | `h2h` · `spreads` · `totals` |
 | `Period` | enum | `FG` (release 1 only value) |
 | `Side` | enum | `HOME` · `AWAY` (h2h, spreads) · `OVER` · `UNDER` (totals) |
@@ -354,9 +400,9 @@ One row per **(EventId, BookKey, MarketKey, Side)**.
 | `TeamId` | str or blank | for `HOME`/`AWAY`, the resolved team; blank for totals |
 | `Point` | float or blank | that side's own point: spreads signed from **this side's** perspective; totals the total; blank for h2h |
 | `PriceAmerican` | int | finite, `\|price\| ≥ 100` |
-| `SourceUpdatedAtUTC` | ISO-Z or blank | market `last_update`, else bookmaker `last_update`; blank if neither |
+| `SourceUpdatedAtUTC` | ISO-Z or blank | market `last_update`, else bookmaker `last_update`; blank if neither. Drives movement and `Book updated` displays only (C5) |
 | `SourceTimeLevel` | enum | `MARKET` · `BOOKMAKER` · `NONE` |
-| `FetchedAtUTC` | ISO-Z | the run's single fetch instant |
+| `FetchedAtUTC` | ISO-Z | the run's single fetch instant = when BK observed this quote offered. Drives freshness/current availability (C5) |
 | `FetchRunId` | str | 32-hex |
 | `MarketIntegrity` | enum | `COMPLETE` · `ONE_SIDED` · `INCONSISTENT` (§6.4) |
 
@@ -406,7 +452,8 @@ spread outcome, negates an away point to home perspective, and stores that outco
 **Row drops** (counted in the receipt):
 
 - D1 blank `BookKey`
-- D2 book not `LICENSED_US`
+- D2 book returned outside the `us` region request (should not occur; counted, alerting). A book that is
+  `NOT_ALLOWLISTED`/`UNREVIEWED` is **not** dropped: it is ingested and held from publication (§4)
 - D3 started (`commence ≤ FetchedAtUTC`)
 - D4 invalid price (`|price| < 100` or non-integer American)
 - D5 `OUTCOME_UNMATCHED`
@@ -447,7 +494,8 @@ Columns = every §6.2 column + `SnapshotAtUTC` (= the run's `FetchedAtUTC`) + `S
 
 ### 7.2 Cadence
 
-Every 4 hours (§13.4), plus optional pre-tip captures if the owner approves option O2 (§14.3).
+Every 4 hours (§13.4). Pre-tip hourly captures (option O2, §14.3) are **not approved**; they remain a future
+option only.
 
 ### 7.3 Open and pre-tip, labelled honestly
 
@@ -456,9 +504,12 @@ Every 4 hours (§13.4), plus optional pre-tip captures if the owner approves opt
 | First captured | the `SnapshotSeq=1` row per `(EventId, BookKey, MarketKey, Side)` | `First captured by BK <ET>` — **never** "open" / "opening line" |
 | Latest captured | the max `SnapshotSeq` row | `Latest captured <ET>` |
 | Last pre-tip captured | max `SnapshotAtUTC` with `SnapshotAtUTC < EventCommenceAtUTC` **and** `SourceUpdatedAtUTC < EventCommenceAtUTC` | `Last BK capture before tip (<N> min before)` — **never** "closing line" |
-| Movement | latest − first captured, for the same book and side | `Moved <Δ> since first BK capture (<n> captures)` |
+| Movement | latest − first captured, for the same book and side; each change is dated by its `SourceUpdatedAtUTC` (C5) | `Moved <Δ> since first BK capture (<n> captures) · Book updated <ET>` |
 
 - With 1 capture: `1 capture — no movement read`.
+- Movement and `Book updated` times come from `SourceUpdatedAtUTC`; `Observed by BK` times come from
+  `SnapshotAtUTC`/`FetchedAtUTC`. A quote re-observed unchanged shows `Unchanged · Book updated <ET> ·
+  Observed by BK <ET>`; an old book time never marks it stale (§10).
 - A point move and a price move are reported separately. A move from `-3.5 -110` to `-4.5 -105` is two facts,
   never one blended number.
 - No "sharp", "steam", "reverse line movement" or direction-of-money labels.
@@ -507,6 +558,12 @@ release 1.
 Grading is **only** against the last pre-tip captured quote (§7.3). Never against a post-tip quote, never
 against a reconstructed or averaged quote.
 
+**Every captured book/line is graded separately (C2):** one `Result` row per `(EventId, BookKey, MarketKey,
+Side)` at **that book's own** pre-tip `GradedPoint`/`GradedPrice`. Rows are never collapsed, filtered by
+agreement with other books, or replaced by a reference book. All ingested books are graded (so the record is
+complete); only `ALLOWLISTED` books are published (§4). h2h rows are graded as facts even though moneyline is
+context-only for tickets (C6).
+
 | Column | Type |
 |---|---|
 | `EventId`, `BookKey`, `MarketKey`, `Period`, `Side`, `TeamId` | as §6.2 |
@@ -527,16 +584,29 @@ against a reconstructed or averaged quote.
 | `MARKET_NOT_GRADEABLE` | the pre-tip row's `MarketIntegrity` ≠ `COMPLETE` |
 | `NO_RESULT` | event `NO_RESULT` / `NOT_LISTED` with no final. We do not say "void" (book settlement unknown) |
 | `PENDING` | not yet `FINAL` and `< commence + 48h` |
-| `EXCLUDED_IDENTITY` | `IdentityStatus ≠ RESOLVED` or duplicate group. Stored, excluded from aggregates |
+| `EXCLUDED_IDENTITY` | `IdentityStatus ≠ RESOLVED`. **Not graded** (C7): no cover/push/fail is computed, no score is joined to a provider name; the row only records the exclusion |
+| `EXCLUDED_DUPLICATE` | event in a duplicate group (§5.5). Stored, excluded from aggregates |
 | `ANOMALY` | tied final, score mapping failed, or snapshot/commence contradiction |
 
 Float comparisons use the provider's half-point grid: points are compared after `round(x * 2) / 2`, and a
 point off that grid fails as `ANOMALY`.
 
-**Team ATS/OU, no default book.** Per event and market, the per-book results combine into one of:
-`ALL_BOOKS_WIN`, `ALL_BOOKS_LOSS`, `ALL_BOOKS_PUSH`, `MIXED` (books disagree because their numbers
-differed). Streaks and records count only unanimous outcomes. `MIXED` breaks a streak and is shown as
-`Mixed across books`. This avoids choosing a reference book (decision 3) and avoids a consensus line.
+**Team ATS/OU, no default book, no consensus (C3, C4).** The former "count an ATS result only when all books
+agree" rule is **removed**: discarding games where books disagree selects games by outcome-relative line
+spread and biases the record.
+
+- **Per game:** the cross-book view is a **distribution** of the per-book results over the captured,
+  allowlisted book/lines, e.g. `Covered at 3 of 6 books · Pushed at 1 · Failed at 2 (points -3.5 to -4.5)`.
+  Cover/push/fail are the display names of `WIN`/`PUSH`/`LOSS`. There is never a single game-level
+  "consensus" result, majority result, or reference line.
+- **Per team (records):** stated **per book** as the reference: `<Book>: 7–5–1 ATS (n=13, BK-captured
+  games since <date>)`, one line per allowlisted book, each from that book's own graded rows. No single team
+  ATS/OU record or streak is computed across books. A per-book streak, if shown, is that book's own run and
+  is labelled with the book.
+- Games where a book has no gradeable pre-tip row are counted as `not graded at <Book>` for that book, never
+  filled from another book.
+
+This avoids choosing a reference book (decision 3) and never produces a consensus line or consensus result.
 
 ---
 
@@ -584,17 +654,29 @@ differed). Streaks and records count only unanimous outcomes. `MIXED` breaks a s
 One function, `ncaamb_fact_state(component, row_or_none, now_utc)`, returns one state with a reason code.
 Fact status is never mixed with research status (doctrine §11).
 
+**Quote freshness semantics (owner 2026-11-04, C5):** current availability is decided by **`FetchedAtUTC`** —
+when BK most recently observed the quote offered. `SourceUpdatedAtUTC` — when the book says the quote
+changed — drives movement and the `Book updated` display only.
+
 | State | Market quote rule | Customer text |
 |---|---|---|
-| `AVAILABLE` | `SourceUpdatedAtUTC` parses strictly and `now − source ≤ 6h` (`LIVE_MARKET_MAX_AGE_HOURS`, `services/freshness_contract.py:35` [V]); source up to 5 min in the future is tolerated as age 0 (`QUOTE_CLOCK_SKEW_TOLERANCE_SECONDS`, `app.py`) | `Updated <ET> (book time)` |
-| `STALE` | `now − source > 6h` | `Stale — book time <ET>, <h>h ago`. Shown as context, non-executable |
-| `UNAVAILABLE` | no row, or `SourceUpdatedAtUTC` blank/zone-less/unparseable, or > 5 min in the future, or the component has no licensed source | `Update time not recorded` / `Unavailable — <reason>` |
-| `PENDING` | event listed, no licensed book quote yet; or score not yet final | `Lines not yet posted by tracked books` / `Final score pending` |
+| `AVAILABLE` | `FetchedAtUTC` parses strictly and `now − fetched ≤ 6h` (`LIVE_MARKET_MAX_AGE_HOURS`, `services/freshness_contract.py:35` [V]); fetched up to 5 min in the future is tolerated as age 0 (`QUOTE_CLOCK_SKEW_TOLERANCE_SECONDS`, `app.py`). Source time may be old, blank or unchanged — it does **not** affect this state | `Observed by BK <ET>` · `Book updated <ET>` (or `Book update time not provided`) |
+| `STALE` | `now − fetched > 6h` (BK has not re-observed the quote within 6h) | `Stale — last observed by BK <ET>, <h>h ago`. Shown as context, non-executable |
+| `UNAVAILABLE` | no row; or `FetchedAtUTC` blank/zone-less/unparseable; or `FetchedAtUTC` > 5 min in the future; or the component has no licensed source | `Observation time not recorded` / `Unavailable — <reason>` |
+| `PENDING` | event listed, no allowlisted book quote yet; or score not yet final | `Lines not yet posted by tracked books` / `Final score pending` |
 
 Rules:
 
-- **`FetchedAtUTC` never substitutes for `SourceUpdatedAtUTC`** (frozen direction). It is shown separately as
-  `Checked by BK <ET>`.
+- **Two clocks, two labels, never swapped.** `Observed by BK <ET>` = `FetchedAtUTC`; `Book updated <ET>` =
+  `SourceUpdatedAtUTC`. Neither substitutes for the other: a blank source time never borrows the fetch time,
+  and a fresh source time never makes an unobserved quote available.
+- **An old source time does not make a recently observed unchanged quote stale.** A quote observed 1h ago
+  with `Book updated` 20h ago is `AVAILABLE` (`Unchanged since <ET>` is shown as a movement fact).
+- **Skew:** fetched > 5 min in the future → `UNAVAILABLE`; source > 5 min after fetched → whole-run reject
+  (§6.4 R9); a blank or unparseable source time is shown as `Book update time not provided` and blocks only
+  movement facts, never availability.
+- The frozen timestamp direction is unchanged: both are tz-aware ISO-Z, no zone is inferred, `LastUpdated`
+  is never used.
 - A missing component is never rendered as `0`, `0–0`, `—` without a reason, or a blank cell. QC renders
   pages with empty data and asserts the reason text.
 - **Permanently unavailable components** in release 1, always listed with their reason:
@@ -603,10 +685,10 @@ Rules:
   - `Pace/efficiency: Not licensed`
   - `Player props: Not offered for NCAAB`
   - `First-half markets: Not tracked yet`
-- Open measurement question (Q3): whether provider `last_update` refreshes when a quote is re-observed or only
-  when it changes. If only on change, stable early lines read `STALE` while still offered. The window is
-  **not** loosened to compensate (owner 2026-11-01 cadence decision); the probe measures the age distribution
-  first.
+- Former open question Q3 (whether provider `last_update` refreshes on re-observation or only on change) is
+  **resolved by the owner's freshness semantics**: availability no longer depends on source age, so a stable
+  early line that BK re-observes every 4h stays `AVAILABLE`. The probe still records the source-age
+  distribution (`shape.json`) as a movement-display fact, not a freshness input. The 6h window is unchanged.
 
 ---
 
@@ -631,21 +713,23 @@ Per-game fields:
 | Field | Source | Empty behavior |
 |---|---|---|
 | Tip time `<h:mm a> ET` | `EventCommenceAtUTC` | never empty (strict parse required to list) |
-| Away @ Home (as listed) | team `DisplayName`, else provider string + `Team identity unverified` chip | — |
+| Away @ Home (as listed) | team `DisplayName`; for a non-`RESOLVED` event, the provider strings appear only inside the labelled raw-context row `Provider listing — team identity unverified` (C7), with no team links, context or ticket action | — |
 | Start-time-changed chip | `CommenceChangeCount > 0` | hidden |
-| Spread / Total / Moneyline cells | per side: `<n> books` and the **range** of offered points among `AVAILABLE` quotes (e.g. `-3.5 to -4.5`); moneyline shows the price range. No single "slate number" is chosen (§11.4) | `Lines not yet posted` / `Stale` |
-| Book count | distinct `LICENSED_US` books with an `AVAILABLE` quote for that market | `0 books with a current quote` |
+| Spread / Total cells | per side: `<n> books` and the **range** of offered points among `AVAILABLE` allowlisted quotes (e.g. `-3.5 to -4.5`). No single "slate number" is chosen (§11.4) | `Lines not yet posted` / `Stale` |
+| Moneyline cell | price range among `AVAILABLE` allowlisted quotes, with the chip `Context only` (C6): never addable to a ticket in release 1 | `Lines not yet posted` / `Stale` |
+| Book count | distinct `ALLOWLISTED` books with an `AVAILABLE` quote for that market | `0 books with a current quote` |
 | Single-book flag | `BookCount == 1` | hidden |
-| Updated | newest `SourceUpdatedAtUTC` among that game's quotes, ET, plus fact-state chip | `Update time not recorded` |
+| Observed by BK | newest `FetchedAtUTC` among that game's quotes, ET, plus fact-state chip (C5) | `Observation time not recorded` |
+| Book updated | newest `SourceUpdatedAtUTC` among that game's quotes, ET (display only; never decides freshness) | `Book update time not provided` |
 | Status chip | `ListingStatus` / `ScoreState` / duplicate / identity | — |
 
 No prices are averaged into a cell. The slate cell shows the point **range** and book count; per-book prices
 live on the matchup page and in the expandable book grid.
 
 **Mobile (< 760 px, existing drawer shell):** one card per game in time order: tip ET · teams · status chip ·
-spread range + book count · total range + book count · updated-ago · `Open matchup`. The book grid is a
+spread range + book count · total range + book count · observed-by-BK ago · `Open matchup`. The book grid is a
 collapsed `<n> books` chip that expands to a horizontally scrollable table (book · side · point · price ·
-book time). No horizontal page scroll.
+observed by BK · book updated). No horizontal page scroll.
 
 **Desktop:** a table with sticky header in the same order and columns, and an expandable per-game book grid
 row. No side drawer in release 1 (keeps one code path).
@@ -656,8 +740,11 @@ Sections in this fixed order (doctrine §11 layering: Market Facts → Analytica
 
 1. **Header:** teams (as listed), tip ET, `EventDateET`, listing/score status, `Venue: Not verified`,
    identity chip, duplicate chip.
-2. **Market facts:** one table per market, rows = book × side: point, price, book time (ET), fact state,
-   `MarketIntegrity` chip. Books in registry title order (alphabetical); **not** sorted by price.
+2. **Market facts:** one table per market, rows = allowlisted book × side: point, price, `Observed by BK`
+   (ET), `Book updated` (ET), fact state, `MarketIntegrity` chip; the moneyline table carries `Context only`
+   (C6). Books in registry title order (alphabetical); **not** sorted by price. The §4 book-availability
+   statement appears once above the tables. For a non-`RESOLVED` event, this section is the labelled raw
+   context block of §3.4 only.
 3. **Movement:** per book and side: first BK capture → latest BK capture, number of captures, last pre-tip
    capture once tipped (§7.3 labels).
 4. **Best available (per side, per point):** §11.4.
@@ -679,16 +766,20 @@ Shown only for `RESOLVED` teams, computed from `NCAAMB_Finals.csv` rows with `Sc
 - W–L in captured games; last 5 / last 10 results with dates, opponent and margin; average margin with n.
 - Rest days before this game = days since the team's previous captured final (ET dates), labelled `since
   last BK-captured game`, because a game we did not capture would shorten it.
-- ATS / O-U record and current streak from §8.3 unanimous outcomes, with n, window and
-  `MIXED` count, labelled **`Context, not an edge — streaks are priced`** (CLAUDE.md §10).
+- ATS / O-U **per-book records** from §8.3 (one line per allowlisted book: cover–fail–push, n, window, and
+  games `not graded at <Book>`), plus each recent game's cross-book **distribution** (`Covered at 3 of 6
+  books · Pushed at 1 · Failed at 2`). No single consensus record or consensus streak; the reference
+  (`per-book records`) is stated in the module header. Labelled **`Context, not an edge — streaks are
+  priced`** (CLAUDE.md §10).
 - n < 3: the module shows `Too few captured games (n=<n>)`, with no rates.
 
 No pace, efficiency, SOS, rankings, ratings, projections or simulated lines.
 
 ### 11.4 Best available (no consensus, no default book)
 
-For each market side and each distinct point offered by `AVAILABLE` books: the highest `PriceAmerican` at
-that point, with the book(s) offering it and their book times. Points are never merged; a `-3.5` and a `-4`
+For each spread/total side and each distinct point offered by `AVAILABLE` allowlisted books: the highest
+`PriceAmerican` at that point, with the book(s) offering it and their `Observed by BK` / `Book updated` times.
+Moneyline is shown as context only (C6). Points are never merged; a `-3.5` and a `-4`
 are separate rows. There is no "best line" across different points and no combined number. Ties list every
 tied book.
 
@@ -700,11 +791,11 @@ only the Missing column. Classification uses frozen, deterministic rules (declar
 
 | Fact type | Supporting (for the selection) | Contradictory | Missing |
 |---|---|---|---|
-| Market coverage | ≥ 2 `AVAILABLE` books offer the selection | `SINGLE BOOK` | 0 `AVAILABLE` books |
+| Market coverage | ≥ 2 `AVAILABLE` allowlisted books offer the selection | `SINGLE BOOK` | 0 `AVAILABLE` allowlisted books |
 | Quote state | quote `AVAILABLE` and `COMPLETE` | `STALE`, `ONE_SIDED`, `INCONSISTENT` | `UNAVAILABLE` / `PENDING` |
 | Number since first capture (same book) | point moved toward the selection (e.g. +4.5 → +5.5 for the taker) | moved away | 1 capture |
 | Recent captured form (n ≥ 5) | selection team's last-5 captured W > L | W < L | n < 5 / identity unverified |
-| ATS unanimous streak (n ≥ 3) | — (never "supporting": streaks are priced) | — | shown as context only |
+| ATS per-book records / cross-book distribution (n ≥ 3) | — (never "supporting": streaks are priced) | — | shown as context only, per book; never a consensus record |
 | Injuries | — | — | always `Unavailable — no licensed source` |
 | Venue | — | — | always `Not verified` |
 | Pace/efficiency | — | — | always `Not licensed` |
@@ -721,16 +812,22 @@ only the Missing column. Classification uses frozen, deterministic rules (declar
   the user selects them. The leg carries `authority_source = 'USER_SELECTED'`. QC asserts no proposer imports an
   NCAAMB loader.
 - **Executable** only when `_leg_quote_failures` (`app.py:33434`) returns `[]` — complete single-book quote
-  (real `LICENSED_US` book, American price, event/market/selection identity, line for spreads/totals, source
-  time, CLOCK-A ≤ 6h) and kickoff strictly after server now — **plus** NCAAMB-specific reasons evaluated
-  first: `TEAM_IDENTITY_UNRESOLVED`, `DUPLICATE_EVENT_SUSPECT`, `EVENT_NOT_LISTED`, `ONE_SIDED_MARKET`,
-  `MARKET_INCONSISTENT`, `EVENT_TEAMS_CHANGED`.
+  (real `ALLOWLISTED` book, American price, event/market/selection identity, line for spreads/totals,
+  **observed time `FetchedAtUTC` ≤ 6h** per C5) and kickoff strictly after server now — **plus**
+  NCAAMB-specific reasons evaluated first: `MONEYLINE_CONTEXT_ONLY`, `TEAM_IDENTITY_UNRESOLVED`,
+  `DUPLICATE_EVENT_SUSPECT`, `EVENT_NOT_LISTED`, `ONE_SIDED_MARKET`, `MARKET_INCONSISTENT`,
+  `EVENT_TEAMS_CHANGED`, `BOOK_NOT_ALLOWLISTED`.
+  - **Implementation check:** today's shared CLOCK-A reads the quote's `updated_utc` (source time) [V at
+    `17b5e69`]. Under the owner's freshness semantics the shared check must evaluate observed (fetched) time;
+    that reconciliation belongs to the shared correction (PRE-3 / ledger L3), and NCAAMB legs are not
+    executable until the corrected check is the one in use.
 - **Leg dict** built server-side from one `NCAAMB_GameLines.csv` row: `sport='NCAAMB'`, `event_id`,
-  `kickoff_utc=EventCommenceAtUTC`, `quote={book, price, line, event, market, selection, updated_utc}`,
-  `line`, `price`.
-  - h2h has no line. The existing contract requires a line (`MISSING_LINE`) [V], so **h2h legs are
-    non-executable in release 1** unless the shared contract is amended to accept a declared no-line market
-    (open question Q8). They remain viewable.
+  `kickoff_utc=EventCommenceAtUTC`, `quote={book, price, line, event, market, selection, fetched_utc,
+  source_updated_utc}`, `line`, `price`.
+  - **Moneyline (h2h) is context-only in the first slice (C6)**, regardless of any shared-contract change
+    that merely relaxes `MISSING_LINE`. It becomes executable only after the ticket contract gains a
+    **reviewed market-type identity** that does not require a numeric line. Until then h2h rows are viewable
+    facts with `Context only`, no ticket action, no payout.
 - **Ticket boundary:** the existing 2–8 range (`TICKET_SUBMIT_MIN/MAX_LEGS`, `app.py:34769-34770`), the shared
   editor's 5-leg construction cap, and quote-change atomicity (`docs/ticket_submission_contract.md` §2: any
   book/line/price/event change → whole-ticket 409, confirm-and-resubmit) apply unchanged. The server
@@ -743,7 +840,7 @@ only the Missing column. Classification uses frozen, deterministic rules (declar
   under `Other` today. Add `'NCAAMB'` (additive). `book` and `odds` come from the executable leg; CLV uses the
   user-entered `closing_odds` (existing field). An optional prefill from the last pre-tip BK capture is labelled
   `BK pre-tip capture (<N> min before tip)`, never "closing line".
-- **Context-only legs** (stale, unresolved, h2h under the current contract) show the facts, no payout, no
+- **Context-only legs** (stale, unresolved identity as labelled raw context, moneyline) show the facts, no payout, no
   implied probability, no ticket action, matching the existing context-only contract.
 
 ---
@@ -856,9 +953,12 @@ def games_only_sports() -> list[SportSpec]:  # live AND scope == 'games_only'
   - `budget`: `{month_utc, mtd_before, mtd_after, cap, reserve_class}`
   - `events`: `{listed, priced, new, not_listed, commence_changed, duplicates}`
   - `identity`: §3.5
-  - `books`: `{published: {key: quotes}, excluded: {key: {status, quotes}}}`
-  - `rows`: `{published, dropped: {D1..D5}, one_sided, inconsistent}`
-  - `freshness`: `{source_age_p50_min, p90, max, share_over_6h, source_time_level_counts}`
+  - `books`: `{ingested: {key: quotes}, published: {key: quotes}, not_published: {key: {status, quotes}}}`
+    (`published` = `ALLOWLISTED` only, §4)
+  - `rows`: `{ingested, published, dropped: {D1..D5}, one_sided, inconsistent}`
+  - `freshness`: `{fetched_at_utc, source_age_p50_min, p90, max, source_blank_share,
+    source_time_level_counts}` (source age is a movement/display statistic only; availability is decided by
+    `FetchedAtUTC`, C5)
   - `outputs`: `{path: {sha256_before, sha256_after}}`
 - Ledger lines also go to the existing `data/tracking/odds_quota_ledger.jsonl` (`services/odds_quota.py:23`)
   with `sport=basketball_ncaab` and `endpoint_family` ∈ `ncaamb_events`, `ncaamb_odds_bulk`,
@@ -910,10 +1010,10 @@ decision.
 | `/v4/sports` | free | 0 | `odds_quota.py:26-36` comment [V]; provider docs [I] |
 | `/v4/sports/basketball_ncaab/events` | free | 0 | same |
 | `/odds` bulk, `markets=h2h,spreads,totals`, `regions=us` | markets × regions | **3** per call, independent of event count | `odds_credit_cost` [V formula]; provider charge [I] |
-| same with `regions=us,us2` | 3 × 2 | 6 | [I] |
-| `/odds` bulk with zero events in window | ? | 0 or 3 | [I] — measured only if the owner ticks A5 |
+| same with `regions=us,us2` — **not approved** (future option only) | 3 × 2 | 6 | [I]; not measured (A4 rejected for the probe) |
+| `/odds` bulk with zero events in window | ? | 0 or 3 | [I]; not measured (A5 rejected for the probe) |
 | `/scores?daysFrom=3` | flat | **2** | [I] provider docs as recalled; Probe B verifies |
-| `/participants` (optional, registry seed) | flat | 1 | [I] |
+| `/participants` — **not approved** (future option only) | flat | 1 | [I]; not measured (C rejected for the probe) |
 | per-event `/events/{id}/odds` (1H, team totals) | markets returned × regions per event | — | **not used in release 1** |
 
 ### 14.2 Assumptions for the monthly estimate
@@ -931,13 +1031,14 @@ decision.
 | Configuration | Lines | Scores | Manual | Total / 31-day month | % of 7,500 |
 |---|---|---|---|---|---|
 | **Base (recommended): 4h, `us` only** | 6 × 3 × 31 = 558 | 6 × 2 × 31 = 372 | 50 | **980** | 13% |
-| O1: + `us2` region | 1,116 | 372 | 80 | 1,568 | 21% |
-| O2: base + pre-tip hourly captures 12:00–23:00 ET (12 calls/day, narrow `commenceTimeTo=now+75m`) | 558 + 1,116 | 372 | 50 | 2,096 | 28% |
-| O1 + O2 | 1,116 + 2,232 | 372 | 80 | 3,800 | 51% |
+| O1: + `us2` region — **not approved** (future option) | 1,116 | 372 | 80 | 1,568 | 21% |
+| O2: base + pre-tip hourly captures 12:00–23:00 ET (12 calls/day, narrow `commenceTimeTo=now+75m`) — **not approved** (future option) | 558 + 1,116 | 372 | 50 | 2,096 | 28% |
+| O1 + O2 — **not approved** (future option) | 1,116 + 2,232 | 372 | 80 | 3,800 | 51% |
 
-O2 matters because with 4h captures the last pre-tip capture can be up to 4h before tip, which weakens CLV and
-grading (§7.3 still labels it honestly). Its cost on an empty window (no games tipping in the next 75 min) is
-the A5 unknown; if empty windows cost 0, O2 is cheaper than shown.
+The book policy (§4) fixes the region at `us`; O1 would need a new owner decision. O2 would matter because
+with 4h captures the last pre-tip capture can be up to 4h before tip, which weakens CLV and grading (§7.3
+still labels it honestly). Its empty-window cost is unmeasured (A5 was not approved). Both stay listed only so
+a later decision has the arithmetic.
 
 ### 14.4 Budget guard (enforced in code before every paid call)
 
@@ -947,28 +1048,41 @@ the A5 unknown; if empty windows cost 0, O2 is cheaper than shown.
     `ESTIMATED_UPPER_BOUND`. The receipt itself still fails (`cost_ok=false`), as today.
 - Thresholds (cap from config `BK_NCAAMB_MONTHLY_CREDIT_CAP`, default 7,500, never inferred):
   - **essential** (4h lines, scores) may proceed while `MTD + expected ≤ 95%` of cap (7,125).
-  - **deferrable** (pre-tip O2, manual) only while `≤ 80%` (6,000).
+  - **deferrable** (manual; pre-tip O2 if ever approved) only while `≤ 80%` (6,000).
   - Beyond → `SKIP_BUDGET` (alerting), zero requests.
 - `--expected-cost` is always passed (3, 2, …). A response whose `x-requests-last` exceeds it fails the run's
   cost receipt (`odds_quota.receipt`) and blocks publish, as today.
 
-### 14.5 The exact cost probe (proposal — NOT executed)
+### 14.5 The exact cost probe (CONDITIONALLY APPROVED 2026-11-04 — NOT executed)
 
 **Purpose:** verify the per-call charges in §14.1, the response shape this contract depends on (market-level
 `last_update`, outcome-name equality, `/events` ⊇ `/odds`, book keys) and the real team strings for the alias
 review.
 
-**Approval units (decision 4 requires scores to be approved separately):**
+**Owner approval (C9):** **Probe A + Probe B only, maximum 5 credits total, `us` region only.** No optional
+extras, no `us2`, no hourly/pre-tip calls. Stop on any unexpected response or charge.
+
+**Preconditions (all required before the run):**
+
+1. Safeguard A (`fix/fetch-output-path-guard`) passes its gate.
+2. The 2026-11-05 checkpoint has been reviewed.
+3. The probe is **proven unable to write NBA/WNBA production paths** (`qc_ncaamb_probe_script.py`: write-path
+   allow-list + a sandboxed run that asserts `data/odds/NBA_*`, `data/odds/WNBA_*` and every other
+   `SPORT_OUTPUTS` path are byte-identical and untouched).
+
+**Approved units:**
 
 | Unit | Calls (in order) | Expected credits |
 |---|---|---|
-| **Probe A — lines** (owner approval #1) | A1 `GET /v4/sports` · A2 `GET /v4/sports/basketball_ncaab/events?dateFormat=iso&commenceTimeFrom=<T>&commenceTimeTo=<T+72h>` · A3 `GET /v4/sports/basketball_ncaab/odds?regions=us&markets=h2h,spreads,totals&oddsFormat=american&dateFormat=iso&commenceTimeFrom=<T>&commenceTimeTo=<T+72h>` | 0 + 0 + 3 = **3** |
-| A4 (optional tick) | same as A3 with `regions=us2` | 3 |
-| A5 (optional tick) | same as A3 with `commenceTimeFrom=<T+300d>&commenceTimeTo=<T+301d>` (a window with no events) | 0 or 3 |
-| **Probe B — scores** (owner approval #2) | B1 `GET /v4/sports/basketball_ncaab/scores?daysFrom=3&dateFormat=iso` | **2** |
-| Probe C — participants (optional, approval #3) | C1 `GET /v4/sports/basketball_ncaab/participants` | 1 |
+| **Probe A — lines** | A1 `GET /v4/sports` · A2 `GET /v4/sports/basketball_ncaab/events?dateFormat=iso&commenceTimeFrom=<T>&commenceTimeTo=<T+72h>` · A3 `GET /v4/sports/basketball_ncaab/odds?regions=us&markets=h2h,spreads,totals&oddsFormat=american&dateFormat=iso&commenceTimeFrom=<T>&commenceTimeTo=<T+72h>` | 0 + 0 + 3 = **3** |
+| **Probe B — scores** | B1 `GET /v4/sports/basketball_ncaab/scores?daysFrom=3&dateFormat=iso` | **2** |
 
-**Maximum if everything is ticked: 12 credits.** Base A+B = **5**.
+**Hard ceiling: 5 credits.** The script tracks cumulative `x-requests-last` and refuses any call whose
+expected cost would take the total above 5.
+
+**Rejected for this probe (not approved; not implemented in the script):** A4 (`regions=us2`), A5
+(empty-window cost), C (`/participants`), and any hourly/pre-tip capture. They may return only as a new,
+separately approved proposal.
 
 **Where and when:**
 
@@ -982,11 +1096,15 @@ review.
 **How it runs:** a new one-shot script `probe_ncaab_costs.py` (built and reviewed **before** approval; not
 part of this doc's scope). It:
 
-- has hard-coded calls only, `--units A,B[,A4,A5,C]` required, and no other arguments
-- imports nothing from `app`
-- writes **only** under the probe directory below and appends ledger lines
+- has hard-coded calls only (A1, A2, A3, B1), `--units A,B` is the only accepted value, and no other
+  arguments; any other unit, region or market is rejected before any request
+- imports nothing from `app` and nothing that resolves `SPORT_OUTPUTS` / `DEFAULT_SPORT`
+- writes **only** under the probe directory below and appends ledger lines; every write path is checked
+  against that allow-list before opening
 - passes per-call `expected_cost`
-- **stops on the first deviation**: HTTP ≠ 200, missing usage headers, or `x-requests-last` > expected
+- **stops on the first unexpected response or charge**: HTTP ≠ 200, missing usage headers, unparseable or
+  unexpected body shape (e.g. `basketball_ncaab` absent from A1, non-list body), a region other than `us`
+  in the request, `x-requests-last` > expected, or cumulative cost > 5
 
 **Output paths** (all under gitignored `data/tracking/`; nothing under `data/odds`, `data/scores`,
 `data/schedules` or `data/reference`):
@@ -996,8 +1114,8 @@ data/tracking/probes/ncaab_cost_probe_<YYYYMMDDTHHMMSSZ>_<token8>/
   receipt.json          schema bk.ncaab_cost_probe.v1
   raw/A1_sports.json    provider bodies (no key; the key exists only in the request URL, never written)
   raw/A2_events.json
-  raw/A3_odds_us.json   [raw/A4_odds_us2.json] [raw/A5_odds_empty.json]
-  raw/B1_scores.json    [raw/C1_participants.json]
+  raw/A3_odds_us.json
+  raw/B1_scores.json
   shape.json
   team_names.csv        distinct provider team strings + counts (alias-review input; never authority)
 data/tracking/odds_quota_ledger.jsonl   (+1 line per call; endpoint_family ncaab_probe_<unit>)
@@ -1023,13 +1141,15 @@ data/tracking/odds_quota_ledger.jsonl   (+1 line per call; endpoint_family ncaab
 **`shape.json` answers the [I] items:**
 
 - `basketball_ncaab` present/active; `basketball_wncaab` present (recorded only)
-- Book keys + titles seen, with quote counts (input for the §4 licence review)
+- Book keys + titles seen under `us`, with quote counts (input for the §4 owner allowlist review; no legal
+  status is recorded)
 - Markets seen per book
 - Share of markets with market-level `last_update`, and with bookmaker-level only
 - Outcome-name exact-match rate vs `home_team`/`away_team`
 - `/events` ids not present in `/odds` (unpriced games) and the reverse
 - All `commence_time` values end in `Z`
-- `FetchedAt − SourceUpdatedAt` distribution (p50/p90/max, share > 6h) — answers Q3
+- `FetchedAt − SourceUpdatedAt` distribution (p50/p90/max, share > 6h) — a movement-display fact; Q3 is
+  already resolved by the freshness semantics (§10)
 - Duplicate same-pair events within 12h
 - Scores: `completed` counts, score-name exact-match rate, `last_update` presence, `daysFrom` coverage
 
@@ -1042,10 +1162,10 @@ measured costs before any timer proposal.
 
 | Path | Tracked? | Writer | Shape |
 |---|---|---|---|
-| `data/reference/ncaa_schools.csv` | **yes** | reviewed commit | §3.1 |
-| `data/reference/ncaamb_teams.csv` | **yes** | reviewed commit | §3.1 |
-| `data/reference/ncaamb_team_aliases.csv` | **yes** | reviewed commit | §3.1 |
-| `data/reference/sportsbooks.csv` | **yes** | reviewed commit | §4 |
+| `data/reference/ncaa_schools.csv` | **yes, after the review gate** | reviewed commit | §3.1 |
+| `data/reference/ncaamb_teams.csv` | **yes, after the review gate** | reviewed commit | §3.1 |
+| `data/reference/ncaamb_team_aliases.csv` | **yes, after the review gate** | reviewed commit | §3.1 |
+| `data/reference/sportsbooks.csv` | **yes, after the review gate** | reviewed commit | §4 |
 | `data/odds/NCAAMB_Events.csv` | no (gitignored) | `fetch_ncaamb_market.py` | §5.2 |
 | `data/odds/NCAAMB_GameLines.csv` | no | `fetch_ncaamb_market.py` | §6.2 |
 | `data/tracking/ncaamb_snapshots/<YYYY-MM-DD>.csv[.gz]` | no | `fetch_ncaamb_market.py` | §7.1 |
@@ -1059,12 +1179,33 @@ measured costs before any timer proposal.
 
 **Git status of these paths [V at `17b5e69`]:** `.gitignore:67` ignores `*.csv` everywhere, and `data/odds/` /
 `data/tracking/` are ignored as directories, so every runtime path above is already untracked. The four
-reference registries must be tracked. The proposed mechanism is an explicit, narrow `.gitignore` negation in a
-reviewed commit (`!data/reference/ncaa_schools.csv`, `!data/reference/ncaamb_teams.csv`,
+reference registries are intended to be tracked. The mechanism is an explicit, narrow `.gitignore` negation in
+a reviewed commit (`!data/reference/ncaa_schools.csv`, `!data/reference/ncaamb_teams.csv`,
 `!data/reference/ncaamb_team_aliases.csv`, `!data/reference/sportsbooks.csv`), placed after line 67 — never
 `git add -f`, and never a broader pattern. Some CSVs are tracked today without a negation (e.g.
 `data/context/MLB_BallparkFactors.csv`), which is the force-add pattern this avoids. Also add `data/scores/`
-as an explicit ignored directory for clarity (Q12).
+as an explicit ignored directory for clarity.
+
+**Review gate before any negation lands (C8; this repository is public, CLAUDE.md §0).** The `.gitignore`
+exceptions may be committed **only after** a schema/content review proves that the four files contain no
+secrets and no generated runtime data:
+
+1. **Schema review:** each file's header equals exactly its declared column list (§3.1, §4); no extra column.
+   No runtime-shaped column exists (`FetchedAtUTC`, `FetchRunId`, `SnapshotAtUTC`, `FirstSeenAtUTC`,
+   `LastSeenAtUTC`, `EventCount`, quote counts, prices, points, scores, receipt bodies).
+2. **Content review:** no value matches a secret pattern (`sk_live_`, `sk_test_`, `apiKey=`, `api_key`,
+   `Bearer `, PEM headers, AWS key shapes, a 32-hex string outside the declared token/evidence columns, the
+   configured `ODDS_API_KEY` value); no URL carries a query string; `Evidence`/`ReviewNote` values cite a
+   receipt id or probe run id only, never a raw URL or response body; no email address anywhere (`ReviewedBy`
+   is a reviewer handle); enums only from their declared sets; ids match `ncaa_s_\d{6}` / `ncaam_t_\d{6}`.
+3. **Provenance review:** each file is produced by hand/reviewed commit, not by a job; no runtime writer
+   references `data/reference/` (single-writer scan, §13.1).
+4. **Owner sign-off** of the review output, recorded in the ledger, then the negation commit (exactly these
+   four lines, nothing broader).
+
+`qc_ncaamb_reference_review.py` (§16) implements steps 1–3 and runs on every change to `data/reference/` or
+`.gitignore`; a failure blocks the negation commit and any later registry commit. Until the gate passes,
+the registry files are not committed.
 
 **Encoding:** UTF-8, comma-separated, header row, `\n`. Enums are uppercase ASCII. Blank = empty string,
 never `NaN`, `None`, `0` or `-`. Booleans are `TRUE`/`FALSE`.
@@ -1079,22 +1220,23 @@ Every QC uses synthetic fixtures under a `qc_*` temp dir, runs under process `TZ
 
 | QC | Asserts (adversarial cases included) |
 |---|---|
-| `qc_ncaamb_identity.py` | Every §3.3 pair resolves to distinct ids; UConn + Connecticut → same id; bare `Miami`/`USC`/`Saint Mary's`/`St. Mary's` → `AMBIGUOUS` even with an alias row present (and the alias-file check FAILs that row); `Miami (OH) RedHawks` vs `Miami OH RedHawks` are different keys; curly apostrophe `St. John’s Red Storm` == straight; `Saint John's` (D-III) → `UNMATCHED`; prefix/substring inputs (`Texas A&M` vs `Texas A&M-CC`) never cross-match; duplicate `NormalizedKey` → FAIL; unreviewed alias not loaded; `competition='NCAAMB'` never returns `ncaaw:`; `SELF_MATCH` event → non-executable + alerting; unresolved names land in the runtime list with counts |
-| `qc_ncaamb_books.py` | `NOT_US_LICENSED` and unknown keys never published, counted in receipt; unknown → `WATCH`; no hard-coded book fallback string in NCAAMB modules/templates (scan, reusing the 1.5r bookmaker scan) |
+| `qc_ncaamb_identity.py` | Every §3.3 pair resolves to distinct ids; UConn + Connecticut → same id; bare `Miami`/`USC`/`Saint Mary's`/`St. Mary's` → `AMBIGUOUS` even with an alias row present (and the alias-file check FAILs that row); `Miami (OH) RedHawks` vs `Miami OH RedHawks` are different keys; curly apostrophe `St. John’s Red Storm` == straight; `Saint John's` (D-III) → `UNMATCHED`; prefix/substring inputs (`Texas A&M` vs `Texas A&M-CC`) never cross-match; duplicate `NormalizedKey` → FAIL; unreviewed alias not loaded; `competition='NCAAMB'` never returns an `ncaaw_t_` id; `SELF_MATCH` event → non-executable + alerting; unresolved names land in the runtime list with counts. **C1:** every `TeamId`/`SchoolId` matches the opaque pattern and contains no slug text; renaming a team's `Slug` (old slug moved to `PriorSlugs`) keeps the same `TeamId`, and grades, snapshots, finals joins and ticket legs keyed before the rename still resolve to it; old and new slug route to the same `TeamId`; a slug (current or prior) reassigned to another `TeamId` → FAIL; a reused/retired `TeamId` allocated again → FAIL; resolver never reads `Slug`. **C7:** an `UNMATCHED`/`AMBIGUOUS` event renders its provider names only inside the `Provider listing — team identity unverified` block (never as a team name or link); no finals/form/record/rest/evidence join for that provider string (call-counting stub on the join); no ticket or Bet Tracker action |
+| `qc_ncaamb_books.py` | **C10:** every `us`-region book in the payload is ingested as its own rows (none merged, none dropped for allowlist status); only `ALLOWLISTED` rows are published to pages, counts, best-available, evidence and handoff; `NOT_ALLOWLISTED`/unknown keys counted in `books.not_published`; unknown → `UNREVIEWED` + `WATCH`; a non-`us` region request is rejected; no hard-coded book fallback string and no pre-selected book in NCAAMB modules/templates (scan, reusing the 1.5r bookmaker scan); token scan of NCAAMB templates/receipts finds no legality/availability claim (`licensed`, `legal`, `available in your state`, `LICENSED_US`) about a book; the §4 availability statement is present once |
 | `qc_ncaamb_game_lines_contract.py` | Schema/types; every time column strict ISO-Z (zone-less rejected); away-outcome-first payload yields HOME row with **home** price and AWAY row with **away** price (the "price on the other side" regression); a payload whose away point is `+4.5` keeps `+4.5` on the AWAY row (no negation); `ONE_SIDED`, `INCONSISTENT` (-3.5 / +4.0) flagged and non-executable; `OUTCOME_UNMATCHED` dropped and counted; R1–R9 each reject with byte-identical outputs; `|price|<100` dropped; no `LastUpdated` column exists; `SourceUpdatedAtUTC` from market level, falls back to bookmaker level with `SourceTimeLevel=BOOKMAKER`, blank when neither (never fetch time) |
 | `qc_ncaamb_events.py` | Commence change recorded with prior value and change row; `NOT_LISTED` never labelled postponed/cancelled; `NO_RESULT` at +48h; duplicate pair within 12h → both non-executable; same pair 3 days apart → two normal events; unpriced listed event → `PENDING` row, not zero |
 | `qc_ncaamb_time.py` | 22:00 ET tip (03:00Z next day) → `EventDateET` previous day; DST boundary days (Nov 1/Mar 8 style fixtures); "today" correct at 23:30Z and 03:30Z; tzdata-missing simulation → `SERVICE_DATE_UNAVAILABLE`, not process zone; static scan: no naive `datetime.now()`, `pd.Timestamp.now()` without tz, or bare `.astimezone()` in NCAAMB modules |
-| `qc_ncaamb_freshness.py` | Source 1h old on a UTC process → `AVAILABLE`; 6h00m01s → `STALE`; blank/zone-less → `UNAVAILABLE` (never live); +4 min future → tolerated; +6 min → `UNAVAILABLE`; a stale quote with a fresh `FetchedAtUTC` stays `STALE` (fetch time never substitutes); rendered page with an empty data dir shows reason text, no `0`, `0–0` or blank cells |
+| `qc_ncaamb_freshness.py` | **C5 (fetched vs source):** `FetchedAtUTC` 1h old on a UTC process → `AVAILABLE`; fetched 6h00m01s old → `STALE`; fetched blank/zone-less/unparseable → `UNAVAILABLE` (never live) even with a fresh source time; fetched +4 min future → tolerated; +6 min → `UNAVAILABLE`; **old source (20h) + fresh fetched (1h), quote unchanged → `AVAILABLE`, displayed `Unchanged · Book updated <ET> · Observed by BK <ET>`**; blank source + fresh fetched → `AVAILABLE` with `Book update time not provided`, and source time is never filled from fetched time; fresh source + stale fetched → `STALE`; movement facts dated by `SourceUpdatedAtUTC` only; labels `Observed by BK` / `Book updated` are never swapped; rendered page with an empty data dir shows reason text, no `0`, `0–0` or blank cells |
 | `qc_ncaamb_snapshots.py` | Append-only (prior bytes are a prefix after append); re-appending the same run is a no-op; first-captured label never contains "open"; last pre-tip excludes a snapshot at exactly commence and one whose source time ≥ commence; 1 capture → "no movement read"; gz partition reads back identically |
-| `qc_ncaamb_grading.py` | Spread push; total push; h2h win/loss; tied final → `ANOMALY`; no pre-tip capture → `NO_PRETIP_CAPTURE` (post-tip quote present but ignored); one-sided pre-tip → `MARKET_NOT_GRADEABLE`; `NOT_LISTED` + no final → `NO_RESULT` (no "void"); score names not matching → `ScoreMapping=FAILED`, not graded; corrected final re-grades and flags; books with different numbers → `MIXED`, breaks streak; rematch keyed by `EventId` |
+| `qc_ncaamb_grading.py` | Spread push; total push; h2h win/loss; tied final → `ANOMALY`; no pre-tip capture → `NO_PRETIP_CAPTURE` (post-tip quote present but ignored); one-sided pre-tip → `MARKET_NOT_GRADEABLE`; `NOT_LISTED` + no final → `NO_RESULT` (no "void"); score names not matching → `ScoreMapping=FAILED`, not graded; corrected final re-grades and flags; rematch keyed by `EventId`. **C2:** six books at four different points → six `Result` rows, each graded at its own `GradedPoint`/`GradedPrice`; no row collapsed or filled from another book; a book without a pre-tip row → `NO_PRETIP_CAPTURE` for that book only. **C3:** a game where books disagree (cover at -3.5, fail at -4.5) is **counted** in every book's record — mutation check: re-introducing an "all books agree" filter fails the QC (record n must equal the per-book graded count). **C4:** cross-book output is a distribution `{cover, push, fail, n_books}` per game; no function returns a single game-level or team-level consensus result/record/streak (static + behavioural). **C7:** an `UNMATCHED`/`AMBIGUOUS` event yields only `EXCLUDED_IDENTITY` rows, no `WIN`/`LOSS`/`PUSH`; duplicate-group events → `EXCLUDED_DUPLICATE` |
 | `qc_ncaamb_neutral_site.py` | Release-1 writer emits only `UNKNOWN`; `UNKNOWN`/`TRUE` rows never enter home/road splits; split module renders `unavailable — venue not verified` |
 | `qc_ncaamb_no_consensus.py` | Static + behavioural: no mean/median/mode over `PriceAmerican`/`Point` in NCAAMB modules; best-available never merges points; ties list all books |
-| `qc_ncaamb_pages.py` | Slate order strictly by `EventCommenceAtUTC` then `EventId` (shuffled fixture); no sort parameter accepted; unavailable-components list always present; honesty token scan (`confidence`, `score` as a rating, `lock`, `sharp`, `steam`, `best bet`, `edge`, `projection`, `Example`) absent; streak rows carry "Context, not an edge"; evidence panel shows counts by type and no numeric total; mobile render width check (no horizontal page scroll at 375 px) |
-| `qc_ncaamb_ticket_handoff.py` | Executable leg requires every field + kickoff > now (now−1s, ==now excluded, now+1s eligible); unresolved identity / duplicate / not listed / one-sided / inconsistent each non-executable with its own code; h2h non-executable under the current contract (`MISSING_LINE`); quote change → whole-ticket 409 with server terms; client price never prices; 1 leg and 9 legs rejected, never truncated; no proposer (Green Light, Daily Card, Menu, Featured Parlay) imports an NCAAMB loader; Bet Tracker accepts `NCAAMB` |
+| `qc_ncaamb_pages.py` | Slate order strictly by `EventCommenceAtUTC` then `EventId` (shuffled fixture); no sort parameter accepted; unavailable-components list always present; honesty token scan (`confidence`, `score` as a rating, `lock`, `sharp`, `steam`, `best bet`, `edge`, `projection`, `Example`) absent; streak rows carry "Context, not an edge"; evidence panel shows counts by type and no numeric total; mobile render width check (no horizontal page scroll at 375 px). **C4:** team ATS module states its reference (`per-book records`) and renders one record line per allowlisted book plus per-game distributions; no single consensus ATS/OU record, streak or `Mixed across books` label is rendered. **C5:** quote cells show both `Observed by BK` and `Book updated`. **C6:** moneyline cells carry `Context only` and no ticket control |
+| `qc_ncaamb_ticket_handoff.py` | Executable leg requires every field + kickoff > now (now−1s, ==now excluded, now+1s eligible); unresolved identity / duplicate / not listed / one-sided / inconsistent / not-allowlisted book each non-executable with its own code; **C6:** h2h always non-executable (`MONEYLINE_CONTEXT_ONLY`), including a fixture where the shared contract's `MISSING_LINE` check is relaxed or a line-like field is present; **C5:** executability keys on `fetched_utc` ≤ 6h (old source + fresh fetched → executable; fresh source + stale fetched → not); quote change → whole-ticket 409 with server terms; client price never prices; 1 leg and 9 legs rejected, never truncated; no proposer (Green Light, Daily Card, Menu, Featured Parlay) imports an NCAAMB loader; Bet Tracker accepts `NCAAMB` |
 | `qc_ncaamb_single_writer.py` | Only the declared writer writes each artifact; no `--output` override; unknown sport/path exits 2 before any request (call-counting stub); `fetch_game_lines.py`/`refresh_live_scores.py` carry no NCAAB output mapping |
 | `qc_ncaamb_run_receipts.py` | Token required; missing → `RUN_RECEIPT_MISSING`; foreign token → `RUN_RECEIPT_MISMATCH`; no mtime path; skip paths still write own receipt; concurrent stages (process barrier, no sleeps); killed writer leaves no torn receipt |
 | `qc_ncaamb_budget.py` | MTD from ledger by sport + UTC month; unprovable cost counted at expected and flagged; essential blocked above 95%, deferrable above 80% → `SKIP_BUDGET` with zero requests (stub counts calls); month rollover; `x-requests-last > expected` blocks publish |
-| `qc_ncaamb_probe_script.py` | (for the probe script, before its approval) only the declared calls in the declared order; stops on first deviation; writes only under its probe dir; never writes the key; verdict logic for VERIFIED/CONCURRENT/MISMATCH/UNPROVABLE on header fixtures |
+| `qc_ncaamb_probe_script.py` | (for the probe script, before it runs) **C9:** only A1, A2, A3, B1 in that order; `--units` other than `A,B` (e.g. `A4`, `A5`, `C`) rejected before any request; `regions` is `us` only (a `us2` request is impossible); cumulative expected and observed cost never exceeds 5 (a fixture with `last=4` on A3 stops before B1); stops on unexpected HTTP status, missing headers, unexpected body shape, or overcharge; writes only under its probe dir (+ the ledger append); **sandboxed run proves no write to any NBA/WNBA production path** (every `SPORT_OUTPUTS` path hashed before/after, byte-identical; no import of `SPORT_OUTPUTS`/`DEFAULT_SPORT`); never writes the key; verdict logic for VERIFIED/CONCURRENT/MISMATCH/UNPROVABLE on header fixtures |
+| `qc_ncaamb_reference_review.py` | **C8:** the four `data/reference/` registries' headers equal their declared column lists exactly; no runtime-shaped columns or values; no secret-pattern match (key prefixes, `apiKey=`, PEM, AWS shapes, stray 32-hex, the configured key value); no URL with a query string; no email addresses; enums and opaque-id patterns valid; no runtime writer references `data/reference/`; `.gitignore` negations are exactly the four named lines (a broader pattern or `git add -f`-tracked extra CSV under `data/reference/` → FAIL). Mutation fixtures: a planted fake key, an added `FetchedAtUTC` column, and a `!data/reference/*.csv` negation each fail it |
 | `qc_sport_registry.py` (extended) | games-only rules (§12.3); declaring a props loader or stat map on NCAAMB fails; NCAAMB not-live remains a warning |
 
 `py -3 -m py_compile app.py` and `qc_sport_registry.py` run on every change. `qc_odds_feed.py` is **never**
@@ -1122,8 +1264,10 @@ part of an offline gate (it calls the provider).
 
 - Women's NCAAB (decision 1; §3.6, §13.5)
 - First-half spreads/totals and team totals (per-event cost; needs per-book writer + its own probe)
-- h2h executability (shared contract amendment, Q8)
-- Pre-tip capture option O2 and `us2` region option O1
+- Moneyline (h2h) executability — only after the ticket contract gains a reviewed market-type identity that
+  does not require a numeric line (C6, Q8)
+- Pre-tip capture option O2 and `us2` region option O1 (not approved; each needs a new owner decision)
+- Probe units A4 (`us2`), A5 (empty window), C (`/participants`) — rejected for the first probe
 - Historical odds purchase (decision 7, revisit after MVP)
 - Authoritative neutral-site source
 - Conference metadata population, bracket/tournament context
@@ -1138,27 +1282,31 @@ part of an offline gate (it calls the provider).
 
 ## 18. Open questions for the owner
 
-1. **Licensed-book list (§4):** which provider book keys are `LICENSED_US`? (Legal determination; the probe
-   supplies the observed keys.)
-2. **Regions:** `us` only (base, 3 credits/run), or `us` + `us2` (6/run) to reach more licensed books? Decide
-   after A3/A4 show which licensed books appear in each.
-3. **`last_update` semantics:** if the probe shows many on-board quotes with source age > 6h at fetch time,
-   those quotes are `STALE` under the frozen rule. Confirm the rule stands (this design assumes yes).
-4. **Pre-tip capture (O2):** approve hourly narrow-window captures for better last-pre-tip quotes (≈ +1,100
-   credits/month on `us`), or accept up to 4h capture lead?
-5. **Probe approval:** Probe A (3 credits), Probe B (2), optional A4 (3), A5 (0–3), C (1).
+1. **Provider-book allowlist (§4):** which `us`-region provider book keys are `ALLOWLISTED` for publication?
+   (Owner publication review from the probe's observed keys; not a legal determination, and no legal status
+   is recorded.) *Policy decided 2026-11-04 (C10); the list itself is still open.*
+2. ~~Regions~~ — **RESOLVED 2026-11-04:** `us` only (book policy + probe approval). `us2` is a future option,
+   not approved.
+3. ~~`last_update` semantics~~ — **RESOLVED 2026-11-04** by the quote freshness semantics (C5): availability
+   uses `FetchedAtUTC` ≤ 6h; source age drives only movement/`Book updated`, so a stable re-observed line is
+   not stale.
+4. **Pre-tip capture (O2):** not approved. Accept up to 4h capture lead for release 1 (current design); any
+   hourly capture needs a new decision.
+5. ~~Probe approval~~ — **RESOLVED 2026-11-04:** Probe A + Probe B only, max 5 credits, `us` only;
+   A4/A5/C rejected; run only after the three preconditions in §14.5.
 6. **Season window** for the NCAAMB gate (verified first/last dates with sources), or rely on F2v2 schedule
    evidence?
-7. **Unresolved identity:** keep the fail-closed rule (market facts visible, not addable to tickets), or
-   allow ticket entry on provider identity alone?
-8. **Moneyline legs:** amend the shared executable-leg contract to accept a declared no-line market (h2h), or
-   keep h2h non-executable in release 1?
+7. ~~Unresolved identity~~ — **RESOLVED 2026-11-04 (C7):** labelled raw context only; no stats join, no
+   grading, no ticket action.
+8. ~~Moneyline legs~~ — **RESOLVED 2026-11-04 (C6):** context-only in the first slice until the ticket
+   contract gains a reviewed market-type identity that does not require a numeric line.
 9. **Access tier:** is the NCAAMB slate free or `all_access`? Is the matchup page `all_access`?
 10. **Duplicate window:** 12 hours for the same-pair duplicate rule — acceptable?
 11. **Policy month:** budget cap on the UTC calendar month (designed), or aligned to the provider's
     billing reset date?
-12. **Reference data tracking:** approve the narrow `.gitignore` negations for the four registry CSVs under
-    `data/reference/` (§15), or name another tracked location.
+12. **Reference data tracking:** **policy decided 2026-11-04 (C8):** narrow `.gitignore` negations for the
+    four registry CSVs only after the §15 schema/content review gate passes and the owner signs off its
+    output. Open: the sign-off itself.
 
 ---
 
@@ -1166,11 +1314,15 @@ part of an offline gate (it calls the provider).
 
 1. PRE-1/PRE-2 deploy decisions (separate); PRE-3 consolidated game-lines correction; PRE-4 run-receipt
    generalization.
-2. `probe_ncaab_costs.py` + `qc_ncaamb_probe_script.py` → review → **owner approves Probe A, then Probe B
-   separately** → run on dev → receipt reviewed → §14.3 recomputed.
-3. Registries: `sportsbooks.csv` (owner licence review), `ncaa_schools.csv`, `ncaamb_teams.csv`, aliases from
-   the probe's `team_names.csv` (owner-reviewed) + `services/ncaamb_identity.py` + `qc_ncaamb_identity.py`,
-   `qc_ncaamb_books.py`.
+2. `probe_ncaab_costs.py` + `qc_ncaamb_probe_script.py` → review → confirm the §14.5 preconditions
+   (Safeguard A passes; 11-05 checkpoint reviewed; probe proven unable to write NBA/WNBA production paths) →
+   run **Probe A + Probe B only** (conditionally approved 2026-11-04; ≤ 5 credits, `us` only) on dev → stop
+   on any unexpected response or charge → receipt reviewed → §14.3 recomputed.
+3. Registries: `sportsbooks.csv` (owner provider-book allowlist review), `ncaa_schools.csv`,
+   `ncaamb_teams.csv` (opaque ids allocated), aliases from the probe's `team_names.csv` (owner-reviewed) +
+   `services/ncaamb_identity.py` + `qc_ncaamb_identity.py`, `qc_ncaamb_books.py` →
+   **`qc_ncaamb_reference_review.py` passes and the owner signs off the schema/content review (§15) → only
+   then the narrow `.gitignore` negation commit** and the registry commit.
 4. `services/ncaamb_contract.py` + `fetch_ncaamb_market.py` (offline QCs with stub provider; no live run).
 5. `fetch_ncaamb_scores.py` + `grade_ncaamb_results.py` (offline).
 6. `sport_registry` schema + `qc_sport_registry` games-only rules (NCAAMB stays `live=False`).
