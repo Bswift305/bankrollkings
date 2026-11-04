@@ -453,6 +453,28 @@ On `f06e568` (→ exact `6bdb73f`). Commits: `394c12f` governed no-game result, 
 - **Integrity+D4 status (2026-11-04):** exact `e1e33dc32777e2a9ec69f04293dbbc546eb00faf` = **LINUX GATE PASS /
   DEPLOYMENT CANDIDATE** (receipt `docs/integrity_d4_linux_gate_receipt_20261104.md`). Not deployed; a final
   cache/deployment-boundary audit is required first because the release changes executable-ticket authority.
+- **NBA v4 built — `fix/nba-game-lines-event-aware-v4` @ `29acc818e5c683a6b6de4c85b8458bd85f0a01ef` (pushed;
+  branch-only; NOT gated; to be rebuilt on the post-Integrity master).** 7 commits on `9ac078f`: `06c9648` verify-under-
+  lock + contained/symlink-proof/0700-0600 lock location; `4543c46` timer `00/4:15` + TIMER-ENABLEMENT BLOCKER (own
+  commit); `1446957` clock-skew contract (+5 min tolerated and labelled `clock_skew_tolerated`, beyond fails closed
+  `future_timestamp`, rows beyond +5 min dropped) + snapshot exec-state token (fixes an Elite snapshot served empty
+  after recovery); `47f9a31` 27-route 4-state matrix (stale / fresh / skew-ok / skew-fail); `3341773` `qc_quick_tools`
+  self-contained (synthetic Statcast; no MLB waiver; no user-store write); `b4ea87c` NBA props publisher behind its
+  **own** kernel lock (never takes the lines lock; requires a receipt-verified, hash-matching lines publish ≤ 120 min
+  old, else `SKIPPED_BLOCKED_BY_LINES` with zero requests); `29acc81` proposed props unit/timer `00/4:45` (30 min after
+  lines; five-day window; not installed). `9ac078f..HEAD` 22 files +2059/−176; `6bdb73f..HEAD` 37 files +6303/−241.
+  Lines lock outcomes: `LOCK_UNAVAILABLE` 76, `SKIPPED_LOCKED` 75, `REUSED_FRESH` 0, `REUSED_FRESH_AFTER_LOCK` 0
+  (receipt + hashes re-read under the lock), `NO_FRESH_AFTER_LOCK` 1, else fetch under the lock; reuse decided only
+  under the lock; `LINES_READY = {UPDATED, REUSED_FRESH, REUSED_FRESH_AFTER_LOCK}`. Builder gate: 33 QCs rc 0 worktree +
+  clean export, 0 network attempts. **Coordinator re-run (rc 0, 0 network):** `qc_nba_lines_lock` 56/56 + 1 skip,
+  `qc_nba_props_lock` 43/43 + 1 skip, `qc_nba_wnba_props_stale` 157/157, `qc_quick_tools`, `qc_nba_no_game_governance`
+  40/40, D1 275/275. **POSIX permission tests (0700/0600, repair, foreign-owner refusal, hard-link refusal) are
+  `[SKIP]` on Windows and have not run anywhere yet** — they must run in the eventual Linux gate. Open items: `/elite`
+  alert history may show a past alert's player/line/book with "Pending" (never a price or control) — product decision;
+  bk-daily props step may exceed 240 s if it waits 120 s then fetches (reported `PROVIDER_ERROR`, lock released);
+  `Persistent=true` catch-up can run both timers together (props then `SKIPPED_BLOCKED_BY_LINES` until lines finish);
+  WNBA props still have no lock. Builder incident: a stray empty file was briefly created in the `nba-lines-v2`
+  worktree and removed (coordinator confirmed v2 clean).
 - **Blast radius to note for review:** the central gate changes what `/`, `/dashboard`, `/free`, `/home/*`, `/elite`,
   `/derivatives` and the player/tool pages show whenever the NBA/WNBA props file is > 6h old — with today's once-daily
   refresh that is most of the day until the 4h cadence (which covers lines, not props) and a props cadence exist.
