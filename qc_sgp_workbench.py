@@ -24,6 +24,8 @@ def _leg(**k):
     # a FRESH provider stamp: the export gate judges quote freshness too (D4 atomic export), and this QC
     # tests the acceptance rules on an otherwise-executable ticket (qc_ticket_submission_atomic owns staleness)
     k.setdefault('timestamp', (datetime.now(timezone.utc) - timedelta(minutes=30)).strftime('%Y-%m-%dT%H:%M:%SZ'))
+    # the quote time that AUTHORIZES export is the zone-explicit provider source time (hotfix 2026-11-04)
+    k.setdefault('source_updated_utc', k['timestamp'])
     k.setdefault('tz', 't')
     k.setdefault('quote_scope', 'individual')
     k.setdefault('lineage', 'x')

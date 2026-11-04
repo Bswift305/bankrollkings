@@ -3637,6 +3637,20 @@ def get_props_refresh_meta(props_df, max_age_hours=_LIVE_MARKET_MAX_AGE_HOURS):
             except Exception:
                 age_hours = None
 
+    # A feed that records the provider's zone-explicit SourceUpdatedAtUTC (the Odds API prop fetchers) is
+    # labelled and aged from THAT, in explicit ET -- never from the zone-less LastUpdated fetch stamp (prod
+    # incident 2026-11-04). Column present but no parseable value -> the time is not shown.
+    if 'SourceUpdatedAtUTC' in props_df.columns:
+        _src = [d for d in (_canonical_kickoff_utc(v) for v in props_df['SourceUpdatedAtUTC']) if d is not None]
+        if _src:
+            _now = datetime.now(timezone.utc)
+            _ok = [d for d in _src if d <= _now + timedelta(seconds=QUOTE_CLOCK_SKEW_TOLERANCE_SECONDS)]
+            _fresh = max(_ok) if _ok else max(_src)
+            last_updated = _source_time_label(_fresh)
+            age_hours = round(max((_now - _fresh).total_seconds(), 0.0) / 3600.0, 2)
+        else:
+            last_updated = 'Update time not recorded'
+
     is_stale = bool(age_hours is not None and max_age_hours is not None and age_hours > max_age_hours)
     status = 'stale' if is_stale else 'live'
     warning = ''
@@ -19840,7 +19854,10 @@ def _build_best_lines_snapshot():
         if 'Line' in props.columns:
             line = line.fillna(pd.to_numeric(props['Line'], errors='coerce'))
         w['line'] = line.values
-        w['updated'] = props['LastUpdated'].astype(str).values if 'LastUpdated' in props.columns else ''
+        # Per-offer time = the provider's zone-explicit SourceUpdatedAtUTC as a sortable UTC ISO ('' when absent);
+        # the zone-less LastUpdated fetch stamp is never shown as an offer time (prod incident 2026-11-04).
+        w['updated'] = (props['SourceUpdatedAtUTC'].map(lambda v: _utc_iso(_canonical_kickoff_utc(v)) or '').values
+                        if 'SourceUpdatedAtUTC' in props.columns else '')
         w['over'] = pd.to_numeric(props['OverOdds'], errors='coerce').values if 'OverOdds' in props.columns else pd.NA
         w['under'] = pd.to_numeric(props['UnderOdds'], errors='coerce').values if 'UnderOdds' in props.columns else pd.NA
         w = w[w['book'].ne('') & w['player'].ne('') & w['stat'].ne('') & w['game'].ne('') & w['line'].notna()]
@@ -19897,7 +19914,7 @@ def _build_best_lines_snapshot():
                     'line_range': round(lh - ll, 2),
                     'single_book': bc < 2,
                     'is_stale': is_stale,
-                    'updated': str(rec['updated']) if rec['updated'] else '',
+                    'updated': _source_time_label(rec['updated']),
                     'search': f"{label} {rec['player']} {rec['stat']} {rec['game']} {direction}".lower(),
                 })
 
@@ -31123,11 +31140,13 @@ def nba_page():
 
 
 def build_nfl_dashboard_runtime_bundle():
+    # 'srcutc1': the props refresh meta (label + age) is from SourceUpdatedAtUTC (hotfix 2026-11-04); a
+    # code-only change, so the version must move or older disk bundles keep the fetch-stamp label (CLAUDE.md §4).
     cache_version = _build_file_token(
         DATA_DIR / 'odds' / 'NFL_Odds.csv',
         DATA_DIR / 'props' / 'NFL_Props.csv',
         DATA_DIR / 'schedules' / 'NFL_Schedule.csv',
-    )
+    ) + ('srcutc1',)
 
     def _build_bundle():
         live_odds = load_nfl_game_market_odds()
@@ -31529,7 +31548,9 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
     # the D4 kickoff gate (code-only changes: the data sig alone would keep serving older disk entries
     # without those fields for the TTL -- CLAUDE.md §4). The cached rows hold NO clock decision: the
     # kickoff predicate runs per request, after this cache, at ticket construction.
-    _dkey = f'nfl_floor_board::q1k2::{pkey[0]}::{pkey[1]}::{pkey[2]}'
+    # 's3' = the quote's update time is the provider's zone-explicit SourceUpdatedAtUTC (never the zone-less
+    # LastUpdated, which a UTC box writes as its own fetch time) -- older entries carry the wrong time.
+    _dkey = f'nfl_floor_board::q1k2s3::{pkey[0]}::{pkey[1]}::{pkey[2]}'
     if _NFL_FLOOR_BOARD_CACHE.get('sig') != sig:
         _NFL_FLOOR_BOARD_CACHE.clear()
         _NFL_FLOOR_BOARD_CACHE['sig'] = sig
@@ -31584,8 +31605,8 @@ def build_nfl_floor_board(limit=24, min_hit=78, min_games=8):
         if price is not None:
             _m = g[(g['Line'] == line) & (g['OverOdds'] == price)]
             if not _m.empty:
-                if 'LastUpdated' in _m.columns:
-                    _m = _m.assign(_u=_m['LastUpdated'].map(_feed_stamp_to_utc)).sort_values('_u', na_position='first')
+                if 'SourceUpdatedAtUTC' in _m.columns:
+                    _m = _m.assign(_u=_m['SourceUpdatedAtUTC'].map(_canonical_kickoff_utc)).sort_values('_u', na_position='first')
                 quote = _quote_from_row(_m.iloc[-1], player, line, price)
         game = str(g['Game'].iloc[0]) if 'Game' in g.columns else ''
         if '@' in game:
@@ -33091,8 +33112,11 @@ def evaluate_nfl_player(query):
     if not prows.empty:
         g0 = str(prows['Game'].iloc[0]) if 'Game' in prows.columns else ''
         out['matchup'] = g0.replace('@', ' @ ') if g0 else None
-        if 'LastUpdated' in prows.columns and prows['LastUpdated'].notna().any():
-            out['feed_ts'] = str(prows['LastUpdated'].dropna().max())
+        # Quote time shown to the customer = the provider's zone-explicit SourceUpdatedAtUTC (never the zone-less
+        # LastUpdated fetch stamp); none recorded -> said so.
+        _src = [d for d in (_canonical_kickoff_utc(v) for v in prows.get('SourceUpdatedAtUTC', pd.Series(dtype=object)))
+                if d is not None]
+        out['feed_ts'] = _source_time_label(max(_src)) if _src else 'Update time not recorded'
 
     idx = _nfl_player_index()
     sub = idx.get(str(player).strip().lower())
@@ -33109,7 +33133,7 @@ def evaluate_nfl_player(query):
             stat_key = g['_stat'].iloc[0]
             quotes = [{'book': str(r.get('Book') or ''), 'line': (None if pd.isna(r.get('Line')) else float(r.get('Line'))),
                        'price': (None if pd.isna(r.get('OverOdds')) else int(r.get('OverOdds'))),
-                       'ts': (None if pd.isna(r.get('LastUpdated')) else str(r.get('LastUpdated')))}
+                       'ts': _source_time_label(r.get('SourceUpdatedAtUTC'))}
                       for _, r in g.iterrows()]
             lvals = g['_line'].dropna()
             cline = float(lvals.median()) if len(lvals) else None
@@ -33307,16 +33331,37 @@ def _updated_label(utc_iso):
     """'updated 2026-11-01 05:30 ET' from a UTC ISO stamp, or an explicit not-recorded label."""
     if not utc_iso:
         return 'update time not recorded'
-    from services.timeutils import to_eastern_datetime_str
-    return f"updated {to_eastern_datetime_str(utc_iso)} ET"
+    # Explicit America/New_York (DST-aware), never the server/process zone; a zone-less or unparseable stamp
+    # is not a time we can label.
+    from zoneinfo import ZoneInfo
+    dt = _canonical_kickoff_utc(utc_iso)
+    if dt is None:
+        return 'update time not recorded'
+    return f"updated {dt.astimezone(ZoneInfo('America/New_York')).strftime('%Y-%m-%d %H:%M')} ET"
+
+
+def _source_time_label(value):
+    """Customer-facing quote/market time: a zone-explicit provider source time (SourceUpdatedAtUTC) shown in
+    explicit America/New_York, else 'Update time not recorded'. A zone-less stamp (e.g. LastUpdated) is
+    never presented as a time."""
+    from zoneinfo import ZoneInfo
+    dt = _canonical_kickoff_utc(value)
+    if dt is None:
+        return 'Update time not recorded'
+    return f"{dt.astimezone(ZoneInfo('America/New_York')).strftime('%Y-%m-%d %H:%M')} ET"
 
 
 def _quote_from_row(row, player, line, price, selection_side='Over'):
     """A verified single-book quote from ONE source row, or None. Every field comes from that row
     (no defaults, no medians): sportsbook, offered American odds, event, market, selection, line,
-    source update time."""
+    source update time.
+
+    The update time is the provider's zone-explicit `SourceUpdatedAtUTC` ONLY. `LastUpdated` is never used:
+    when the bookmaker carries no last_update, fetch_player_props writes the fetch time there, zone-less, in
+    the process's own zone -- UTC on prod -- so reading it as Eastern puts every quote ~5h in the future
+    (blocked), then accepts it up to ~11h old as fresh. A missing or zone-less source time -> no quote."""
     book = str(row.get('Book') or '').strip()
-    upd = _feed_stamp_to_utc(row.get('LastUpdated'))
+    upd = _canonical_kickoff_utc(row.get('SourceUpdatedAtUTC'))
     event = str(row.get('Game') or '').strip()
     market = str(row.get('MarketKey') or '').strip() or str(row.get('Stat') or '').strip()
     if not book or book.lower() in _NON_BOOK_SOURCES or upd is None or not event or not market:
@@ -33435,19 +33480,38 @@ def _leg_quote_failures(leg, now=None):
     return out
 
 
+# Documented provider clock skew: a source time up to 5 minutes AHEAD of the server clock is accepted as
+# fresh (internal reason CLOCK_SKEW_TOLERATED, age clamped to zero); further ahead fails closed.
+QUOTE_CLOCK_SKEW_TOLERANCE_SECONDS = 5 * 60
+
+
+def _quote_clock_status(updated, now):
+    """Freshness of ONE quote's source update time against the server clock `now` (aware UTC).
+
+    The source time must be zone-explicit (`_canonical_kickoff_utc`): a zone-less stamp is never read in an
+    assumed zone (prod incident 2026-11-04), so it is MISSING_UPDATE_TIME. Returns
+    {'failure': None | 'MISSING_UPDATE_TIME' | 'QUOTE_FROM_FUTURE' | 'STALE_QUOTE',
+     'notes': [] | ['CLOCK_SKEW_TOLERATED'], 'age_seconds': clamped age or None}."""
+    upd = _canonical_kickoff_utc(updated)
+    if upd is None:
+        return {'failure': 'MISSING_UPDATE_TIME', 'notes': [], 'age_seconds': None}
+    from services.freshness_contract import LIVE_MARKET_MAX_AGE_HOURS
+    age_s = (now - upd).total_seconds()
+    notes = []
+    if age_s < 0:
+        if -age_s > QUOTE_CLOCK_SKEW_TOLERANCE_SECONDS:
+            return {'failure': 'QUOTE_FROM_FUTURE', 'notes': [], 'age_seconds': None}
+        notes.append('CLOCK_SKEW_TOLERATED')
+        age_s = 0.0
+    if age_s / 3600.0 > LIVE_MARKET_MAX_AGE_HOURS:
+        return {'failure': 'STALE_QUOTE', 'notes': notes, 'age_seconds': age_s}
+    return {'failure': None, 'notes': notes, 'age_seconds': age_s}
+
+
 def _quote_freshness_failure(updated, now):
     """CLOCK-A freshness for ONE quote's source update time (shared by the executable-leg contract and
     the SGP export gate): None when fresh, else MISSING_UPDATE_TIME / STALE_QUOTE / QUOTE_FROM_FUTURE."""
-    upd = _feed_stamp_to_utc(updated)
-    if upd is None:
-        return 'MISSING_UPDATE_TIME'
-    from services.freshness_contract import LIVE_MARKET_MAX_AGE_HOURS
-    age_h = (now - upd).total_seconds() / 3600.0
-    if age_h > LIVE_MARKET_MAX_AGE_HOURS:
-        return 'STALE_QUOTE'
-    if age_h < -0.25:
-        return 'QUOTE_FROM_FUTURE'
-    return None
+    return _quote_clock_status(updated, now)['failure']
 
 
 def _leg_is_executable(leg, now=None):
@@ -48570,12 +48634,10 @@ def _sgp_moved_leg(uid, by_id):
 
 def _sgp_current_terms(lg):
     """Current safe display terms of one workbench leg for a quote-change rejection (server data only)."""
-    ts = str(lg.get('timestamp') or '').strip()
+    src = _utc_iso(_canonical_kickoff_utc(lg.get('source_updated_utc')))
     return {'id': lg.get('id'), 'label': _ticket_display(lg.get('label')), 'book': _ticket_display(lg.get('book')),
             'line': _canon_quote_line(lg.get('line')), 'price': _canon_quote_price(lg.get('price')),
-            'updated_utc': _ticket_display(ts, 40) or None,
-            'updated_label': (f"updated {_ticket_display(ts, 40)} ({lg.get('tz') or _SGP_TZ_NOTE})" if ts
-                              else _updated_label(None))}
+            'updated_utc': src, 'updated_label': _updated_label(src)}
 
 
 def _sgp_availability_codes(reasons):
@@ -48677,7 +48739,8 @@ def _sgp_leg_quote_failures(lg, now):
             out.append('INVALID_PRICE')
     if (lg or {}).get('line') is None:
         out.append('MISSING_LINE')
-    fresh = _quote_freshness_failure((lg or {}).get('timestamp'), now)
+    # Authority is the zone-explicit source time only; the display `timestamp` never authorizes.
+    fresh = _quote_freshness_failure((lg or {}).get('source_updated_utc'), now)
     if fresh:
         out.append(fresh)
     return out
@@ -48724,7 +48787,11 @@ def _nfl_sgp_leg_menu(away, home):
             line = float(line)
             cat = _sgp_category(st)
             book = str(r.get('Book') or '').strip() or 'book'
-            ts = str(r.get('LastUpdated') or '').strip()
+            # Quote time = the provider's zone-explicit SourceUpdatedAtUTC only (never the zone-less
+            # LastUpdated); displayed in ET. Missing -> no time, so the leg can never be exported.
+            _src = _canonical_kickoff_utc(r.get('SourceUpdatedAtUTC'))
+            src_utc = _utc_iso(_src)
+            ts = _updated_label(src_utc)[len('updated '):] if src_utc else ''
             team, pos = p2tp.get(pl.lower(), (str(r.get('Team') or '').strip().upper() or None, None))
             lean = None
             if _ndf is not None and cat == 'Defense' and any(k in st for k in ('Tackle', 'Solo', 'Assist')):
@@ -48737,7 +48804,8 @@ def _nfl_sgp_leg_menu(away, home):
                 legs.append({
                     'kind': 'player', 'category': cat, 'player': pl, 'team': team, 'position': pos,
                     'stat': st, 'direction': direction, 'line': line, 'price': _sgp_price(r.get(oc)),
-                    'book': book, 'timestamp': ts, 'tz': _SGP_TZ_NOTE, 'quote_scope': 'individual',
+                    'book': book, 'timestamp': ts, 'source_updated_utc': src_utc,
+                    'tz': 'provider source time', 'quote_scope': 'individual',
                     'lineage': 'Odds API player props (NFL_Props.csv)', 'lean': lean, 'inj': inj,
                     'label': f"{pl} {direction} {st} {line:g}",
                     'id': _sgp_leg_id(book, 'player', pl, st, direction, line), **ident})

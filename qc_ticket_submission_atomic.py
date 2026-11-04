@@ -306,7 +306,8 @@ def _sgp_leg(i, kickoff=LATE, upd_h=0.5, book='SynBook', price=-110):  # synthet
     ts = iso(NOW - timedelta(hours=upd_h))
     lg = {'kind': 'player', 'category': 'Receiving', 'player': f'Sgp Player {i}', 'team': 'BEARS',
           'position': None, 'stat': 'Rec Yds', 'direction': 'OVER', 'line': 40.5 + i, 'price': price,
-          'book': book, 'timestamp': ts, 'tz': 'provider time; tz unverified', 'quote_scope': 'individual',
+          'book': book, 'timestamp': ts, 'source_updated_utc': ts, 'tz': 'provider source time',
+          'quote_scope': 'individual',
           'lineage': 'synthetic', 'lean': None, 'inj': None, 'label': f'Sgp Player {i} OVER Rec Yds {40.5 + i:g}',
           'event_id': 'evt-sgp', 'kickoff_utc': iso(kickoff) if kickoff else None}
     lg['id'] = '|'.join([book, 'player', lg['player'], 'Rec Yds', 'OVER', str(lg['line'])])

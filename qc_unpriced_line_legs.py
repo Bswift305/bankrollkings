@@ -298,18 +298,23 @@ def check_executable_contract():
         why = app._leg_quote_failures(leg)
         ok(code in why and not app._leg_is_executable(leg), f'X: {name} -> context only ({code})')
     # _quote_from_row: every field from ONE source row, no defaults
-    row = pd.Series({'Book': 'DraftKings', 'LastUpdated': '2026-11-01 05:30', 'MarketKey': 'player_reception_yds',
+    # The quote time is the provider's zone-explicit SourceUpdatedAtUTC (never the zone-less LastUpdated,
+    # which a UTC box writes as its own fetch time -- prod incident 2026-11-04).
+    row = pd.Series({'Book': 'DraftKings', 'LastUpdated': '2026-11-01 10:30', 'MarketKey': 'player_reception_yds',
+                     'SourceUpdatedAtUTC': '2026-11-01T10:30:00Z',
                      'Game': 'Arizona Cardinals @ Seattle Seahawks', 'Stat': 'Rec Yds'})
     q = app._quote_from_row(row, 'P', 40.5, -150)
     ok(bool(q) and q['book'] == 'DraftKings' and q['updated_utc'] == '2026-11-01T10:30:00Z'
        and q['event'] == 'Arizona Cardinals @ Seattle Seahawks' and q['selection'] == 'P Over 40.5',
-       f"X: quote built from one row; zone-less ET stamp -> UTC after DST ends ({q and q['updated_utc']})")
+       f"X: quote built from one row; time = SourceUpdatedAtUTC ({q and q['updated_utc']})")
     r_dst = row.copy()
-    r_dst['LastUpdated'] = '2026-10-31 05:30'
+    r_dst['SourceUpdatedAtUTC'] = '2026-10-31T05:30:00-04:00'
     q2 = app._quote_from_row(r_dst, 'P', 40.5, -150)
-    ok(bool(q2) and q2['updated_utc'] == '2026-10-31T09:30:00Z', 'X: ET stamp during DST -> UTC-4')
+    ok(bool(q2) and q2['updated_utc'] == '2026-10-31T09:30:00Z', 'X: an explicit -04:00 (DST) source time -> UTC')
     for name, patch in (('no Book', {'Book': float('nan')}), ('consensus Book', {'Book': 'CFBD consensus'}),
-                        ('no LastUpdated', {'LastUpdated': None}), ('no Game', {'Game': ''})):
+                        ('no SourceUpdatedAtUTC', {'SourceUpdatedAtUTC': None}),
+                        ('zone-less SourceUpdatedAtUTC', {'SourceUpdatedAtUTC': '2026-11-01 10:30'}),
+                        ('no Game', {'Game': ''})):
         r2 = row.copy()
         for k, v in patch.items():
             r2[k] = v

@@ -186,7 +186,7 @@
 
   <div class="pc-facts">
     {% if matchup %}<b>{{ matchup }}</b>{% else %}No live matchup this week{% endif %}
-    {% if feed_ts %} &middot; feed updated {{ feed_ts }}{% endif %}
+    {% if feed_ts %} &middot; {% if feed_ts == 'Update time not recorded' %}Update time not recorded{% else %}latest quote updated {{ feed_ts }}{% endif %}{% endif %}
     {% if not markets %} &middot; <b>no live markets</b> (he may still be opportunity-featured below){% endif %}
   </div>
 

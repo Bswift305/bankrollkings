@@ -407,7 +407,8 @@ def sgp_leg(i, price=-115, line=None, book='SynBook', upd_h=0.5):
     line = 40.5 + i if line is None else line
     lg = {'kind': 'player', 'category': 'Receiving', 'player': f'Quote Sgp {i}', 'team': 'BEARS', 'position': None,
           'stat': 'Rec Yds', 'direction': 'OVER', 'line': line, 'price': price, 'book': book,
-          'timestamp': iso(NOW - timedelta(hours=upd_h)), 'tz': 'provider time; tz unverified',
+          'timestamp': iso(NOW - timedelta(hours=upd_h)), 'source_updated_utc': iso(NOW - timedelta(hours=upd_h)),
+          'tz': 'provider source time',
           'quote_scope': 'individual', 'lineage': 'synthetic', 'lean': None, 'inj': None,
           'label': f'Quote Sgp {i} OVER Rec Yds {line:g}', 'event_id': 'evt-quote-sgp', 'kickoff_utc': iso(LATE)}
     lg['id'] = '|'.join([book, 'player', lg['player'], 'Rec Yds', 'OVER', str(line)])

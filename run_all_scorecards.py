@@ -328,6 +328,9 @@ SCORECARDS = [
     ("Ticket Quote Change QC", "qc_ticket_quote_change.py", 240),
     # D4 owner decision 2: /parlay/save stores exactly the accepted picks (1..20) -- never truncated/filtered.
     ("Parlay Save Exactness QC", "qc_parlay_save_exact.py", 120),
+    # Prod hotfix 2026-11-04: an NFL prop quote's time is the zone-explicit SourceUpdatedAtUTC only (never the
+    # zone-less LastUpdated); 5-minute skew tolerance; explicit America/New_York display.
+    ("Props Quote Source Time QC", "qc_props_quote_source_time.py", 180),
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),
