@@ -8,8 +8,9 @@ from pathlib import Path
 
 from services.nba_lines_publisher import EXIT_LOCK_UNAVAILABLE, EXIT_LOCKED, LOCK_UNAVAILABLE
 from services.run_outcomes import (
-    NO_ACTIVE_EVENTS, PROVIDER_ERROR, REUSED_FRESH, SCHEDULE_UNAVAILABLE, SKIPPED_BLOCKED_BY_LINES,
-    SKIPPED_LOCKED, UPDATED, VALIDATION_FAILED, props_step_outcome, record_child_outcomes,
+    LINES_READY, NO_ACTIVE_EVENTS, NO_FRESH_AFTER_LOCK, PROVIDER_ERROR, SCHEDULE_UNAVAILABLE,
+    SKIPPED_BLOCKED_BY_LINES, SKIPPED_LOCKED, UPDATED, VALIDATION_FAILED, props_step_outcome,
+    record_child_outcomes,
 )
 
 # bk-daily reuses a receipt-verified NBA lines publish from the 4-hourly job (REUSE_WINDOW_MINUTES in
@@ -80,7 +81,7 @@ def _lines_receipt_detail() -> str:
 
 
 # Receipt outcomes passed through verbatim for a FAILED lines step; anything else is VALIDATION_FAILED.
-_LINES_FAILURE_OUTCOMES = frozenset({PROVIDER_ERROR, VALIDATION_FAILED, SCHEDULE_UNAVAILABLE})
+_LINES_FAILURE_OUTCOMES = frozenset({PROVIDER_ERROR, VALIDATION_FAILED, SCHEDULE_UNAVAILABLE, NO_FRESH_AFTER_LOCK})
 
 
 def _publish_receipt_path() -> Path:
@@ -95,7 +96,8 @@ def classify_lines_step(returncode: int | None, timed_out: bool, receipt_mtime_b
     failure (only a receipt whose mtime advanced during the step is read). Never VALIDATION_FAILED for a
     provider-empty answer: that is SCHEDULE_UNAVAILABLE (no authoritative schedule) per the receipt.
     Publisher exits: 75 = SKIPPED_LOCKED (another job held the lock; no paid request, nothing written),
-    76 = LOCK_UNAVAILABLE. REUSED_FRESH is read from the publisher receipt written this run."""
+    76 = LOCK_UNAVAILABLE. REUSED_FRESH / REUSED_FRESH_AFTER_LOCK (benign, LINES_READY) and
+    NO_FRESH_AFTER_LOCK (alerting) are read from the publisher receipt written this run."""
     if timed_out:
         return PROVIDER_ERROR, "game-lines step timed out"
     if returncode == EXIT_LOCKED:
@@ -109,7 +111,7 @@ def classify_lines_step(returncode: int | None, timed_out: bool, receipt_mtime_b
             pub = None
         if pub:
             got = str(pub.get("outcome") or "")
-            if returncode == 0 and got in (UPDATED, REUSED_FRESH):
+            if returncode == 0 and got in LINES_READY:
                 return got, str(pub.get("detail") or ("published" if got == UPDATED else "reused"))
             if returncode == 0:
                 return VALIDATION_FAILED, f"exit 0 but this run's publisher receipt says outcome={got}"
@@ -226,7 +228,7 @@ def main() -> int:
             child_outcomes["game_lines"] = outcome
             step_results[label] = outcome
             record_child_outcomes(BASE_DIR, "nba_daily", child_outcomes)
-            if outcome not in (UPDATED, REUSED_FRESH):
+            if outcome not in LINES_READY:
                 lines_ok = False
                 lines_exit = 124 if timed_out else (int(result.returncode) or 1)
                 degraded = True

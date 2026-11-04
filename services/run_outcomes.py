@@ -32,6 +32,15 @@ Game-lines governance (2026-11, docs/game_lines_event_contract.md "Governed no-g
                      lock; this run made no paid request and wrote nothing   ALERTING
   REUSED_FRESH       the other lines job published a receipt-verified lines
                      file inside the reuse window; reused, no paid request   benign
+  REUSED_FRESH_AFTER_LOCK  this run WAITED for another holder of the lock,
+                     then re-read the receipt + file hashes UNDER the lock and
+                     found a valid publish inside the reuse window; reused,
+                     no paid request (the collision is visible)               benign
+  NO_FRESH_AFTER_LOCK  this run waited for another holder, re-read under the
+                     lock, found NO valid fresh publish, and was told not to
+                     fetch after contention: nothing published               ALERTING
+  (The 90-min reuse window is duplicate-fetch suppression only; the executable
+  boundary for customers stays the 6h CLOCK-A rule.)
 An outcome in NEITHER set is unknown and is treated as alerting by is_alerting (fail closed).
 
 Pure: stdlib only, no pandas, no app import -- safe to import from any refresh script.
@@ -54,10 +63,16 @@ NO_GAMES_SCHEDULED = "NO_GAMES_SCHEDULED"
 SCHEDULE_UNAVAILABLE = "SCHEDULE_UNAVAILABLE"
 SKIPPED_LOCKED = "SKIPPED_LOCKED"
 REUSED_FRESH = "REUSED_FRESH"
+REUSED_FRESH_AFTER_LOCK = "REUSED_FRESH_AFTER_LOCK"
+NO_FRESH_AFTER_LOCK = "NO_FRESH_AFTER_LOCK"
 
-BENIGN = frozenset({UPDATED, NO_ACTIVE_EVENTS, NO_MARKETS_POSTED, SKIP, NO_GAMES_SCHEDULED, REUSED_FRESH})
+BENIGN = frozenset({UPDATED, NO_ACTIVE_EVENTS, NO_MARKETS_POSTED, SKIP, NO_GAMES_SCHEDULED, REUSED_FRESH,
+                    REUSED_FRESH_AFTER_LOCK})
 ALERTING = frozenset({VALIDATION_FAILED, PROVIDER_ERROR, STALE, SKIPPED_BLOCKED_BY_LINES,
-                      SCHEDULE_UNAVAILABLE, SKIPPED_LOCKED})
+                      SCHEDULE_UNAVAILABLE, SKIPPED_LOCKED, NO_FRESH_AFTER_LOCK})
+
+# Lines-step outcomes that mean "a verified, current lines file is in place" (dependents may run).
+LINES_READY = frozenset({UPDATED, REUSED_FRESH, REUSED_FRESH_AFTER_LOCK})
 
 # Game-lines receipt outcomes that prove a benign NON-publish (nothing to fetch). Exit code alone can never
 # prove one; a receipt written by THIS run must. SCHEDULE_UNAVAILABLE is deliberately absent.

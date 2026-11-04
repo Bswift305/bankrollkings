@@ -19,6 +19,13 @@ Proves:
   (7) reuse_check rules: outside window / future / sha mismatch / non-publish receipt never reuse.
   (8) refresh_nba_daily: exit 75 -> SKIPPED_LOCKED (dependents skipped, DEGRADED); a fresh REUSED_FRESH
       publisher receipt -> REUSED_FRESH (full chain). Both callers use the same entry (fetch_game_lines.py).
+  (9) v4 state machine: a waiter that acquired AFTER contention re-reads receipt + hashes under the lock ->
+      REUSED_FRESH_AFTER_LOCK (uncontended reuse stays REUSED_FRESH); after a FAILED holder it never says OK:
+      NO_FRESH_AFTER_LOCK (exit 1, zero calls) with --no-fetch-after-lock, else it fetches under the lock.
+ (10) v4 location enforcement (child processes, call-counting stub): override outside the runtime/qc temp
+      root, lock dir symlinked outside, lock file symlinked outside, qc override escaping via a symlink ->
+      exit 76, ZERO calls, nothing written. POSIX-only (dir 0700 / file 0600 create, repair-if-owned,
+      refuse-if-not-owned, hard-link refusal) is [SKIP]ped with a reason on Windows -- never counted a pass.
 
 OFFLINE: temp dirs only; BK_NBA_LINES_LOCK_PATH points into a temp dir. Exit 0 on pass, 1 otherwise.
 """
@@ -40,6 +47,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 FAILS: list[str] = []
 NOTES: list[str] = []
+SKIPS: list[str] = []   # printed with a reason and counted separately -- a skip is NEVER a pass
 
 
 def check(cond, msg):
@@ -79,6 +87,8 @@ def child_main(argv) -> int:
         with open(counter, "a", encoding="utf-8") as fh:   # one line per paid-request attempt
             fh.write(f"{os.getpid()}\n")
         time.sleep(hold)
+        if os.environ.get("QC_STUB_FAIL") == "1":
+            raise RuntimeError("qc stub provider error")
         return payload
 
     def no_network(*a, **k):
@@ -108,8 +118,9 @@ def _calls(counter: Path) -> int:
         return 0
 
 
-def _spawn(base, counter, hold, *extra):
+def _spawn(base, counter, hold, *extra, env_extra=None):
     env = dict(os.environ)
+    env.update(env_extra or {})
     return subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--child", str(base), str(counter),
                              str(hold), *extra], cwd=str(HERE), env=env, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
@@ -168,11 +179,21 @@ def qc_two_process():
         b2_out, _ = b2.communicate(timeout=180)
         a2.communicate(timeout=120)
         pub2 = json.loads((base / "data/tracking/_last_nba_lines_publish.json").read_text(encoding="utf-8"))
-        check(b2.returncode == 0 and "REUSED_FRESH" in b2_out and _calls(counter) == 3
-              and pub2.get("outcome") == "REUSED_FRESH" and pub2.get("paid_requests") == 0
+        check(b2.returncode == 0 and "[REUSED_FRESH_AFTER_LOCK]" in b2_out and _calls(counter) == 3
+              and pub2.get("outcome") == "REUSED_FRESH_AFTER_LOCK" and pub2.get("paid_requests") == 0
+              and pub2.get("lock_contended") is True and pub2.get("published_while_waiting") is True
               and float(pub2.get("lock_waited_seconds") or 0) > 0,
-              f"serialized: the waiting bk-daily caller acquired after A2 and REUSED_FRESH with zero calls "
+              f"serialized: the waiting bk-daily caller acquired after A2, RE-READ receipt + hashes under the "
+              f"lock and recorded REUSED_FRESH_AFTER_LOCK with zero calls "
               f"(waited {pub2.get('lock_waited_seconds')}s, calls {_calls(counter)})")
+
+        # (2b) uncontended reuse: lock free + a verified fresh publish -> REUSED_FRESH (distinct state).
+        r0 = _spawn(base, counter, 0.0, "--caller", "nba_daily", "--allow-reuse", "--lock-wait-seconds", "60")
+        r0_out, _ = r0.communicate(timeout=120)
+        pub3 = json.loads((base / "data/tracking/_last_nba_lines_publish.json").read_text(encoding="utf-8"))
+        check(r0.returncode == 0 and "[REUSED_FRESH]" in r0_out and pub3.get("outcome") == "REUSED_FRESH"
+              and pub3.get("lock_contended") is False and _calls(counter) == 3,
+              "uncontended reuse is REUSED_FRESH (no wait, zero calls) -- distinct from REUSED_FRESH_AFTER_LOCK")
 
         # (4) release on crash: kill a holder mid-request; the next process acquires at once.
         k = _spawn(base, counter, 60.0, "--caller", "qc_killed")
@@ -199,6 +220,201 @@ def qc_two_process():
         if FAILS:
             for name, out in (("A", a_out), ("B", b_out), ("C", c_out), ("B2", b2_out), ("D", d_out), ("U", u_out)):
                 FAILS.append(f"child {name} output tail: {out[-600:]!r}")
+
+
+def qc_wait_then_no_fresh():
+    """Owner decision 2: waiting for the lock never means OK. The holder FAILS (provider error) while the
+    waiter waits; under the lock the waiter re-reads and finds no valid fresh publish:
+      --no-fetch-after-lock -> NO_FRESH_AFTER_LOCK, exit 1, zero calls, no publish;
+      default               -> fetches normally under the lock (one call) -> UPDATED."""
+    with tempfile.TemporaryDirectory(prefix="qc_nba_lines_nofresh_") as td:
+        root = Path(td)
+        base = root / "base"
+        base.mkdir()
+        counter = root / "counter.txt"
+        env = {"BK_NBA_LINES_LOCK_PATH": str(root / "locks" / "nba_game_lines.lock")}
+        h = _spawn(base, counter, 3.0, "--caller", "qc_fail_holder", env_extra={**env, "QC_STUB_FAIL": "1"})
+        check(_wait_calls(counter, 1), "failing holder holds the lock mid-request")
+        w = _spawn(base, counter, 0.0, "--caller", "nba_daily", "--allow-reuse", "--lock-wait-seconds", "60",
+                   "--no-fetch-after-lock", env_extra=env)
+        w_out, _ = w.communicate(timeout=180)
+        h_out, _ = h.communicate(timeout=120)
+        pub = json.loads((base / "data/tracking/_last_nba_lines_publish.json").read_text(encoding="utf-8"))
+        check(h.returncode == 1, f"the holder's own fetch failed (exit {h.returncode}) -- nothing valid was published")
+        check(w.returncode == 1 and "[NO_FRESH_AFTER_LOCK]" in w_out and _calls(counter) == 1
+              and pub.get("outcome") == "NO_FRESH_AFTER_LOCK" and pub.get("paid_requests") == 0
+              and not (base / "nba_odds.csv").exists()
+              and not any(t in w_out for t in ("[OK]", "[PASS]", "UPDATED", "REUSED")),
+              f"waiter (--no-fetch-after-lock) after a FAILED holder: NO_FRESH_AFTER_LOCK exit {w.returncode}, "
+              f"zero calls, nothing published, never OK/REUSED")
+
+        h2 = _spawn(base, counter, 3.0, "--caller", "qc_fail_holder2", env_extra={**env, "QC_STUB_FAIL": "1"})
+        check(_wait_calls(counter, 2), "second failing holder holds the lock mid-request")
+        w2 = _spawn(base, counter, 0.0, "--caller", "nba_daily", "--allow-reuse", "--lock-wait-seconds", "60",
+                    env_extra=env)
+        w2_out, _ = w2.communicate(timeout=180)
+        h2.communicate(timeout=120)
+        pub2 = json.loads((base / "data/tracking/_last_nba_lines_publish.json").read_text(encoding="utf-8"))
+        check(w2.returncode == 0 and _calls(counter) == 3 and pub2.get("outcome") == "UPDATED"
+              and pub2.get("lock_contended") is True and (base / "nba_odds.csv").exists(),
+              f"waiter (default) after a FAILED holder fetches normally UNDER the lock: one call, UPDATED "
+              f"(exit {w2.returncode})")
+        if FAILS:
+            FAILS.append(f"no-fresh waiter output tail: {w_out[-500:]!r} / holder: {h_out[-300:]!r}")
+
+
+def _try_symlink(target: Path, link: Path, is_dir: bool) -> str | None:
+    try:
+        os.symlink(str(target), str(link), target_is_directory=is_dir)
+        return None
+    except (OSError, NotImplementedError) as exc:
+        return f"cannot create symlinks here ({exc!r})"
+
+
+def qc_location_enforcement():
+    """Owner decision 3 (child processes; stub provider counts calls): every rejected location exits 76
+    LOCK_UNAVAILABLE with ZERO provider calls and writes nothing, and a symlink target outside is untouched."""
+    with tempfile.TemporaryDirectory(prefix="qc_nba_lines_loc_") as td, \
+            tempfile.TemporaryDirectory(prefix="bkx_outside_") as outside_td:
+        root = Path(td)
+        outside = Path(outside_td)          # NOT a qc_* dir: lock locations here must be refused
+        base = root / "base"
+        base.mkdir()
+        counter = root / "counter.txt"
+
+        def run(label, env, expect_rc, note):
+            snap = _snapshot(base)
+            calls0 = _calls(counter)
+            p = _spawn(base, counter, 0.0, "--caller", label, env_extra=env)
+            out, _ = p.communicate(timeout=120)
+            ok = (p.returncode == expect_rc and _calls(counter) == calls0 + (1 if expect_rc == 0 else 0)
+                  and (expect_rc == 0 or (_snapshot(base) == snap and "LOCK_UNAVAILABLE" in out)))
+            check(ok, f"{note} (exit {p.returncode}, calls +{_calls(counter) - calls0})"
+                  + ("" if ok else f" tail={out[-400:]!r}"))
+            return out
+
+        no_override = {"BK_NBA_LINES_LOCK_PATH": ""}
+        # canonical: BK_RUNTIME_DIR contains the lock -> works
+        rt = root / "rt_ok"
+        run("qc_canonical", {**no_override, "BK_RUNTIME_DIR": str(rt)}, 0,
+            "canonical $BK_RUNTIME_DIR/locks/nba_game_lines.lock is contained and works")
+        check((rt / "locks" / "nba_game_lines.lock").is_file(), "canonical lock file created under the runtime root")
+
+        # override outside the runtime root and not in a qc_* temp dir -> refused, zero calls
+        run("qc_override_outside", {"BK_RUNTIME_DIR": str(root / "rt_x"),
+                                    "BK_NBA_LINES_LOCK_PATH": str(outside / "locks" / "nba_game_lines.lock")}, 76,
+            "QC override outside the runtime root and outside any qc_* temp root -> LOCK_UNAVAILABLE, zero calls")
+        check(not (outside / "locks").exists(), "the refused override created nothing outside")
+
+        # override inside the runtime root -> honoured
+        rt2 = root / "rt_override"
+        run("qc_override_inside", {"BK_RUNTIME_DIR": str(rt2),
+                                   "BK_NBA_LINES_LOCK_PATH": str(rt2 / "locks" / "custom.lock")}, 0,
+            "override contained in the runtime root is honoured")
+
+        # lock DIR is a symlink to a directory outside -> refused
+        (outside / "lockdir_target").mkdir()
+        rt3 = root / "rt_dirlink"
+        rt3.mkdir()
+        why = _try_symlink(outside / "lockdir_target", rt3 / "locks", True)
+        if why:
+            SKIPS.append(f"lock-dir symlink escape: {why}")
+        else:
+            run("qc_dir_symlink", {**no_override, "BK_RUNTIME_DIR": str(rt3)}, 76,
+                "lock directory symlinked outside the runtime root -> LOCK_UNAVAILABLE, zero calls")
+            check(not any((outside / "lockdir_target").iterdir()), "nothing was created through the dir symlink")
+
+        # lock FILE is a symlink to a file outside -> refused (O_NOFOLLOW / lstat), target untouched
+        target = outside / "victim.txt"
+        target.write_text("do-not-touch", encoding="utf-8")
+        rt4 = root / "rt_filelink"
+        (rt4 / "locks").mkdir(parents=True)
+        if os.name != "nt":
+            os.chmod(rt4 / "locks", 0o700)
+        why = _try_symlink(target, rt4 / "locks" / "nba_game_lines.lock", False)
+        if why:
+            SKIPS.append(f"lock-file symlink escape: {why}")
+        else:
+            run("qc_file_symlink", {**no_override, "BK_RUNTIME_DIR": str(rt4)}, 76,
+                "lock FILE symlinked outside -> LOCK_UNAVAILABLE, zero calls")
+            check(target.read_text(encoding="utf-8") == "do-not-touch", "the symlink target outside was not written")
+
+        # QC override lexically inside a qc_* temp dir but resolving OUTSIDE through a symlink -> refused
+        why = _try_symlink(outside, root / "escape", True)
+        if why:
+            SKIPS.append(f"override symlink escape: {why}")
+        else:
+            run("qc_override_via_link", {"BK_RUNTIME_DIR": str(root / "rt_y"),
+                                         "BK_NBA_LINES_LOCK_PATH": str(root / "escape" / "l2" / "x.lock")}, 76,
+                "QC override under a qc_* dir that resolves outside via a symlink -> LOCK_UNAVAILABLE, zero calls")
+
+
+def qc_lock_unit():
+    """In-process enforcement unit checks (lock_spec + process_lock), incl. POSIX-only permission rules."""
+    from services import nba_lines_publisher as pubm
+    from services import process_lock as pl
+    saved_env = {k: os.environ.get(k) for k in ("BK_NBA_LINES_LOCK_PATH", "BK_RUNTIME_DIR")}
+    try:
+        with tempfile.TemporaryDirectory(prefix="qc_nba_lines_unit_") as td, \
+                tempfile.TemporaryDirectory(prefix="bkx_unit_") as other:
+            root = Path(td)
+            os.environ["BK_RUNTIME_DIR"] = str(root / "rt")
+            os.environ["BK_NBA_LINES_LOCK_PATH"] = str(Path(other) / "x.lock")
+            try:
+                pubm.lock_spec()
+                check(False, "lock_spec refuses an override outside the runtime root / qc temp root")
+            except pl.LockPathRejected:
+                check(True, "lock_spec refuses an override outside the runtime root / qc temp root")
+            os.environ.pop("BK_NBA_LINES_LOCK_PATH")
+            p, r, src = pubm.lock_spec()
+            check(src == "canonical" and pl.is_within(p, r) and p.name == "nba_game_lines.lock",
+                  f"canonical lock_spec is contained in the runtime root ({src})")
+            # a lock path outside the declared root is refused even when passed directly
+            try:
+                pl.open_validated_lock_file(Path(other) / "locks" / "y.lock", root / "rt")
+                check(False, "process_lock refuses a lock path outside its root")
+            except pl.LockPathRejected:
+                check(True, "process_lock refuses a lock path outside its root")
+
+            if os.name == "nt":
+                SKIPS.append("POSIX permission enforcement (dir 0700 / file 0600 create, repair-if-owned, "
+                             "refuse-if-not-owned, hard-link refusal): Windows has no POSIX modes -- runs on Linux")
+                return
+            import stat as st_
+            ld = root / "perm" / "locks"
+            fd = pl.open_validated_lock_file(ld / "a.lock", root / "perm")
+            os.close(fd)
+            check(st_.S_IMODE(os.stat(ld).st_mode) == 0o700 and st_.S_IMODE(os.stat(ld / "a.lock").st_mode) == 0o600,
+                  "fresh lock dir created 0700 and lock file 0600")
+            os.chmod(ld, 0o755)
+            os.chmod(ld / "a.lock", 0o644)
+            fd = pl.open_validated_lock_file(ld / "a.lock", root / "perm")
+            os.close(fd)
+            check(st_.S_IMODE(os.stat(ld).st_mode) == 0o700 and st_.S_IMODE(os.stat(ld / "a.lock").st_mode) == 0o600,
+                  "looser dir (0755) / file (0644) owned by us are REPAIRED to 0700 / 0600")
+            os.chmod(ld, 0o755)
+            real_euid = os.geteuid
+            os.geteuid = lambda: real_euid() + 4242   # simulate a dir owned by another uid
+            try:
+                pl.open_validated_lock_file(ld / "a.lock", root / "perm")
+                check(False, "a loose lock dir owned by another uid is refused")
+            except pl.LockPathRejected:
+                check(True, "a loose lock dir owned by another uid is refused (never trusted, never chmod'd)")
+            finally:
+                os.geteuid = real_euid
+            os.chmod(ld, 0o700)
+            os.link(ld / "a.lock", root / "perm" / "alias.lock")
+            try:
+                pl.open_validated_lock_file(ld / "a.lock", root / "perm")
+                check(False, "a hard-linked lock file is refused")
+            except pl.LockPathRejected:
+                check(True, "a hard-linked lock file (alias outside the dir) is refused")
+    finally:
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def qc_in_process():
@@ -328,6 +544,17 @@ def qc_nba_daily():
           f"nba_daily: fresh REUSED_FRESH publisher receipt -> REUSED_FRESH, full chain runs (rc={rc})")
     rc, ran, outs, text = drive(76, None)
     check(rc != 0 and outs.get("game_lines") == "LOCK_UNAVAILABLE", "nba_daily: exit 76 -> LOCK_UNAVAILABLE (alerting)")
+    rc, ran, outs, text = drive(0, "REUSED_FRESH_AFTER_LOCK")
+    check(rc == 0 and outs.get("game_lines") == "REUSED_FRESH_AFTER_LOCK" and "player_props" in ran,
+          f"nba_daily: REUSED_FRESH_AFTER_LOCK publisher receipt -> benign, full chain runs (rc={rc})")
+    rc, ran, outs, text = drive(1, "NO_FRESH_AFTER_LOCK")
+    check(rc != 0 and outs.get("game_lines") == "NO_FRESH_AFTER_LOCK" and "player_props" not in ran
+          and "[PASS] game_lines" not in text,
+          "nba_daily: NO_FRESH_AFTER_LOCK -> alerting, dependents SKIPPED_BLOCKED_BY_LINES, never PASS")
+    from services import run_outcomes as ro
+    check(not ro.is_alerting(ro.REUSED_FRESH_AFTER_LOCK) and ro.is_alerting(ro.NO_FRESH_AFTER_LOCK)
+          and ro.REUSED_FRESH_AFTER_LOCK in ro.LINES_READY and ro.NO_FRESH_AFTER_LOCK not in ro.LINES_READY,
+          "run_outcomes: REUSED_FRESH_AFTER_LOCK benign + lines-ready; NO_FRESH_AFTER_LOCK alerting")
 
 
 def qc_four_hourly_entry():
@@ -374,7 +601,8 @@ def qc_four_hourly_entry():
 
 
 def main() -> int:
-    for fn in (qc_in_process, qc_reuse_rules, qc_nba_daily, qc_four_hourly_entry, qc_two_process):
+    for fn in (qc_in_process, qc_lock_unit, qc_reuse_rules, qc_nba_daily, qc_four_hourly_entry, qc_two_process,
+               qc_wait_then_no_fresh, qc_location_enforcement):
         try:
             fn()
         except Exception as exc:  # a crash is a failure, never a pass
@@ -385,9 +613,12 @@ def main() -> int:
     print("=" * 64)
     for n in NOTES:
         print(f"[OK]   {n}")
+    for s in SKIPS:
+        print(f"[SKIP] {s}")
     for f in FAILS:
         print(f"[FAIL] {f}")
-    print(f"\n{len(NOTES)} passed, {len(FAILS)} failed")
+    print(f"\n{len(NOTES)} passed, {len(FAILS)} failed, {len(SKIPS)} skipped (platform: {sys.platform}; "
+          "skips are not passes -- they run on Linux)")
     return 1 if FAILS else 0
 
 
