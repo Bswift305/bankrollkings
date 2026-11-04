@@ -19,6 +19,14 @@ Proves:
       call), props file written once.
   (5) lock contention WITHOUT a valid receipt (holder failed) -> NO_FRESH_AFTER_LOCK, exit 1, zero own
       requests, never OK/PASS; props SKIPPED_BLOCKED_BY_LINES.
+ (5b) process-exit path: the lines lock holder is KILLED while bk-daily waits -> the kernel releases the lock,
+      the waiter returns NO_FRESH_AFTER_LOCK with zero requests, and the killed stage fails closed (never adopts
+      the waiter's receipt).
+  (R) the 2026-11-04 flake's root cause (Windows os.replace vs an open reader on the single shared publisher
+      receipt + mtime-only attribution) reproduced in-process, and the fix (bounded replace retry; per-stage-run
+      receipt copy + token attribution) proven.
+  Contention is synchronized with FILE BARRIERS, never fixed sleeps: the waiter's publisher signals when its first
+  lock attempt finds the lock held; the holder keeps the lock until that signal (or a parent release file) exists.
   (6) missed timer / no concurrent catch-up: timer Persistent=false; two concurrent orchestrators -> one does
       the work, the other SKIPPED_LOCKED (75) with ZERO requests and the shared receipt untouched by it.
   (7) stage timeout: an overrunning stage child is killed -> PROVIDER_ERROR / exit 124, the kernel releases
@@ -101,16 +109,54 @@ def _props_payload():
     return {"id": EVENT_ID, "bookmakers": books}
 
 
+BARRIER_DEADLINE_SECONDS = 120.0   # a barrier that never opens fails the run loudly; it is never a pass
+
+
+def _await_file(path: Path, deadline_seconds: float = BARRIER_DEADLINE_SECONDS) -> bool:
+    """Hard-condition poll (no fixed sleep assumption): True as soon as `path` exists, False at the deadline."""
+    end = time.monotonic() + deadline_seconds
+    while time.monotonic() < end:
+        if Path(path).exists():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def _install_contention_signal(stage: str) -> None:
+    """Waiter side of the deterministic barrier: if this publisher's FIRST lock attempt finds the lock held, write
+    `<QC_CONTENDED_SIGNAL>.<stage>` and then wait for the lock exactly as production does. `contended` stays True
+    (set by the failed first attempt), so the publisher's re-read-under-the-lock path is always exercised."""
+    sig = os.environ.get("QC_CONTENDED_SIGNAL")
+    if not sig:
+        return
+    from services import process_lock
+    orig = process_lock.ExclusiveLock.acquire
+
+    def acquire(self, wait_seconds=0.0, poll_seconds=0.2):
+        if orig(self, 0.0, poll_seconds):
+            return True
+        Path(f"{sig}.{stage}").write_text(str(os.getpid()), encoding="utf-8")
+        return orig(self, wait_seconds, poll_seconds)
+    process_lock.ExclusiveLock.acquire = acquire
+
+
 def stage_child(argv) -> int:
-    stage, base, counter, hold, stage_args = argv[0], Path(argv[1]), Path(argv[2]), float(argv[3]), argv[4:]
+    stage, base, counter, hold, stage_args = argv[0], Path(argv[1]), Path(argv[2]), argv[3], argv[4:]
     _block_network()
     sys.path.insert(0, str(HERE))
     fail = os.environ.get("QC_STUB_FAIL_STAGE") == stage
+    _install_contention_signal(stage)
 
     def record():
         with open(counter, "a", encoding="utf-8") as fh:
             fh.write(f"{stage} {os.getpid()}\n")
-        time.sleep(hold)
+        if hold.startswith("file:"):
+            # Holder side of the barrier: keep the lock until the named file exists (the waiter's contention
+            # signal, or a release file the QC parent writes) -- never a fixed sleep.
+            if not _await_file(Path(hold[5:])):
+                raise RuntimeError(f"qc barrier never opened: {hold[5:]}")
+        else:
+            time.sleep(float(hold))
         if fail:
             raise RuntimeError("qc stub provider error")
 
@@ -148,10 +194,11 @@ def _stage_cmd(stage, caller, base, counter, hold):
 
 
 def _holds(spec: str) -> dict:
-    out = {"lines": 0.0, "props": 0.0}
+    """'lines=0.5,props=file:<path>' -> per-stage hold: seconds (no contention involved) or a file barrier."""
+    out = {"lines": "0", "props": "0"}
     for part in filter(None, spec.split(",")):
-        k, v = part.split("=")
-        out[k] = float(v)
+        k, v = part.split("=", 1)
+        out[k] = v if v.startswith("file:") else str(float(v))
     return out
 
 
@@ -315,9 +362,12 @@ def qc_lines_failure_blocks_props():
 
 def qc_daily_overlaps_orchestrator():
     with _workspace("overlap") as (root, base, counter, receipt):
-        a = _spawn("--orch-child", root, base, counter, "lines=8", receipt)
+        sig = root / "contended"
+        # Barrier, no sleep: the orchestrator's lines request holds the lock until bk-daily's lines publisher
+        # has PROVABLY found it held (its first lock attempt failed and it signalled), then publishes.
+        a = _spawn("--orch-child", root, base, counter, f"lines=file:{sig}.lines", receipt)
         check(_wait_calls(counter, 1), "(4) orchestrator holds the lines lock mid-request")
-        d_rc, d_out = _run("--daily-child", root, base, counter, "")
+        d_rc, d_out = _run("--daily-child", root, base, counter, "", extra={"QC_CONTENDED_SIGNAL": str(sig)})
         a_out, _ = a.communicate(timeout=300)
         side = json.loads((base / "data/tracking/_child_outcomes_nba_daily.json").read_text(encoding="utf-8"))
         outs = side.get("outcomes", {})
@@ -335,26 +385,69 @@ def qc_daily_overlaps_orchestrator():
 
 def qc_contention_without_receipt():
     with _workspace("nofresh") as (root, base, counter, receipt):
-        a = _spawn("--orch-child", root, base, counter, "lines=8", receipt, extra={"QC_STUB_FAIL_STAGE": "lines"})
+        sig = root / "contended"
+        # Barrier: the failing holder keeps the lock until bk-daily's lines publisher has signalled contention,
+        # then fails and exits; its parent classifies (reading receipts) while the waiter writes its own --
+        # the exact window of the 2026-11-04 flake, now exercised on every run.
+        a = _spawn("--orch-child", root, base, counter, f"lines=file:{sig}.lines", receipt,
+                   extra={"QC_STUB_FAIL_STAGE": "lines"})
         check(_wait_calls(counter, 1), "(5) failing orchestrator holds the lines lock")
-        d_rc, d_out = _run("--daily-child", root, base, counter, "")
+        d_rc, d_out = _run("--daily-child", root, base, counter, "", extra={"QC_CONTENDED_SIGNAL": str(sig)})
         a.communicate(timeout=300)
+        check((root / "contended.lines").exists(), "(5) bk-daily's lines publisher provably waited on the held lock")
         side = json.loads((base / "data/tracking/_child_outcomes_nba_daily.json").read_text(encoding="utf-8"))
         outs = side.get("outcomes", {})
         check(d_rc != 0 and outs.get("game_lines") == "NO_FRESH_AFTER_LOCK"
               and outs.get("player_props") == "SKIPPED_BLOCKED_BY_LINES" and _calls(counter) == 1
               and _never_ok(d_out), f"(5) contention without a valid receipt: NO_FRESH_AFTER_LOCK, exit {d_rc}, zero own "
-                                    f"requests, props skipped, never OK ({outs})")
+                                    f"requests, props skipped, never OK ({outs})" + ("" if d_rc else f" tail={d_out[-1200:]!r}"))
+        lines = _stages(_receipt(receipt)).get("lines", {})
+        check(lines.get("outcome") == "PROVIDER_ERROR" and (lines.get("publisher_receipt") or {}).get("path"),
+              f"(5) the failed holder's own stage reads its OWN receipt (PROVIDER_ERROR), not the waiter's "
+              f"({lines.get('outcome')})")
+
+
+def qc_holder_killed_while_waiting():
+    """(5b) process-exit path: the lines lock holder is KILLED while bk-daily waits on the lock."""
+    import signal
+    with _workspace("killed") as (root, base, counter, receipt):
+        sig = root / "contended"
+        a = _spawn("--orch-child", root, base, counter, f"lines=file:{root / 'never-opens'}", receipt)
+        check(_wait_calls(counter, 1), "(5b) holder has the lines lock mid-request")
+        d = _spawn("--daily-child", root, base, counter, "", extra={"QC_CONTENDED_SIGNAL": str(sig)})
+        waited = _await_file(root / "contended.lines")
+        check(waited, "(5b) bk-daily's lines publisher is provably waiting on the held lock")
+        holder_pid = int(counter.read_text(encoding="utf-8").split()[1])
+        os.kill(holder_pid, signal.SIGTERM)          # kill the lock-holding stage child mid-request
+        d_out, _ = d.communicate(timeout=300)
+        a.communicate(timeout=300)
+        side = json.loads((base / "data/tracking/_child_outcomes_nba_daily.json").read_text(encoding="utf-8"))
+        outs = side.get("outcomes", {})
+        check(d.returncode != 0 and outs.get("game_lines") == "NO_FRESH_AFTER_LOCK"
+              and outs.get("player_props") == "SKIPPED_BLOCKED_BY_LINES" and _calls(counter) == 1 and _never_ok(d_out),
+              f"(5b) holder killed while waiting: the kernel released the lock, waiter NO_FRESH_AFTER_LOCK, zero own "
+              f"requests, props skipped, never OK ({outs}, rc={d.returncode})"
+              + ("" if d.returncode else f" tail={d_out[-1200:]!r}"))
+        lines = _stages(_receipt(receipt)).get("lines", {})
+        # Whichever order the two parents classify in, the killed stage wrote no receipt of its own: it must fail
+        # closed, never inherit the waiter's NO_FRESH_AFTER_LOCK (and never reference the waiter's receipt).
+        check(lines.get("outcome") == "VALIDATION_FAILED" and lines.get("publisher_receipt") is None,
+              f"(5b) the killed holder's stage never adopts the waiter's receipt as its own "
+              f"({lines.get('outcome')}: {lines.get('detail')})")
+        check(not (base / "data/odds/NBA_Odds.csv").exists(), "(5b) nothing published by either process")
 
 
 def qc_concurrent_orchestrators():
     with _workspace("concurrent") as (root, base, counter, receipt):
-        a = _spawn("--orch-child", root, base, counter, "lines=8", receipt)
+        release = root / "release-a"
+        # Barrier: A holds its lines request until the QC parent has finished B -- never a fixed sleep.
+        a = _spawn("--orch-child", root, base, counter, f"lines=file:{release}", receipt)
         check(_wait_calls(counter, 1), "(6) orchestrator A is running (lines request in flight)")
         receipt_b = root / "receipt_b" / "last.json"
         b_rc, b_out = _run("--orch-child", root, base, counter, "", receipt_b)
         a_alive = a.poll() is None
         n_while = _calls(counter)
+        release.write_text("go", encoding="utf-8")
         a_out, _ = a.communicate(timeout=300)
         check(b_rc == 75 and "[SKIPPED_LOCKED]" in b_out and n_while == 1 and a_alive and not receipt_b.exists(),
               f"(6) second concurrent orchestrator: SKIPPED_LOCKED exit {b_rc}, ZERO requests, wrote no receipt "
@@ -362,6 +455,89 @@ def qc_concurrent_orchestrators():
         rec = _receipt(receipt)
         check(a.returncode == 0 and rec.get("caller") == "qc_orchestrator" and rec.get("result") == "COMPLETE",
               f"(6) the running orchestrator did the work alone and owns the one receipt (rc={a.returncode})")
+
+
+def qc_receipt_attribution():
+    """(R) root cause of the 2026-11-04 flake, reproduced deterministically in-process, and the fix:
+    R1 Windows: os.replace onto a receipt another handle has open fails (PermissionError) -- the publisher used to
+       swallow that, leaving the PREVIOUS holder's receipt in the shared slot; replace_with_retry now waits it out
+       (bounded) and still raises once the budget is spent.
+    R2 classify_lines / classify_props_publisher: with a stage-run token, the per-run copy is authoritative and a
+       shared receipt carrying another run's token is never adopted; the legacy (no token) path is unchanged --
+       and is shown to adopt the foreign receipt, which is exactly the flake."""
+    import threading
+    sys.path.insert(0, str(HERE))
+    from services import nba_market, receipt_io
+    with tempfile.TemporaryDirectory(prefix="qc_nba_market_attr_") as td:
+        d = Path(td)
+        target, tmp = d / "r.json", d / "r.json.tmp"
+        target.write_text("{}", encoding="utf-8")
+        if os.name == "nt":
+            fh = open(target, "r", encoding="utf-8")
+            tmp.write_text('{"a": 1}', encoding="utf-8")
+            try:
+                os.replace(tmp, target)
+                blocked = False
+            except PermissionError:
+                blocked = True
+            check(blocked, "(R1) root cause reproduced: os.replace onto a receipt a reader holds open -> PermissionError")
+            released = threading.Event()
+
+            def close_later():
+                released.wait(5)
+                fh.close()
+            t = threading.Thread(target=close_later)
+            t.start()
+            released.set()
+            receipt_io.replace_with_retry(tmp, target, budget_seconds=10)   # succeeds once the reader closes
+            t.join()
+            check(target.read_text(encoding="utf-8") == '{"a": 1}', "(R1) replace_with_retry completes once the reader closes")
+            fh2 = open(target, "r", encoding="utf-8")
+            tmp.write_text('{"b": 2}', encoding="utf-8")
+            try:
+                receipt_io.replace_with_retry(tmp, target, budget_seconds=0.2)
+                raised = False
+            except PermissionError:
+                raised = True
+            finally:
+                fh2.close()
+            check(raised, "(R1) a reader that never closes: the bounded retry gives up and raises (never silent)")
+        else:
+            tmp.write_text('{"a": 1}', encoding="utf-8")
+            with open(target, "r", encoding="utf-8"):
+                receipt_io.replace_with_retry(tmp, target, budget_seconds=0.2)
+            check(target.read_text(encoding="utf-8") == '{"a": 1}', "(R1) POSIX: rename over an open file succeeds")
+
+        base = d / "base"
+        (base / "data" / "tracking").mkdir(parents=True)
+        mine, theirs = "a" * 32, "b" * 32
+        shared = nba_market.lines_publish_receipt_path(base)
+        shared.write_text(json.dumps({"outcome": "PROVIDER_ERROR", "stage_run_id": theirs}), encoding="utf-8")
+        legacy = nba_market.classify_lines(base, 1, False, 0.0, 0.0)
+        check(legacy[0] == "PROVIDER_ERROR",
+              f"(R2) legacy mtime-only attribution adopts the other run's PROVIDER_ERROR -- the flake ({legacy[0]})")
+        fixed = nba_market.classify_lines(base, 1, False, 0.0, 0.0, stage_run_id=mine)
+        check(fixed[0] == "VALIDATION_FAILED" and "not adopted" in fixed[1],
+              f"(R2) with a token, another run's receipt is never adopted: fail closed ({fixed[0]})")
+        own = receipt_io.stage_run_receipt_path(shared, mine, "lines")
+        own.parent.mkdir(parents=True, exist_ok=True)
+        own.write_text(json.dumps({"outcome": "NO_FRESH_AFTER_LOCK", "stage_run_id": mine}), encoding="utf-8")
+        got = nba_market.classify_lines(base, 1, False, 0.0, 0.0, stage_run_id=mine)
+        check(got[0] == "NO_FRESH_AFTER_LOCK",
+              f"(R2) this run's own per-run receipt wins even though the shared slot holds another run's ({got[0]})")
+        shared.write_text(json.dumps({"outcome": "NO_FRESH_AFTER_LOCK"}), encoding="utf-8")
+        own.unlink()
+        leg = nba_market.classify_lines(base, 1, False, 0.0, 0.0, stage_run_id=mine)
+        check(leg[0] == "NO_FRESH_AFTER_LOCK", "(R2) a token-less (legacy) receipt keeps the legacy mtime rule")
+        pshared = nba_market.props_publish_receipt_path(base)
+        pshared.write_text(json.dumps({"outcome": "REUSED_FRESH", "stage_run_id": theirs}), encoding="utf-8")
+        pf = nba_market.classify_props_publisher(base, 0, False, 0.0, stage_run_id=mine)
+        check(pf and pf[0] == "VALIDATION_FAILED",
+              f"(R2) props: another run's REUSED_FRESH is never adopted as this run's ({pf})")
+        pown = receipt_io.stage_run_receipt_path(pshared, mine, "props")
+        pown.write_text(json.dumps({"outcome": "UPDATED", "stage_run_id": mine}), encoding="utf-8")
+        check(nba_market.classify_props_publisher(base, 0, False, 0.0, stage_run_id=mine) is None,
+              "(R2) props: this run's own UPDATED receipt falls through to the shape classifier as before")
 
 
 def qc_stage_timeout():
@@ -372,7 +548,7 @@ def qc_stage_timeout():
         os.environ["BK_RUNTIME_DIR"] = str(root / "rt")
         try:
             st = nba_market.ensure_nba_lines("qc_timeout", base_dir=base, timeout=4,
-                                             command=_stage_cmd("lines", "qc_timeout", base, counter, 60))
+                                             command=_stage_cmd("lines", "qc_timeout", base, counter, f"file:{root / 'never-opens'}"))
         finally:
             if saved is None:
                 os.environ.pop("BK_RUNTIME_DIR", None)
@@ -471,6 +647,7 @@ def main() -> int:
     sys.path.insert(0, str(HERE))
     guard = {p: _sha(HERE / p) for p in _REPO_GUARD}
     for fn in (qc_timeout_contract, qc_shared_api, qc_units, qc_ordering_receipt_reuse, qc_lines_failure_blocks_props,
+               qc_receipt_attribution, qc_holder_killed_while_waiting,
                qc_daily_overlaps_orchestrator, qc_contention_without_receipt, qc_concurrent_orchestrators,
                qc_stage_timeout):
         try:
