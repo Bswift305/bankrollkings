@@ -495,6 +495,27 @@ On `f06e568` (→ exact `6bdb73f`). Commits: `394c12f` governed no-game result, 
   30 s (holder's critical section ≈ one lines+props cycle, ~5 s observed), daily lines step 60 s, daily props step 90 s,
   orchestrator `TimeoutStartSec` 180 s; invariant `step_timeout ≥ lock_wait + exec_budget` asserted in QC. Replaces
   v4's 120 s wait / 240 s steps.
+- **NBA v5 built — `fix/nba-game-lines-event-aware-v5` @ `3403f4aab0a8510c3fe51e6ae9ff056cdc61b761` (pushed;
+  branch-only; NOT gated; rebuild after the Integrity release).** 7 commits on `29acc81`: shared `ensure_nba_lines` /
+  `ensure_nba_props` API + one timeout table (`services/nba_market_budget.py`, owner-approved values) used by both
+  bk-daily and the orchestrator; single proposed `ops/bk-nba-market-refresh.{service,timer}` (`00/4:15`,
+  `Persistent=false` → missed runs stay missed, `TimeoutStartSec=180`; not installed); v4's two timers and
+  `refresh_nba_lines.py` removed; `refresh_nba_market.py` → `services/nba_market.run_market_refresh` (run lock →
+  lines → props only after verified lines → one atomic receipt `nba_market_refresh_v1` with per-stage outcome, exit,
+  timings, timeout, real credits from the quota ledger, and written receipt hashes; results `COMPLETE` /
+  `FAILED_AT_LINES` / `FAILED_AT_PROPS` / `SKIPPED_LOCKED`); Elite alert history labelled `Historical alert — not a
+  current executable quote`, book/line kept only with a parseable non-future tz-aware `CapturedAtUTC` and
+  `props_feed:` `SourceProvenance`, otherwise withheld; no links/actions/price styling; CSV export adds `HistoryLabel`
+  / `ProvenanceStatus` and blanks book/line/odds-move without provenance; Elite snapshot key v3→v4; WNBA mandatory-lock
+  note in the contract doc. `29acc81..HEAD` 21 files +1671/−393; `6bdb73f..HEAD` 40 files +7601/−261. Builder gate 35/35
+  worktree + export, 0 network. **Coordinator re-run (rc 0, 0 network):** `qc_nba_market_orchestrator` 41/41,
+  `qc_elite_alert_history` 25/25, `qc_nba_lines_lock` 53 + 1 POSIX skip, `qc_nba_props_lock` 39 + 1 POSIX skip, D1
+  275/275. **Behaviour change for owner confirmation:** both callers pass `--no-fetch-after-lock` — if the other caller
+  held the lock and failed, the waiter returns `NO_FRESH_AFTER_LOCK` (exit 1, no requests) instead of re-fetching (v4
+  re-fetched). Other open items: all pre-existing Elite alert rows lack provenance → their book/line will be withheld;
+  the live Elite "Sharp Money / Line Movement Scanner" still shows ACT / WINDOW CLOSING action labels (near the
+  no-"sharp"-labels rule; outside this scope); bk-daily timer `Persistent` setting on prod not yet confirmed (unit not
+  in repo).
 - **Blast radius to note for review:** the central gate changes what `/`, `/dashboard`, `/free`, `/home/*`, `/elite`,
   `/derivatives` and the player/tool pages show whenever the NBA/WNBA props file is > 6h old — with today's once-daily
   refresh that is most of the day until the 4h cadence (which covers lines, not props) and a props cadence exist.
