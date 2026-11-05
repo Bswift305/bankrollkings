@@ -359,7 +359,7 @@ JOBS.update({
  "vid_feat_injury": feature("04","Inside the app","Injury Report","Not just who's out — who cashes when they sit.",
    ["Every league's injuries in one filterable table","<b>With / without impact</b>: when X sits, Y produces Z","Status normalized — Out / Doubtful / Questionable"],"The line moves late on news. Be there first.",CY,GCY),
  "vid_feat_movers": feature("05","Inside the app","Market Movers","Watch the line travel from open to now.",
-   ["Open → current movement, <b>consensus across books</b>","Tiered Major / Moderate / Stable — no fake 'steam'","Near-term slate, re-captured every 4 hours"],"Timing is the edge. Movement is the clock.",CY,GCY),
+   ["Open → current movement, <b>consensus across books</b>","Tiered Major / Moderate / Stable — no claims about who bet","Near-term slate, re-captured every 4 hours"],"Timing is the edge. Movement is the clock.",CY,GCY),
  "vid_feat_franchise": feature("06","Free to play","Franchise Kings","Take over a franchise. Draft, trade, build a dynasty — GM career mode.",
    ["A complete GM career: draft, trades, development","Your save, your calls — progress carries over","<b>Free to play.</b> No card, just the game"],"Come for the game, stay for the edge.",GREEN,GGN),
  "vid_feat_props": feature("07","Inside the app","The Props Board","Every player prop — with our confidence, and proof it's calibrated.",

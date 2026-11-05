@@ -16,7 +16,7 @@
     <div class="hero-actions">
         <a href="/elite/matchup-builder{% if active_sport %}?sport={{ active_sport }}{% endif %}" class="btn btn-primary btn-sm">Matchup Builder</a>
         {% if active_sport in ['', 'mlb'] %}<a href="/elite/mlb-lab" class="btn btn-secondary btn-sm">MLB Lab</a>{% endif %}
-        <a href="/elite/learn" class="btn btn-secondary btn-sm">Sharp University</a>
+        <a href="/elite/learn" class="btn btn-secondary btn-sm">Elite Lessons</a>
         <a href="/bet-review?history_scope=all" class="btn btn-secondary btn-sm">Full Bet Review</a>
         {% if active_sport %}
         <a href="/sports/{{ active_sport }}" class="btn btn-secondary btn-sm">{{ active_sport|upper }} Board</a>
@@ -243,7 +243,7 @@
 <div class="grid-2 mb-24" style="gap:14px;">
     <div class="card panel-glow">
         <div class="card-header panel-header-gloss">
-            <div class="card-title">Weekly Sharp Report</div>
+            <div class="card-title">Weekly Report</div>
             <span class="badge badge-accent">Elite</span>
         </div>
         <div class="p-16">
@@ -301,7 +301,7 @@
 <div class="card mb-24 panel-glow">
     <div class="card-header panel-header-gloss">
         <div>
-            <div class="card-title">Sharp Money / Line Movement Scanner</div>
+            <div class="card-title">Line Movement Scanner</div>
             <div class="cell-meta" style="margin-top:4px;">Open-to-current price moves, model-side alignment, and act/hold labels from today’s loaded books.</div>
         </div>
         <span class="badge badge-accent">{{ sharp_money|length }} moves</span>
@@ -314,7 +314,7 @@
                     <th>Book</th>
                     <th>Line</th>
                     <th>Move</th>
-                    <th>Sharp Side</th>
+                    <th>Line-move side</th>
                     <th>Model</th>
                     <th>Alignment</th>
                     <th>Action</th>

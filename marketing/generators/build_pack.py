@@ -30,7 +30,7 @@ PROOF = [
  ("proof_wind.png","proof_03_wind.png","SLIDE 4","Wind kills totals.",
   "We tested every 'edge' against 5,205 outdoor games. Almost all of them were already priced in.\n\nOne survived: wind on totals. 15+ mph \u2192 55.5% unders, +5.9% ROI on games the model never saw. The market's slow on weather. We're not. \u2192 bankrollkings.com"),
  ("teach_streak.png","proof_04_streak.png","SLIDE 5","Hot hands are real.",
-  "Everyone chases the hot hand. Here's why the smart money doesn't.\n\nA streaking player really is producing more \u2014 that part's true. But the line already moved to match, before you ever clicked. The streak is real. The edge is gone. \u2192 bankrollkings.com"),
+  "Everyone chases the hot hand. Here's why chasing it doesn't pay.\n\nA streaking player really is producing more \u2014 that part's true. But the line already moved to match, before you ever clicked. The streak is real. The edge is gone. \u2192 bankrollkings.com"),
 ]
 
 FEAT = [
@@ -43,7 +43,7 @@ FEAT = [
  ("04","injury_report","Injury Report","#2dd4bf",
   "Injuries aren't just who's out — they're who cashes when a starter sits. Our report shows the with/without impact (NBA + NFL). → bankrollkings.com"),
  ("05","market_movers","Market Movers","#2dd4bf",
-  "Watch the line travel from open to now. Major, Moderate, or Stable — no fake 'steam' labels, just where the market's actually leaning. → bankrollkings.com"),
+  "Watch the line travel from open to now. Major, Moderate, or Stable — no claims about who bet, just how far the posted line or price moved. → bankrollkings.com"),
  ("06","franchise_kings","Franchise Kings","#4ed48a",
   "Take over a franchise and build a dynasty — full GM career mode, free to play. Come for the game, stay for the edge. → bankrollkings.com"),
  ("07","props_board","The Props Board","#2dd4bf",

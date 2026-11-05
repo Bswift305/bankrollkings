@@ -16428,7 +16428,7 @@ def build_elite_weekly_report(review, candidates, parlay_ev):
         next_angles.append(f"Watch: {row['sport']} {row['direction']} {row['stat']} ({row['player']})")
 
     return {
-        'headline': 'Elite Weekly Sharp Report',
+        'headline': 'Elite Weekly Report',
         'tracked_roi': money.get('roi_pct'),
         'tracked_profit': money.get('profit'),
         'resolved_legs': model.get('resolved_legs', 0),
@@ -16456,9 +16456,9 @@ def build_elite_learning_modules():
         {
             'slug': 'line-movement',
             'title': 'Reading Line Movement',
-            'feature': 'Sharp Money Scanner',
+            'feature': 'Line Movement Scanner',
             'summary': 'Line movement shows where price pressure is building before the market fully settles.',
-            'lesson': 'When the model side and sharp side align, the action window can close fast. When they conflict, the best play is often no play.',
+            'lesson': 'The scanner shows which side the line moved toward and whether the model side matches it. A move does not identify who placed wagers or why.',
             'apply': 'Start with WINDOW CLOSING alerts, then check whether the same leg is ANCHOR or WATCH before adding it to a card.',
             'href': '/elite',
         },
@@ -22472,7 +22472,7 @@ FREE_SPORT_LOCKED_FEATURES = {
         {'plan': 'All Access', 'title': 'Trend-backed reads', 'description': 'Streak, role, and trend confirmation tuned to hold up in thinner WNBA markets.', 'href': '/sports/wnba/trends'},
         {'plan': 'All Access', 'title': 'Cross-sport ticket context', 'description': 'Use WNBA legs inside broader EV, bankroll, and correlation workflows.', 'href': '/elite'},
         {'plan': 'All Access', 'title': 'Personal performance tracker', 'description': 'ROI by sport, tier, and prop type across every WNBA ticket you track.', 'href': '/elite'},
-        {'plan': 'All Access', 'title': 'Leak finder & action queue', 'description': 'Sharp report cards, leak finder, and a daily action queue built from your results.', 'href': '/elite'},
+        {'plan': 'All Access', 'title': 'Leak finder & action queue', 'description': 'Report cards, leak finder, and a daily action queue built from your results.', 'href': '/elite'},
     ],
     'mlb': [
         {'plan': 'All Access', 'title': 'Full baseball slate', 'description': 'Starter, ballpark, umpire, weather, and run-environment context before hitter props.', 'href': '/sports/mlb'},
@@ -22807,13 +22807,13 @@ GLOBAL_FEATURE_PREVIEWS = {
         'title': 'Elite Cockpit Preview',
         'kicker': 'Included with All Access',
         'preview_heading': 'Sample Elite Cockpit',
-        'preview_copy': 'The Elite cockpit is the edge layer every member gets: sharp-money line-move alerts, market timing, cross-sport EV builds, ticket intelligence, and bankroll review.',
-        'subtitle': 'Every All Access membership includes the full Elite cockpit: sharp-money and line-move alerts, market timing windows, cross-sport EV, CorrelationIQ, BankrollIQ, saved tickets, matchup builders, leak finding, and weekly performance review. Sign in and it opens directly.',
+        'preview_copy': 'The Elite cockpit is the edge layer every member gets: line-movement alerts, market timing, cross-sport EV builds, ticket intelligence, and bankroll review.',
+        'subtitle': 'Every All Access membership includes the full Elite cockpit: line-movement alerts, market timing windows, cross-sport EV, CorrelationIQ, BankrollIQ, saved tickets, matchup builders, leak finding, and weekly performance review. Sign in and it opens directly.',
         'primary_cta': 'Open elite',
         'proof_label': 'Elite signals',
         'steps': [
-            ('Start with the alerts', 'Sharp-money and line-move alerts show where price pressure is building before a good number disappears.'),
-            ('Check the model side', 'When the model side and the sharp side align, the action window closes fast. When they conflict, the best play is often no play.'),
+            ('Start with the alerts', 'Line-movement alerts show where price pressure is building before a good number disappears.'),
+            ('Check the model side', 'Each move states whether the model side matches the line-move side. That is a comparison, not an instruction to bet.'),
             ('Close the loop', 'Saved tickets, bankroll counter movement, leak finding, personal performance review, and weekly reports turn results into the next adjustment.'),
         ],
     },
@@ -24970,30 +24970,30 @@ def build_market_move_teaching_note(direction, snapshot_move=None, opening_move=
     if snapshot_move is not None and abs(float(snapshot_move)) >= 0.5:
         if moved_toward_play is True:
             return (
-                "Sharp lesson: books usually move toward a side when money or information agrees with it. "
+                "Market lesson: books usually move toward a side when money or information agrees with it. "
                 "The read may still be right, but the better number is already gone, so the edge is smaller now."
             )
         if moved_toward_play is False:
             return (
-                "Sharp lesson: books usually move away from your side when money or information disagrees with it. "
+                "Market lesson: books usually move away from your side when money or information disagrees with it. "
                 "That is a warning sign that your model needs a stronger cushion before this should stay playable."
             )
         if float(snapshot_move) > 0:
             return (
-                "Sharp lesson: a higher live line usually means the market is pricing in a stronger over environment than it had earlier."
+                "Market lesson: a higher live line usually means the market is pricing in a stronger over environment than it had earlier."
             )
         return (
-            "Sharp lesson: a lower live line usually means the market is pricing in a weaker scoring/output environment than it had earlier."
+            "Market lesson: a lower live line usually means the market is pricing in a weaker scoring/output environment than it had earlier."
         )
 
     if opening_move is not None and abs(float(opening_move)) >= 0.5:
         if direction in {'OVER', 'UNDER'}:
             return (
-                "Sharp lesson: when the current number has drifted from the opener, books are telling you the first price was not the final truth. "
+                "Market lesson: when the current number has drifted from the opener, books are telling you the first price was not the final truth. "
                 "Always compare what the market is charging now versus what it charged first."
             )
         return (
-            "Sharp lesson: movement from the opener usually means the market re-priced the prop after action or new information."
+            "Market lesson: movement from the opener usually means the market re-priced the prop after action or new information."
         )
 
     return ""
@@ -25007,12 +25007,12 @@ def build_market_split_teaching_note(book_count=0, range_gap=None):
     books = int(book_count or 0)
     if books >= 2 and gap is not None and gap >= 0.5:
         return (
-            "Sharp lesson: when books are spread across different numbers, the market has not fully settled yet. "
+            "Market lesson: when books are spread across different numbers, the market has not fully settled yet. "
             "That usually means you should shop aggressively and trust the best number more than the average number."
         )
     if books <= 1:
         return (
-            "Sharp lesson: a one-book line is weaker confirmation because you cannot see whether the rest of the market agrees."
+            "Market lesson: a one-book line is weaker confirmation because you cannot see whether the rest of the market agrees."
         )
     return ""
 
@@ -36986,7 +36986,7 @@ GLOSSARY_SECTIONS = [
             {'term': 'Weight Profile', 'meaning': 'How the model divided its attention across sample, role, matchup, streak, and market context.', 'why': 'A late-series playoff prop should not be weighted the same way as a random regular-season prop.'},
             {'term': 'Volatility Flag', 'meaning': 'A warning about how swingy the stat or sample is.', 'why': 'High-volatility props can look strong on paper but still break quickly because one event changes everything.'},
             {'term': 'Contradiction QC', 'meaning': 'A rules layer that catches props whose context and recommendation do not agree.', 'why': 'It stops the platform from promoting props that the raw score liked but the surrounding context should have blocked.'},
-            {'term': 'Sharp Action', 'meaning': 'Respected money or information moving the market.', 'why': 'When the line moves with sharp action, the market may be telling you the edge is smaller or the wrong side is being priced in.'},
+            {'term': 'Line Movement', 'meaning': 'A change in the posted line or price between snapshots.', 'why': 'It shows the market re-priced; it does not identify who placed wagers or why. A move toward your side can mean the better number is already gone.'},
             {'term': 'Split Market', 'meaning': 'Books are hanging different numbers or prices on the same prop.', 'why': 'That usually means the market has not settled yet, so line shopping matters more than the average price.'},
             {'term': 'Zero-Required Under', 'meaning': 'An under that only wins if the player records a literal zero.', 'why': 'These can be mathematically sound but very fragile because one event kills the ticket.'},
         ]
@@ -45254,10 +45254,10 @@ def quant_systems():
             'category': 'Dynamic Probability',
             'fit': 'Build',
             'status_class': 'build',
-            'summary': 'Probabilities should move when new information appears: injury news, lineup changes, weather, umpire, market steam, or role shifts.',
+            'summary': 'Probabilities should move when new information appears: injury news, lineup changes, weather, umpire, market movement, or role shifts.',
             'lesson': 'The latest reliable information should update the prior probability.',
             'translation': 'Refreshes, injury checks, game context, and market movement should adjust confidence after the first model score.',
-            'modules': ['Injuries', 'Refresh Pipeline', 'Role Change', 'Market Steam'],
+            'modules': ['Injuries', 'Refresh Pipeline', 'Role Change', 'Market Movement'],
         },
         {
             'key': 'monte-carlo',
