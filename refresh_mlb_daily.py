@@ -107,7 +107,9 @@ def main() -> int:
                 print(f"[WARN] Continuing because {label} is non-blocking for live MLB refresh.", flush=True)
                 print()
                 continue
-            return runner_exit_for_child(result.returncode)   # 1 stays 1; any hard failure >=2
+            # Child output is streamed (not captured), so no governed claim is visible: an unclassified child
+            # 1 (empty rows / provider error) -> 2; any hard failure >=2 (owner decision 2026-11-04).
+            return runner_exit_for_child(result.returncode)
         print(f"[PASS] {label} seconds={elapsed:.1f}", flush=True)
         print()
 

@@ -23,8 +23,8 @@ from services.run_outcomes import (EXIT_UNCONFIGURED_SPORT, UNCONFIGURED_SPORT_R
 
 # Typed outcome for an unconfigured sport. VALIDATION_FAILED is ALERTING in services.run_outcomes, so a
 # parent step can never read this as a benign skip; the reason code says why. The exit code (2) is
-# deliberately NOT 1: refresh_line_movement_snapshots treats exit 1 from fetch_game_lines as the benign
-# "no new rows, existing CSV preserved". Constants live in services.run_outcomes (shared vocabulary).
+# deliberately NOT 1: exit 1 is reserved for the "no new rows, existing CSV preserved" outcome (benign only
+# with a governed claim, services.run_outcomes.classify_step_exit). Constants live in services.run_outcomes.
 UNCONFIGURED_SPORT_OUTCOME = VALIDATION_FAILED
 
 # Sports the provider offers that we deliberately do NOT fetch yet (no pipeline, no output paths). Listed

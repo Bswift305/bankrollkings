@@ -4,7 +4,8 @@ Integration QC for refresh_football_props.py parent aggregation (directive #3), 
 Fakes the child fetchers (no network / no spend): each fake writes the response-shape receipt the real
 fetch_player_props would, and optionally advances the artifact, then returns an exit code. Proves the
 parent:
-  - returns 0 only when EVERY child is benign (UPDATED / NO_MARKETS_POSTED / NO_ACTIVE_EVENTS), and
+  - returns 0 only when EVERY child is benign (UPDATED / NO_MARKETS_POSTED; NO_ACTIVE_EVENTS is ALERTING
+    since the 2026-11-04 owner decision -- see qc_fetch_exit_semantics.py), and
   - returns non-zero (DEGRADED) when a child is VALIDATION_FAILED -- EVEN THOUGH the child exited 1 in
     BOTH the benign and the failing case (the exit code alone cannot tell them apart; the receipt can).
 """

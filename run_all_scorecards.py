@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from season_utils import active_sports, sport_for_label
+from services.run_outcomes import EXIT_HARD_FAILURE
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -374,22 +374,21 @@ def main() -> int:
         f"Started: {datetime.now().isoformat(timespec='seconds')}",
         "",
     ]
-    active = active_sports()
     failed = False
     for label, script, timeout in SCORECARDS:
         print(f"[RUN] {label}")
         ok, output = run_scorecard(label, script, timeout)
-        sport = sport_for_label(label)
         if ok:
             status = "PASS"
         elif TIMEOUT_MARK in output:
             # Transient slowness (box busy during refresh). Logged, not fatal —
             # a real persistent hang will keep showing up and can be acted on.
             status = "TIMEOUT (slow; not blocking)"
-        elif sport is not None and sport not in active:
-            # Off-season sport: scorecard can't pass without data. Expected.
-            status = "SKIP (off-season)"
         else:
+            # Owner decision 2026-11-04: no "SKIP (off-season)" from an empty props file (active_sports is
+            # not a season calendar, and no governed calendar exists for these scorecards). An off-season
+            # sport's scorecard is judged like any other: hard FAIL sections / a crash FAIL, WATCH-only
+            # does not.
             # Judge every scorecard, launch gate included, on hard FAIL sections
             # rather than on its exit code. The Prelaunch Scorecard exits non-zero
             # for any NO-GO, and its GO rule also requires fewer than 3 WATCH
@@ -415,7 +414,7 @@ def main() -> int:
     lines.append(f"Finished: {datetime.now().isoformat(timespec='seconds')}")
     log_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"Log saved: {log_path}")
-    return 1 if failed else 0
+    return EXIT_HARD_FAILURE if failed else 0   # hard failure >=2, never the benign 1
 
 
 if __name__ == "__main__":

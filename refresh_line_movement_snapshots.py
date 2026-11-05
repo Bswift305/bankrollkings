@@ -19,7 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from services.run_outcomes import EXIT_HARD_FAILURE
+from services.run_outcomes import EXIT_HARD_FAILURE, STEP_FAIL, STEP_PASS, classify_step_exit
 
 BASE_DIR = Path(__file__).parent.resolve()
 
@@ -37,7 +37,7 @@ def main() -> int:
     for label, command, timeout in STEPS:
         print(f"\n[{label}]")
         try:
-            result = subprocess.run(command, cwd=BASE_DIR, timeout=timeout)
+            result = subprocess.run(command, cwd=BASE_DIR, timeout=timeout, capture_output=True, text=True)
         except subprocess.TimeoutExpired:
             failures.append((label, "timeout"))
             print("FAILED: timeout")
@@ -46,13 +46,21 @@ def main() -> int:
             failures.append((label, str(exc)))
             print(f"FAILED: {exc}")
             continue
-        # fetch_game_lines returns 1 when no new rows were fetched (existing CSV preserved) —
-        # that is a benign "nothing to add", not a failure.
-        if result.returncode not in (0, 1):
-            failures.append((label, f"exit {result.returncode}"))
-            print(f"FAILED: exit {result.returncode}")
-        else:
+        output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+        if output:
+            print(output.rstrip())   # keep the child's output in the journal (captured only to classify it)
+        # fetch_game_lines returns 1 for EVERY non-publish: provider error, empty rows, validation reject,
+        # cost-receipt failure, publish failure. Owner decision 2026-11-04: exit 1 is benign ONLY with a
+        # GOVERNED SKIPPED_OFF_SEASON / NO_GAMES_SCHEDULED claim; otherwise it is a FAILURE, never "OK".
+        # (The NBA v6 branch replaces this with token-identified receipts; keep the two consistent.)
+        status, reason = classify_step_exit(result.returncode, output)
+        if status == STEP_FAIL:
+            failures.append((label, f"exit {result.returncode} ({reason})"))
+            print(f"FAILED: exit {result.returncode} ({reason})")
+        elif status == STEP_PASS:
             print("OK")
+        else:
+            print(f"OK ({status} {reason})")
 
     print("\n" + "=" * 60)
     if failures:

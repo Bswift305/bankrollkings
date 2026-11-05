@@ -12,8 +12,8 @@ BASE_DIR = Path(__file__).resolve().parent
 NON_BLOCKING_STEPS = {"runtime_snapshots"}
 # The player-props fetch must NEVER abort the rest of the NBA chain (injuries, officiating, calibration,
 # board QC) just because props are legitimately unavailable early in the season (directive #3). Its
-# true outcome is derived from the response-shape receipt; a benign NO_MARKETS_POSTED / NO_ACTIVE_EVENTS
-# lets the chain finish cleanly, while a VALIDATION_FAILED / PROVIDER_ERROR leaves the run DEGRADED
+# true outcome is derived from the response-shape receipt; a benign NO_MARKETS_POSTED lets the chain
+# finish cleanly, while a VALIDATION_FAILED / PROVIDER_ERROR / NO_ACTIVE_EVENTS leaves the run DEGRADED
 # (non-zero exit) WITHOUT skipping the safe downstream work.
 PROPS_STEP = "player_props"
 PROPS_SPORT_SLUG = "basketball_nba"
@@ -99,7 +99,9 @@ def main() -> int:
                 print(f"[WARN] Continuing because {label} is non-blocking for live NBA refresh.", flush=True)
                 print()
                 continue
-            return runner_exit_for_child(result.returncode)   # 1 stays 1; any hard failure >=2
+            # Child output is streamed (not captured), so no governed claim is visible: an unclassified child
+            # 1 (empty rows / provider error) -> 2; any hard failure >=2 (owner decision 2026-11-04).
+            return runner_exit_for_child(result.returncode)
         print(f"[PASS] {label} seconds={elapsed:.1f}", flush=True)
         print()
 
