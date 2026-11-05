@@ -7,9 +7,13 @@ dir `/tmp/nbagate`. Gate script sha256 `b6f47ca4…ce21ba66f`.
 ## Passed
 - **Identity and scope:** HEAD `479e8c4cdd4a0699c0dfa5be684a0300a5372bc9`, base `17b5e69`, **53-file scope**, D1 files
   identical, `run_all_scorecards.py` removed_lines=0.
-- **Production markers in `app.py`:** all **SAME** count base vs head (`_quote_from_row`, `_quote_clock_status`, skew
-  constant, `_source_time_label`, `q1k2s3`, matchup `src2`, `_judge_submitted_ticket`, 2–8 leg constants,
-  `PARLAY_REVIEW_MAX_PICKS`, `Weather unavailable`, `srcutc1`, …).
+- **Production markers in `app.py`** (**corrected 2026-11-05**; the original line wrongly said "all SAME"): **all 18
+  prior markers preserved**, plus **one intentional new `SourceUpdatedAtUTC` Elite-label reference**.
+  - That reference is `'quote_updated_utc': _elite_live_text(row.get('SourceUpdatedAtUTC'))`, so `SourceUpdatedAtUTC`
+    count is base 18 → head 19.
+  - Every other marker count is unchanged: `_quote_from_row`, `_quote_clock_status`, skew constant,
+    `_source_time_label`, `q1k2s3`, matchup `src2`, `_judge_submitted_ticket`, 2–8 leg constants,
+    `PARLAY_REVIEW_MAX_PICKS`, `Weather unavailable`, `srcutc1`, …
 - **POSIX lock/receipt tests executed, 0 skipped:** `nba_lines_lock` 58/0/0, `nba_props_lock` 41/0/0,
   `nba_run_receipt_contract` 37/0/0 (platform linux). The "skip" lines in those logs are outcome names
   (`SKIPPED_LOCKED`), not test skips.
