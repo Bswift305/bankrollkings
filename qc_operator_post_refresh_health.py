@@ -3,7 +3,7 @@ QC (Oct-24 follow-up #2): the daily operator must not leave a PRE-refresh Odds-f
 recorded as a blocking failure once the run's refreshes make the feeds current. The pre-refresh check
 is a WARNING; the authoritative signal is a POST-refresh health check run after every refresh.
 
-Proven offline by faking run_daily._run_step (no real subprocess):
+Proven offline by faking run_daily._run_step_code (no real subprocess):
   A. pre-refresh health FAILS but post-refresh PASSES (recovery) -> operator NOT blocked by health; the
      pre-refresh step is WARN and neither health label is a blocking failed_step.
   B. pre-refresh FAILS and post-refresh FAILS (feed still stale, e.g. NBA) -> blocking; only the
@@ -28,22 +28,23 @@ def _run(scenario_post_ok: bool):
         run_daily.BASE_DIR = base
         run_daily.LOG_DIR = base / "logs"
 
+        # run_daily's seam is _run_step_code -> (exit code, output); _run_step wraps it (2026-11-04).
         def fake_run(label, command, timeout):
             if label == "Odds feed health":
-                return False, "NBA props STALE (pre-refresh snapshot)"
+                return 1, "NBA props STALE (pre-refresh snapshot)"
             if label == "Odds feed health (post-refresh)":
-                return (scenario_post_ok, "" if scenario_post_ok else "NBA props STALE (post-refresh)")
-            return True, ""  # every other step passes
+                return (0, "") if scenario_post_ok else (1, "NBA props STALE (post-refresh)")
+            return 0, ""  # every other step passes
 
-        orig_step = run_daily._run_step
-        run_daily._run_step = fake_run
+        orig_step = run_daily._run_step_code
+        run_daily._run_step_code = fake_run
         orig_argv = sys.argv
         sys.argv = ["run_daily.py", "--sports", "wnba", "--skip-edge", "--skip-scorecards",
                     "--continue-on-error"]
         try:
             rc = run_daily.main()
         finally:
-            run_daily._run_step = orig_step
+            run_daily._run_step_code = orig_step
             run_daily.BASE_DIR, run_daily.LOG_DIR = orig_base, orig_log
             sys.argv = orig_argv
         summary = json.loads((base / "data/tracking/Last_Operator_Summary.json").read_text(encoding="utf-8"))

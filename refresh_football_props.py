@@ -42,7 +42,8 @@ BASE_DIR = Path(__file__).resolve().parent
 # (label, command, timeout, sport_slug, artifact) -- sport_slug keys the response-shape receipt and
 # artifact is the file whose mtime advance proves a publish. The parent derives its result from these
 # children's OUTCOMES (directive #3): it never reports a bare PASS when an artifact did not advance
-# without a PROVEN benign outcome (NO_ACTIVE_EVENTS / NO_MARKETS_POSTED).
+# without a PROVEN benign outcome (NO_MARKETS_POSTED; NO_ACTIVE_EVENTS -- the provider listed zero events --
+# is ALERTING since the 2026-11-04 owner decision: an empty provider answer is not a governed no-game result).
 STEPS = [
     ("nfl_player_props", [sys.executable, "fetch_nfl_player_props.py", "--days", "7"], 300,
      "americanfootball_nfl", BASE_DIR / "data" / "props" / "NFL_Props.csv"),

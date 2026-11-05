@@ -58,9 +58,15 @@ def main() -> int:
     _, degraded = aggregate_parent({"nfl": NO_MARKETS_POSTED, "ncaaf": VALIDATION_FAILED})
     if not degraded:
         f.append("a VALIDATION_FAILED child must degrade the parent")
-    _, degraded2 = aggregate_parent({"nfl": NO_MARKETS_POSTED, "ncaaf": NO_ACTIVE_EVENTS})
+    _, degraded2 = aggregate_parent({"nfl": NO_MARKETS_POSTED, "ncaaf": UPDATED})
     if degraded2:
         f.append("all-benign children must not degrade the parent")
+    # Owner decision 2026-11-04: zero events from the provider is EMPTY, not a governed no-game result.
+    _, degraded3 = aggregate_parent({"nfl": NO_MARKETS_POSTED, "ncaaf": NO_ACTIVE_EVENTS})
+    if not degraded3 or not is_alerting(NO_ACTIVE_EVENTS):
+        f.append("a NO_ACTIVE_EVENTS (zero provider events) child must degrade the parent")
+    if not is_alerting("UNKNOWN_OUTCOME_WORD"):
+        f.append("is_alerting must fail closed on an unknown outcome word")
 
     print("=" * 60)
     print("QC: RUN OUTCOMES CLASSIFIER")

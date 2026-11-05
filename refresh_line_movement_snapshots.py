@@ -95,7 +95,8 @@ def main() -> int:
         child_env = dict(os.environ)
         child_env[run_receipts.STAGE_RUN_ENV] = run_token
         try:
-            result = subprocess.run(command, cwd=BASE_DIR, timeout=timeout, env=child_env)
+            result = subprocess.run(command, cwd=BASE_DIR, timeout=timeout, env=child_env,
+                                    capture_output=True, text=True)
         except subprocess.TimeoutExpired:
             failures.append((label, "timeout"))
             print("FAILED: timeout")
@@ -104,6 +105,9 @@ def main() -> int:
             failures.append((label, str(exc)))
             print(f"FAILED: {exc}")
             continue
+        output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+        if output:
+            print(output.rstrip())   # keep the child's output in the journal (captured only to classify it)
         # fetch_game_lines returns 1 for EVERY non-publish (provider error, validation reject, cost receipt,
         # publish failure, or a genuine zero-event window). Only this run's receipt can prove the benign one.
         status, detail = classify_step(result.returncode, sport, run_token)

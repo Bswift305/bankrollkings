@@ -7,9 +7,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from season_utils import active_sports, is_preseason_step, nfl_preseason_active, sport_for_label
+from season_utils import governed_off_season_calendar, nfl_preseason_active
 from services.env_loader import load_local_env
-from services.run_outcomes import EXIT_HARD_FAILURE, UNCONFIGURED_SPORT_MARKER
+from services.run_outcomes import (EXIT_HARD_FAILURE, SKIPPED_OFF_SEASON, STEP_FAIL, STEP_PASS,
+                                   classify_step_exit, is_governed_benign_status)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -217,9 +218,16 @@ def _active_refresh_steps(sports: set[str]) -> list[tuple[str, list[str], int]]:
 
 
 def _run_step(label: str, command: list[str], timeout: int) -> tuple[bool, str]:
+    code, output = _run_step_code(label, command, timeout)
+    return code == 0, output
+
+
+def _run_step_code(label: str, command: list[str], timeout: int) -> tuple[int | None, str]:
+    """(exit code, output). None = the step never produced an exit code (missing script / timeout) -- a hard
+    failure."""
     script_path = Path(command[1]) if len(command) > 1 else None
     if script_path and script_path.suffix == ".py" and not script_path.exists():
-        return False, f"Missing script: {script_path}"
+        return None, f"Missing script: {script_path}"
     try:
         proc = subprocess.run(
             command,
@@ -236,13 +244,13 @@ def _run_step(label: str, command: list[str], timeout: int) -> tuple[bool, str]:
         if exc.stderr:
             stderr = exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr
             parts.append(stderr.strip())
-        return False, "\n".join(part for part in parts if part)
+        return None, "\n".join(part for part in parts if part)
     parts = []
     if proc.stdout:
         parts.append(proc.stdout.strip())
     if proc.stderr:
         parts.append(proc.stderr.strip())
-    return proc.returncode == 0, "\n".join(parts)
+    return proc.returncode, "\n".join(parts)
 
 
 def _parse_sports(raw: str) -> set[str]:
@@ -296,7 +304,6 @@ def main() -> int:
         f"Sports: {', '.join(sorted(sports)).upper()}",
         "",
     ]
-    active = active_sports()
     failed = False
     PRE_REFRESH_HEALTH_LABEL = "Odds feed health"
     # Structured per-step outcomes written to data/tracking/Last_Operator_Summary.json so Run Status
@@ -306,26 +313,31 @@ def main() -> int:
     step_outcomes: list[dict] = []
     preseason_open = nfl_preseason_active()
     for label, command, timeout in steps:
-        # Season-gate NFL preseason jobs: outside the preseason window the preseason Odds sport key
-        # has no events, so this step is SKIPPED (not run) -- it must never FAIL the operator. Because
-        # the operator aborts on the first FAIL, an out-of-window preseason fetch that errored would
-        # otherwise stall every downstream refresh (the Oct 23 class of incident). Skipping it is
-        # visible in the log and costs no API credits; in-window (August) it runs and a real failure
+        # GOVERNED pre-run season gate (owner decision 2026-11-04). A step is SKIPPED_OFF_SEASON only when a
+        # governed calendar says it is outside its active window -- decided HERE, before the step runs, so
+        # zero provider calls / zero credits. Today the only governed calendar is the NFL preseason window
+        # (the preseason Odds key has no events outside ~Aug; an erroring out-of-window fetch would otherwise
+        # abort every downstream refresh -- the Oct 23 incident class). In-window it runs and a real failure
         # is still a FAIL.
-        if is_preseason_step(label) and not preseason_open:
-            print(f"[SKIP (out of preseason window)] {label}")
+        calendar = governed_off_season_calendar(label, preseason_open)
+        if calendar:
+            status = "SKIP (out of preseason window)"
+            print(f"[{status}] {label}")
             lines += [
-                f"[SKIP (out of preseason window)] {label}",
+                f"[{status}] {label}",
                 "Command: " + " ".join(command),
-                "(skipped: NFL preseason window closed -- not run, cannot fail the operator)",
+                f"(skipped: {SKIPPED_OFF_SEASON} calendar={calendar} provider_calls=0 -- not run, cannot fail "
+                "the operator)",
                 "",
             ]
-            step_outcomes.append({"label": label, "status": "SKIP (out of preseason window)"})
+            step_outcomes.append({"label": label, "status": status, "outcome": SKIPPED_OFF_SEASON,
+                                  "calendar": calendar, "provider_calls": 0})
             continue
         print(f"[RUN] {label}")
-        ok, output = _run_step(label, command, timeout)
-        if ok:
-            status = "PASS"
+        code, output = _run_step_code(label, command, timeout)
+        reason = ""
+        if code == 0:
+            status = STEP_PASS
         elif label == PRE_REFRESH_HEALTH_LABEL:
             # The pre-refresh Odds-feed health check runs FIRST, before this run's refresh steps, so a
             # stale feed here reflects the state BEFORE recovery -- NOT the outcome of this run. It must
@@ -333,33 +345,32 @@ def main() -> int:
             # is a pre-flight WARNING; the authoritative check is "Odds feed health (post-refresh)" after
             # all refreshes (added below), whose result does block.
             status = "WARN (pre-refresh; authoritative check runs post-refresh)"
-        elif UNCONFIGURED_SPORT_MARKER in (output or ""):
-            # A fetcher refused an UNCONFIGURED sport (exit 2, OUTCOME VALIDATION_FAILED). That is a
-            # configuration error, not an outage and not the off-season: it must FAIL even when the step's
-            # sport is out of season (the season gate below would otherwise turn it into a benign SKIP).
-            status = "FAIL"
-        elif "PROVIDER_QUOTA_EXHAUSTED" in (output or ""):
-            # A provider's monthly quota is exhausted (e.g. CFBD 429). This is a documented EXTERNAL
-            # outage with a persistent backoff, not a code failure to retry -- report it truthfully as a
-            # SKIP, not PASS and not FAIL. Run Status still reflects it as DEGRADED (provider outage).
-            status = "SKIP (PROVIDER_QUOTA_EXHAUSTED)"
         else:
-            # Same season gate the Edge Engine pipeline and the scorecard runner
-            # already use: a sport with no live props has no data for its refresh
-            # to work on, so its failure is expected and must not fire the daily
-            # alert. (2026-09-09: NBA's board QC correctly reports "no upcoming
-            # schedule" all summer, which failed the whole run every night.)
-            sport = sport_for_label(label)
-            status = "SKIP (off-season)" if sport and sport not in active else "FAIL"
-        print(f"[{status}] {label}")
+            # ONE classifier (services.run_outcomes.classify_step_exit): UNCONFIGURED_SPORT -> FAIL in and out
+            # of season; exit 1 is benign ONLY with a GOVERNED SKIPPED_OFF_SEASON / NO_GAMES_SCHEDULED claim;
+            # empty rows / provider error / any unclassified exit -> FAIL. The old "SKIP (off-season)" -- a
+            # failure laundered because the sport's props file was empty (active_sports) -- is GONE: an empty
+            # props file is not a season calendar.
+            status, reason = classify_step_exit(EXIT_HARD_FAILURE if code is None else code, output)
+            if status == STEP_FAIL and reason != "UNCONFIGURED_SPORT" and "PROVIDER_QUOTA_EXHAUSTED" in (output or ""):
+                # A provider's monthly quota is exhausted (e.g. CFBD 429): a documented EXTERNAL outage with a
+                # persistent backoff. Recorded as SKIP (PROVIDER_QUOTA_EXHAUSTED); Run Status reads it DEGRADED
+                # via provider_exhausted_steps (never GREEN).
+                status = "SKIP (PROVIDER_QUOTA_EXHAUSTED)"
+        print(f"[{status}] {label}" + (f" reason={reason}" if reason else ""))
         lines += [
-            f"[{status}] {label}",
+            f"[{status}] {label}" + (f" reason={reason}" if reason else ""),
             "Command: " + " ".join(command),
             output or "(no output)",
             "",
         ]
-        step_outcomes.append({"label": label, "status": status})
-        if status == "FAIL":
+        entry = {"label": label, "status": status}
+        if reason:
+            entry["reason"] = reason
+        if is_governed_benign_status(status):
+            entry["outcome"] = status
+        step_outcomes.append(entry)
+        if status == STEP_FAIL:
             failed = True
             if not args.continue_on_error:
                 break
@@ -387,7 +398,11 @@ def main() -> int:
     # Structured summary for Run Status + the incident diag (machine-readable; never parse the log text).
     provider_exhausted = sorted({o["label"] for o in step_outcomes
                                  if "PROVIDER_QUOTA_EXHAUSTED" in o["status"]})
-    failed_steps = [o["label"] for o in step_outcomes if o["status"] == "FAIL"]
+    failed_steps = [o["label"] for o in step_outcomes if o["status"] == STEP_FAIL]
+    # Steps that did not publish for a GOVERNED reason (calendar / schedule contract) -- the ONLY non-publishes
+    # that are not failures. Recorded so Run Status can show them; never inferred from an empty fetch.
+    governed_skips = [{"label": o["label"], "outcome": o["outcome"], "calendar": o.get("calendar", "")}
+                      for o in step_outcomes if o.get("outcome")]
     # Record the per-sport CHILD OUTCOMES the parents wrote (the vocabulary), not merely the parent exit
     # code (directive #3): e.g. football_props -> {nfl=..., ncaaf=...}, nba_daily -> {player_props=...}.
     from services.run_outcomes import load_all_child_outcomes, is_alerting
@@ -404,6 +419,7 @@ def main() -> int:
         "sports": sorted(sports),
         "blocking_failure": bool(failed),
         "failed_steps": failed_steps,
+        "governed_skips": governed_skips,
         "provider_exhausted_steps": provider_exhausted,
         "child_outcomes": child_outcomes,
         "degraded_child_outcomes": degraded_children,

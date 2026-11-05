@@ -5,7 +5,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from season_utils import active_sports, sport_for_label
+from services.run_outcomes import EXIT_HARD_FAILURE
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -66,7 +66,6 @@ def main() -> int:
         f"Started: {datetime.now().isoformat(timespec='seconds')}",
         "",
     ]
-    active = active_sports()
     failed = False
     for label, script in STEPS:
         print(f"[RUN] {label}")
@@ -75,17 +74,13 @@ def main() -> int:
             status = "PASS"
         else:
             # Continue-on-error: each step is independent. A failure in one step
-            # (e.g. an off-season sport whose history file is missing) must not
-            # abort the rest of the pipeline and starve in-season sports of
+            # must not abort the rest of the pipeline and starve other sports of
             # simulations, priors, calibration, streak heat, and drift alerts.
-            sport = sport_for_label(label)
-            if sport and sport not in active:
-                # Expected off-season failure (no data for this sport). Logged,
-                # but does not poison the pipeline exit code.
-                status = "SKIP (off-season)"
-            else:
-                status = "FAIL"
-                failed = True
+            # Owner decision 2026-11-04: a failure is NEVER "SKIP (off-season)" because the sport's
+            # props file is empty (active_sports is not a season calendar). No governed calendar exists
+            # for these steps, so a failing step is a FAIL and the pipeline exits as a hard failure.
+            status = "FAIL"
+            failed = True
         print(f"[{status}] {label}")
         lines += [
             f"[{status}] {label}",
@@ -105,7 +100,7 @@ def main() -> int:
         print(output)
     if not ok:
         failed = True
-    return 1 if failed else 0
+    return EXIT_HARD_FAILURE if failed else 0   # hard failure >=2, never the benign 1
 
 
 if __name__ == "__main__":

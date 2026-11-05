@@ -51,6 +51,24 @@ def is_preseason_step(label: str) -> bool:
     """True for a daily-operator step that only applies during the NFL preseason window."""
     return "PRESEASON" in (label or "").upper()
 
+
+# Calendar id recorded for the one governed pre-run season gate (services.run_outcomes.GOVERNED_SEASON_CALENDARS).
+NFL_PRESEASON_CALENDAR_ID = "season_utils.nfl_preseason_active"
+
+
+def governed_off_season_calendar(label: str, preseason_open: Optional[bool] = None) -> Optional[str]:
+    """Return the GOVERNED calendar id that puts this step outside its active window, or None.
+
+    Owner decision 2026-11-04: SKIPPED_OFF_SEASON comes ONLY from a governed calendar decided BEFORE any
+    provider call -- never from an empty/failed fetch and never from active_sports() (an empty props file is
+    not a calendar). The only governed calendar today is the NFL preseason window. MLB / WNBA / NBA / NCAAF /
+    NFL regular season have none, so this returns None for them and their failures stay FAILURES."""
+    if is_preseason_step(label):
+        open_ = nfl_preseason_active() if preseason_open is None else bool(preseason_open)
+        if not open_:
+            return NFL_PRESEASON_CALENDAR_ID
+    return None
+
 # Sport -> live props file. A sport is "active" (in-season) when its props file
 # exists and has at least one data row. Reactivates automatically when props
 # return for that sport.
@@ -64,7 +82,10 @@ _PROP_FILES = {
 
 
 def active_sports() -> set:
-    """Return the set of sports that currently have live props loaded."""
+    """Return the set of sports that currently have live props loaded.
+
+    NOT a season calendar (owner decision 2026-11-04): an empty props file can mean a broken fetch as easily
+    as the off-season, so the step runners no longer turn a failure into "SKIP (off-season)" from this."""
     active = set()
     for sport, fname in _PROP_FILES.items():
         path = BASE_DIR / "data" / "props" / fname

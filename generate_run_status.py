@@ -216,7 +216,8 @@ def _odds_family_signals() -> tuple[list[dict], list[str]]:
     current-market feed past its refresh cadence (REFRESH_MISSED) degrades the overall status; a feed
     only past the 6h render window (OVERDUE_FOR_LIVE_RENDER) is surfaced as AGING (overall WATCH, never
     GREEN) so a customer-unavailable feed is never reported 'healthy'. When BOTH a sport's game lines and
-    props are REFRESH_MISSED the sport is off-season; when lines are serveable but props are
+    props are REFRESH_MISSED that is DEGRADED too (never assumed off-season: no governed season calendar
+    exists for these sports -- owner decision 2026-11-04); when lines are serveable but props are
     REFRESH_MISSED the props pipeline is broken (or no markets posted)."""
     rows: list[dict] = []
     reasons: list[str] = []
@@ -246,7 +247,12 @@ def _odds_family_signals() -> tuple[list[dict], list[str]]:
             if gl_tier in ("SERVEABLE", "OVERDUE_FOR_LIVE_RENDER"):
                 reasons.append(f"{sport} props REFRESH_MISSED while game lines are current "
                                "(props pipeline broken or no markets posted)")
-            # when BOTH are REFRESH_MISSED the sport is off-season -> not degraded here.
+            else:
+                # BOTH lines and props REFRESH_MISSED used to be read as "the sport is off-season" and
+                # dropped. Owner decision 2026-11-04: stale/empty feeds are NOT a season calendar. With no
+                # governed calendar for any of these sports, this is DEGRADED, never silently benign.
+                reasons.append(f"{sport} game lines AND props REFRESH_MISSED -- no governed season calendar, "
+                               "so NOT assumed off-season")
 
     fut_age = _odds_age(BASE_DIR / FUTURES_FEED)
     fut_state = _odds_state(fut_age, "futures")   # futures: cadence only (not a 6h live-render surface)
@@ -272,9 +278,32 @@ def _operator_signals() -> tuple[list[str], dict]:
         "failed_steps": list(payload.get("failed_steps") or []),
         "provider_exhausted_steps": list(payload.get("provider_exhausted_steps") or []),
         "degraded_child_outcomes": list(payload.get("degraded_child_outcomes") or []),
+        "governed_skips": list(payload.get("governed_skips") or []),
     }
     if info["blocking_failure"] and info["failed_steps"]:
         reasons.append("operator blocking failure: " + ", ".join(info["failed_steps"]))
+    elif info["failed_steps"]:
+        reasons.append("operator failed step(s): " + ", ".join(info["failed_steps"]))
+    # Fail closed on any step status that is not a known clean state or a GOVERNED non-publish. In particular
+    # a legacy "SKIP (off-season)" (a failure laundered by an empty props file) is DEGRADED, never benign.
+    from services.run_outcomes import (GOVERNED_SCHEDULE_CONTRACTS, GOVERNED_SEASON_CALENDARS,
+                                       NO_GAMES_SCHEDULED, SKIPPED_OFF_SEASON)
+    ungoverned = []
+    for step in payload.get("steps") or []:
+        status = str(step.get("status") or "")
+        if status in ("PASS", "FAIL", "SKIP (PROVIDER_QUOTA_EXHAUSTED)") or status.startswith("WARN (pre-refresh"):
+            continue   # FAIL is reported above; quota exhaustion via provider_exhausted_steps
+        outcome = step.get("outcome")
+        cal = str(step.get("calendar") or "")
+        src = str(step.get("reason") or "")
+        if outcome == SKIPPED_OFF_SEASON and (cal in GOVERNED_SEASON_CALENDARS
+                                             or src.replace("calendar=", "") in GOVERNED_SEASON_CALENDARS):
+            continue
+        if outcome == NO_GAMES_SCHEDULED and src.replace("contract=", "") in GOVERNED_SCHEDULE_CONTRACTS:
+            continue
+        ungoverned.append(f"{step.get('label')}={status}")
+    if ungoverned:
+        reasons.append("operator step(s) with an ungoverned skip/unclassified status: " + ", ".join(ungoverned))
     if info["provider_exhausted_steps"]:
         reasons.append("provider quota exhausted: " + ", ".join(info["provider_exhausted_steps"]))
     if info["degraded_child_outcomes"]:
