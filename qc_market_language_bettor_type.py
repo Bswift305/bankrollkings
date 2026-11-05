@@ -28,6 +28,21 @@ may say or imply "sharp money", "sharps", "sharp side/action", "steam", "smart m
           are not (proves the exclusion is structural);
        M4 a temp how_we_analyze.html with a banned phrase, served ahead of the real template, makes the
           RENDER check fail; a temp copy with the disclaimer removed makes it fail too.
+  A  OLD-CAPTION MARKETING ASSETS (follow-up 2026-11-05). Three generated assets still print the retired
+     "no fake 'steam'" caption (feature_05 Market Movers card + its two videos). They are archival files
+     under marketing/ (not servable). DENYLIST_ASSETS names them (plus the generator intermediates that
+     carried the same caption) and pins their SHA-256 so a renamed copy is still recognised.
+       A1 REFERENCE CHECK: no template, static JS/CSS/JSON/webmanifest/SVG/HTML (incl. service-worker.js,
+          manifest), app.py / services/**.py string constant (routes, url_for('static', ...), sitemap,
+          meta/OG tags), or deploy/ nginx config names a denylisted asset;
+       A2 LOCATION CHECK: no file under a servable root (static/ -- Flask static + nginx alias; assets/ --
+          the /assets/<path> route) has a denylisted name or a denylisted content hash. Walks the disk,
+          not just git, so an untracked copy dropped into static/ also fails.
+       MA mutation proofs on temp trees: an injected <img src=url_for(static ...)> reference, an injected
+          service-worker cache entry, a denylisted name under temp static/, a renamed copy (hash match)
+          under temp assets/ -- each is flagged; a clean control tree passes.
+     A regenerated asset with the NEW wording must use a new filename (e.g. *_v2.png); the old names stay
+     denied so an old-caption file can never be wired in by name.
 Exit 0 on pass, 1 otherwise.  Run: py -3 qc_offline.py qc_market_language_bettor_type.py
 """
 from __future__ import annotations
@@ -78,6 +93,111 @@ BANNED = [
 ALLOWLIST: dict[str, str] = {}
 
 RENDERED_PREFIXES = ("templates/", "static/")
+
+# ---- A: old-caption marketing assets (archival; must never be referenced or servable) --------------------
+# name -> (sha256 or None, which retired phrase it carries). Hashes taken 2026-11-05 from the archival
+# files in the dev checkout; the intermediates are generator scratch outputs (no archived copy -> name only).
+DENYLIST_ASSETS = {
+    "feature_05_market_movers.png": (
+        "4f9e461f5adc46fccd2a2868c5828da7ddf2c17a43cd032e4ecb4e744d7beebe",
+        "card text: \"no fake 'steam' labels\" + \"where the market is leaning\" (gen_features.py feature 05)"),
+    "feature_05_market_movers.mp4": (
+        "32b61637201325e78435f33d38524348ae7badfda91ffa267063b3c88698c2fa",
+        "video of the same card: \"no fake 'steam' labels\" (render of gen_features feature 05)"),
+    "video_feature_market_movers.mp4": (
+        "1bb5bba5a77b6427736aecf48fa94f3859e22a2a9b7ff38d82a4743dca8a9951",
+        "animated card: \"no fake 'steam'\" (video_engine.py vid_feat_movers)"),
+    "feature_05.png": (None, "gen_features.py scratch render of feature 05 (old wording)"),
+    "feature_05.html": (None, "gen_features.py scratch page for feature 05 (old wording)"),
+    "vid_feat_movers.mp4": (None, "video_engine.py scratch output for Market Movers (old wording)"),
+    "vid_feat_movers.html": (None, "video_engine.py scratch page for Market Movers (old wording)"),
+}
+# Stills from video_engine.render_still are named vid_feat_movers_vNNN.png.
+DENYLIST_NAME_RE = re.compile(r"^vid_feat_movers_v\d{3}\.png$", re.I)
+SERVABLE_ROOTS = ("static", "assets")
+REF_TEXT_SUFFIXES = {".html", ".htm", ".js", ".css", ".json", ".webmanifest", ".svg", ".txt", ".xml", ".conf"}
+
+
+def _denied_ref_rx():
+    stems = sorted({Path(n).stem for n in DENYLIST_ASSETS} | {Path(n).name for n in DENYLIST_ASSETS}, key=len,
+                   reverse=True)
+    alts = "|".join(re.escape(s) for s in stems) + r"|vid_feat_movers_v\d{3}"
+    # Bounded so 'feature_05' does not match 'feature_051' or 'my_feature_05x'.
+    return re.compile(rf"(?<![\w-])(?:{alts})(?![\w-])", re.I)
+
+
+DENIED_REF_RE = _denied_ref_rx()
+
+
+def asset_reference_hits(root: Path, files: list[str]):
+    """Every reference to a denylisted asset in the given repo-relative text/py files."""
+    hits = []
+    for rel in files:
+        p = root / rel
+        if not p.is_file():
+            continue
+        src = p.read_text(encoding="utf-8", errors="replace")
+        if rel.endswith(".py"):
+            # Only string constants can become a route/url_for/meta/sitemap value; prose is excluded.
+            for ln, val in py_string_constants(src):
+                for m in DENIED_REF_RE.finditer(val):
+                    hits.append(f"{rel}:{ln} references {m.group(0)!r}")
+        else:
+            text = template_text(src) if rel.endswith((".html", ".htm")) else src
+            for i, line in enumerate(text.splitlines(), 1):
+                for m in DENIED_REF_RE.finditer(line):
+                    hits.append(f"{rel}:{i} references {m.group(0)!r}")
+    return hits
+
+
+def reference_files(root: Path, use_git: bool = True):
+    if use_git:
+        allf = tracked("templates", "static", "services", "deploy", "ops", "app.py")
+    else:
+        allf = [str(p.relative_to(root)).replace(os.sep, "/") for p in root.rglob("*") if p.is_file()]
+    out = []
+    for rel in allf:
+        if rel == "app.py" or (rel.startswith("services/") and rel.endswith(".py")):
+            out.append(rel)
+        elif rel.startswith(("templates/", "static/", "deploy/", "ops/")) and Path(rel).suffix.lower() in REF_TEXT_SUFFIXES:
+            out.append(rel)
+    return out
+
+
+def _sha256(p: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with p.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def servable_location_hits(root: Path, denylist: dict):
+    """Files on disk under a servable root that carry a denylisted name or content hash."""
+    hashes = {v[0]: k for k, v in denylist.items() if v[0]}
+    sizes_needed = bool(hashes)
+    hits = []
+    for top in SERVABLE_ROOTS:
+        base = root / top
+        if not base.exists():
+            continue
+        for p in base.rglob("*"):
+            if not p.is_file():
+                continue
+            rel = str(p.relative_to(root)).replace(os.sep, "/")
+            name = p.name
+            if name.lower() in {k.lower() for k in denylist} or DENYLIST_NAME_RE.match(name):
+                hits.append(f"{rel}: denylisted name")
+                continue
+            if sizes_needed:
+                try:
+                    digest = _sha256(p)
+                except OSError:
+                    continue
+                if digest in hashes:
+                    hits.append(f"{rel}: content matches denylisted {hashes[digest]}")
+    return hits
 
 TEXT_STATIC = {".js", ".css", ".json", ".svg", ".txt", ".webmanifest", ".html", ".htm"}
 
@@ -265,6 +385,60 @@ def main() -> int:
     for rel in ("templates/how_we_analyze.html", "templates/market_movers.html"):
         src = (HERE / rel).read_text(encoding="utf-8")
         check(DISCLAIMER in src, f"S3 {rel} carries the exact disclaimer sentence")
+
+    # A: old-caption marketing assets -- references + servable location
+    ref_files = reference_files(HERE)
+    check(len(ref_files) > 100 and "static/service-worker.js" in ref_files and "app.py" in ref_files
+          and any(f.startswith("deploy/") for f in ref_files),
+          f"A0 reference scan covers {len(ref_files)} files (templates, static incl. service worker, app.py, services, deploy)")
+    ref_hits = asset_reference_hits(HERE, ref_files)
+    check(not ref_hits, "A1 no route/template/static/service-worker/sitemap/meta/nginx reference to an old-caption asset"
+          + ("" if not ref_hits else ":\n      " + "\n      ".join(ref_hits[:20])))
+    loc_hits = servable_location_hits(HERE, DENYLIST_ASSETS)
+    check(not loc_hits, "A2 no old-caption asset (by name or SHA-256) under a servable root (static/, assets/)"
+          + ("" if not loc_hits else ":\n      " + "\n      ".join(loc_hits[:20])))
+    with tempfile.TemporaryDirectory(prefix="qc_mm_assets_") as tmp:
+        t = Path(tmp)
+        (t / "templates").mkdir()
+        (t / "static" / "img").mkdir(parents=True)
+        (t / "assets").mkdir()
+        shutil.copy2(HERE / "templates/market_movers.html", t / "templates/market_movers.html")
+        shutil.copy2(HERE / "static/service-worker.js", t / "static/service-worker.js")
+        (t / "static/img/feature_05_v2.png").write_bytes(b"new-wording-card")
+        control_ref = asset_reference_hits(t, reference_files(t, use_git=False))
+        control_loc = servable_location_hits(t, DENYLIST_ASSETS)
+        check(not control_ref and not control_loc,
+              f"MA0 control temp tree (real template + service worker, a *_v2 asset) passes ({control_ref + control_loc})")
+        tpl = (t / "templates/market_movers.html").read_text(encoding="utf-8")
+        (t / "templates/market_movers.html").write_text(tpl.replace(
+            "{% block content %}",
+            "{% block content %}<img src=\"{{ url_for('static', filename='img/feature_05_market_movers.png') }}\">", 1),
+            encoding="utf-8")
+        got = asset_reference_hits(t, reference_files(t, use_git=False))
+        check(any("market_movers.html" in h and "feature_05_market_movers" in h for h in got),
+              f"MA1 injected url_for('static') <img> of the old card is flagged ({got[:2]})")
+        (t / "templates/market_movers.html").write_text(tpl, encoding="utf-8")
+        sw = (t / "static/service-worker.js").read_text(encoding="utf-8")
+        (t / "static/service-worker.js").write_text(sw + "\nconst EXTRA = ['/static/video_feature_market_movers.mp4'];\n",
+                                                   encoding="utf-8")
+        got = asset_reference_hits(t, reference_files(t, use_git=False))
+        check(any("service-worker.js" in h for h in got), f"MA2 injected service-worker cache entry is flagged ({got[:2]})")
+        (t / "static/service-worker.js").write_text(sw, encoding="utf-8")
+        (t / "static/img/feature_05_market_movers.png").write_bytes(b"old")
+        (t / "static/img/vid_feat_movers_v050.png").write_bytes(b"old-still")
+        got = servable_location_hits(t, DENYLIST_ASSETS)
+        check(sum("denylisted name" in h for h in got) == 2,
+              f"MA3 denylisted names dropped under temp static/ are flagged ({got})")
+        (t / "static/img/feature_05_market_movers.png").unlink()
+        (t / "static/img/vid_feat_movers_v050.png").unlink()
+        (t / "assets/innocent_name.png").write_bytes(b"pretend-old-caption-bytes")
+        fake = dict(DENYLIST_ASSETS)
+        fake["feature_05_market_movers.png"] = (_sha256(t / "assets/innocent_name.png"), "mutation stand-in")
+        got = servable_location_hits(t, fake)
+        check(len(got) == 1 and "content matches" in got[0],
+              f"MA4 a renamed copy under temp assets/ is caught by content hash ({got})")
+        check(not servable_location_hits(t, DENYLIST_ASSETS),
+              "MA5 the same renamed file is NOT flagged without a hash match (no false positive by location alone)")
 
     # R: render
     import app as app_mod  # noqa: E402
