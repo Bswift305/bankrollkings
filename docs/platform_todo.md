@@ -56,4 +56,11 @@
 
 ## Open
 
-- No active To-Do items at the moment.
+- **Queued — Green Light decision-convergence workshop (after the current Research Candidate OFF-state deployment work is closed).**
+  - Owner intent: Green Light should reflect the way a person actually reaches a decision. A Hot Streak / Trend is one input, not the play by itself. A team or player becomes more interesting when it appears across several independently useful views the user trusts.
+  - First workshop case: **UCLA -23 vs Nevada (2026-10-31), covered.** The owner noticed UCLA's sustained ATS performance and a recurring willingness by others/the market to fade the team. Treat this as a pregame-observation case to reconstruct—not as proof of an edge. The workshop should identify which additional evidence was actually available before kickoff (matchup, opponent quality, injuries, line movement, verified public/market positioning, and contradictions), which factors influenced the wager, and what would have invalidated it.
+  - Learning requirement for that case: preserve the placed line, timestamp, pregame rationale, factors consulted, missing evidence, closing line, result, and later evaluation. Keep the factual result (UCLA covered) separate from the still-unproven hypothesis (UCLA was systematically undervalued or disproportionately faded).
+  - Workshop scope: identify the owner's required and optional signals; sport- and market-specific combinations; disqualifiers and contradiction rules; honest treatment of missing or stale evidence; grouping/ranking; default-visible detail versus drill-down; and account-level preferences.
+  - Desired experience: open Green Light and immediately see which teams or players align across the selected factors, which factors support them, which are missing, and which invalidate the idea. A compact summary such as “4 of 6 preferred signals aligned” may organize the evidence, but must not become an invented confidence score, guaranteed play, or template-side betting decision.
+  - Starting contract: [`green_light_preferences_contract.md`](green_light_preferences_contract.md). Reconcile the workshop decisions into that contract rather than creating a competing Green Light specification.
+  - Boundary: queued product design only. No implementation begins until the current deployment arc is finished and the workshop decisions are reviewed.
