@@ -59,8 +59,22 @@ master), `fix/bk-daily-f2-season-gate` `d2bf8b7` (by F2v2). Stale session branch
 1. ~~Finish and report the `b12eec3` gate~~ — **done, PASS** (receipt above).
 2. **Await review and deployment decision on `b12eec3`** ← current.
 3. If approved, deploy only `b12eec3` and obtain its production receipt.
-4. **Green Light Release 1 — truth & integrity** (spec frozen v1, plan Parts 3–4) → its production receipt.
-5. **Green Light Release 2 — convergence restoration + navigation** → its production receipt.
-6. Then resume the paused obligations one release at a time: Safeguard B → D11 → L1 → visuals/entity/disclosure → `bk-daily`.
+**Roadmap locked by owner 2026-11-07 (supersedes the order above where they differ):**
+- **ACTIVE:** `b12eec3` production acceptance — wait for the 2026-11-08 `bk-daily` receipt; close or remediate. Nothing else enters build.
+- **NEXT:** **Green Light Release 1** — repair the classic convergence board (kickoff/started-event exclusion, OUT/IR/PUP
+  availability, stale-evidence suppression, sportsbook + Book-updated/Observed-by-BK time attribution bound to one
+  offer, injury and movement joins, model hiding, all-overs warning) → production acceptance → **then restore classic
+  as the supported default** (`/tools/green-light`), workspace kept at an alternate entry (`?view=workspace`); nothing
+  deleted. The default switch (plan U1) moves into Release 1, gated on its production acceptance.
+- **PARALLEL GOVERNANCE (no release lane):** Decision Integrity Constitution — owner read → approve → version → freeze.
+- **PARALLEL DESIGN (no implementation, no probes, no build):** NCAAB Foundation design package, returned once as
+  one implementation-ready package.
+- **FOLLOWING IMPLEMENTATION:** NCAAB Foundation (teams, events, books, lines, prices, scores, per-book grading,
+  movement, slate/matchup/team pages).
+- **OWNER DECISION after that:** Green Light Release 2 (ATS/Wave rebuild, connections, slate-by-game spec) **or**
+  Decision Integrity Phase 2.
+- **PARKED:** everything else (Safeguard B, D11, L1, visuals/entity/disclosure, `bk-daily` fixes, Research
+  Candidate, runtime pilot, …) — each rebuilt on current master when its turn comes.
+- **Rule:** an item not in this table does not enter implementation.
 6. Decision Integrity Constitution final approval + freeze.
 7. NCAAB Foundation Release design + acceptance plan (no NCAAB implementation until approved).

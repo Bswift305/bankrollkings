@@ -154,6 +154,13 @@ CFBD allowance itself, King's Tickets draft storage.
    - **Release 2 — Restoration & usability (only after Release 1's production receipt):** D2 rebuild NFL Wave page
      and Matchup Center ATS module on current factual (active-run) data; U1 convergence board becomes the default;
      U2 connect Matchup Center, Player Check, Best Lines and Period Board; U3 proposed-ticket labelling.
+5a. **Amendment (owner, 2026-11-07, roadmap lock):** U1 (classic becomes the default `/tools/green-light`;
+   workspace at `?view=workspace`; nothing deleted) moves **into Release 1**, applied only after Release 1's
+   integrity changes pass production acceptance. Release 2 keeps D2, U2, U3 and the slate-by-game spec, and now
+   follows NCAAB Foundation (owner chooses GL R2 vs Decision Integrity Phase 2 at that point).
+5b. **Freshness basis for Release 1 quotes:** show both "Book updated" (`SourceUpdatedAtUTC`) and "Observed by BK"
+   (`FetchedAtUTC` where present), never merged or substituted; freshness for NFL props follows the props feed's
+   current rule until the L3 migration lands (Release 1 does not perform L3).
 6. **Separate dependencies, never blockers of honest handling:** CFB quota (D4), weather licence (D6), the NBA
    result from the 2026-11-08 `bk-daily` receipt (D5), and the missing `NFL_GameLines_History.csv` (D3). Until
    resolved they render as labelled Unavailable / stale with their true cause.
