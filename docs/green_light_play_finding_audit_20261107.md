@@ -2,7 +2,7 @@
 
 **Scope / rules.** Step 5 of the program reset, run while `b12eec3` is under production observation. Regression /
 restoration audit of the EXISTING experience — not a redesign. No code, merge, push, deploy, timer, paid request or
-refresh. Method: signed-in owner session on `https://bankrollkings.com` (prod = `b12eec3`), ~15:00–15:45 UTC Sat
+refresh. Method: signed-in owner session on `https://bankrollkings.com` (prod = `b12eec3`), ~14:54–15:04 UTC Sat
 2026-11-07 (NFL Week 9: TNF played; 14-game Sunday slate ahead). 86 sidebar/tool routes fetched (all HTTP 200),
 Green Light workspace rendered live with every lens expanded, classic board read, then targeted reads of the
 deployed code (`b12eec3`) to confirm root causes. Companion code/history input:
