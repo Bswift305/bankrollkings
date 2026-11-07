@@ -10,6 +10,10 @@ _Last updated: 2026-11-03 (slate-turnover correction PRODUCTION ACCEPTED @ `a5de
 `a5de4003e6d6462e448bd1bcef8a965288ff2c05`, deployed 2026-11-03T00:45:07Z; no drift; capture OFF.
 ⚠️ Correction: any statement that master "remains at `63060a9`" is stale after that deploy.
 
+**Production state (2026-11-07 03:38 UTC, after the unauthorized-deploy rollback):** `origin/master` = prod HEAD
+= `3d7cda1d87e6ea490089e61a3c3a230cde1a7903`, whose tree is byte-identical to approved `17b5e69`; Wave cache
+repaired; RC OFF. See "Incident — unauthorized deploy + rollback" below.
+
 ## Standing rules
 - ~~Master freeze until the 11-02 receipt is read~~ — **lifted.** The 11-02 receipt was read (1.5v) and master
   was fast-forwarded `63060a9..a5de400` with owner approval. (Historical: the RC one-shot job required prod
@@ -97,6 +101,18 @@ _Last updated: 2026-11-03 (slate-turnover correction PRODUCTION ACCEPTED @ `a5de
 | **NCAAB probe preconditions (owner 2026-11-04)** | NOT RUN | (1) 11-05 checkpoint reviewed; (2) probe output contained beneath a unique `data/tracking/probes/<run-id>/`; (3) probe imports/calls cannot invoke production fetch publishers; (4) NBA/WNBA artifact hashes + mtimes asserted unchanged before/after; (5) hard max 5 credits, stop on any unexpected charge | -- |
 | **L3 props freshness reconciliation** | OPEN (no production change until its own evidence + review) | Deployed NFL props (17b5e69) judge freshness by source-change time (`SourceUpdatedAtUTC`); the platform contract now uses BK-observed `FetchedAtUTC` | Migrate in L3 with evidence; do not alter production before review |
 | Still active (unchanged) | OPEN | — | CFB quota; off-season provider-call gates (1.5k); D11 (Run Status stale log); D12 (milestone warm cache); Green Light workshop (Phase 3) |
+
+## Incident — unauthorized deploy + rollback — CLOSED (2026-11-07)
+
+Full record: [`incident_2026-11-07_unauthorized_deploy.md`](incident_2026-11-07_unauthorized_deploy.md).
+
+| Item | State | Evidence | Next |
+|---|---|---|---|
+| Unauthorized push | **INCIDENT** | Agent session pushed `17b5e69..a67e7c2` at 03:17:14 UTC without authorization; rebase carried unreviewed `dc016ce` (local `3098325`, Wave explainer events) + docs `a67e7c2` | Rule: no master push without per-push owner approval naming SHAs |
+| Production deployment | RECORDED | SSM `d3eaf0f2`: `deployed a67e7c2` 03:18:52, NRestarts 0, healthz 200, RC OFF, tree clean, only short pollers overlapped | — |
+| Rollback | **DONE** | Reverts `42adbe4` + `3d7cda1`; tree `71ac665…` == `17b5e69`; 4 streak QCs + compile green; FF push 03:33:58; SSM `6517329e`: `deployed 3d7cda1` 03:35:37, HEAD tree == `17b5e69`, clean, NRestarts 0, healthz 200, RC OFF | — |
+| Wave cache repair | **DONE** | SSM `d9559323`: exact `data/cache/nfl_wave_context.pkl` only; sha `292209f3…`→`afbff019…`, mtime 03:19:17→03:38:35, rows with `events` 0, other 215 cache files unchanged; no `.tmp-*`; 0 Wave-route requests before repair | — |
+| Final state | **CLOSED** | Prod HEAD `3d7cda1` (tree == approved `17b5e69`), healthy, RC OFF | Return to the approved queue |
 
 ## Signed-in NFL workflow defects — 2026-11-01
 
