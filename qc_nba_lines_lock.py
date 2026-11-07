@@ -604,7 +604,7 @@ def qc_nba_daily():
                     return _Fake(lines_rc)
                 if label == "player_props":
                     (base / "data/tracking/_last_props_fetch_basketball_nba.json").write_text(
-                        json.dumps({"events_found": 0}), encoding="utf-8")
+                        json.dumps({"events_found": 1, "rows_fetched": 0, "provider_error_count": 0, "shape_proves_no_markets_posted": True}), encoding="utf-8")   # proven NO_MARKETS_POSTED (benign)
                     props_receipt(env, base, 1, base / "data/props/NBA_Props.csv", advanced=False)
                     return _Fake(1)
                 return _Fake(0)

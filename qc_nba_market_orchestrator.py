@@ -175,10 +175,12 @@ def stage_child(argv) -> int:
             return _lines_payload()
         fg.BASE_DIR, fg.get_json, fg.urlopen = base, get_json, no_net
         fg._QUOTA.print_receipt = lambda **k: (True, {})
-        fg.SPORT_OUTPUTS["basketball_nba"] = {
-            "odds": base / "data" / "odds" / "NBA_Odds.csv",
-            "schedules": base / "data" / "schedules" / "NBA_Odds.csv",
-            "schedule_alias": base / "data" / "schedules" / "NBA_Schedule.csv"}
+        # Safeguard A: every output path derives from fg.BASE_DIR at call time (no SPORT_OUTPUTS table, no
+        # fallback). Refuse to run unless every resolved NBA path sits inside this fixture's temp base.
+        _paths = fg.resolve_sport_paths("basketball_nba")
+        if not all(v is None or Path(v).resolve().is_relative_to(Path(base).resolve())
+                   for k, v in _paths.items() if k not in ("sport", "tracking_prefix")):
+            raise SystemExit(f"fixture paths escaped the temp base: {_paths}")
         return int(fg.main(list(stage_args) + ["--api-key", "qc-offline", "--skip-line-movement"]))
     import fetch_player_props as fp
 
@@ -188,7 +190,10 @@ def stage_child(argv) -> int:
             {"id": EVENT_ID, "commence_time": _commence(), "home_team": HOME, "away_team": AWAY}]
     fp.BASE_DIR, fp.get_json, fp.urlopen = base, get_json_p, no_net
     fp._QUOTA.print_receipt = lambda **k: (True, {})
-    fp.SPORT_OUTPUTS["basketball_nba"] = base / "data" / "props" / "NBA_Props.csv"
+    _ppaths = fp.resolve_sport_paths("basketball_nba")
+    if not all(v is None or Path(v).resolve().is_relative_to(Path(base).resolve())
+               for k, v in _ppaths.items() if k != "sport"):
+        raise SystemExit(f"fixture paths escaped the temp base: {_ppaths}")
     return int(fp.main(list(stage_args) + ["--api-key", "qc-offline"]))
 
 

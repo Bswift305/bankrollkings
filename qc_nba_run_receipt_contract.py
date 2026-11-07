@@ -304,6 +304,7 @@ CALLER_INVENTORY = {
     "marketing/generators/weekly_cards.py": "NOT_NBA: fetch_game_lines --sport americanfootball_nfl",
     "app.py": "TEXT_ONLY: comments", "fetch_ncaaf_slate_cfbd.py": "TEXT_ONLY: docstring",
     "fetch_game_lines.py": "TEXT_ONLY: usage text (the entry point itself)",
+    "services/fetch_sport_guard.py": "TEXT_ONLY: docstring (Safeguard A defect history names the fetchers)",
     "fetch_player_props.py": "TEXT_ONLY: usage text (the entry point itself)",
     "services/nba_lines_publisher.py": "TEXT_ONLY: docstring (the publisher itself)",
     "services/nba_props_publisher.py": "TEXT_ONLY: docstring (the publisher itself)",

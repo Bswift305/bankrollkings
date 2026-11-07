@@ -56,6 +56,8 @@ def _sha(p):
 class _Fake:
     def __init__(self, code):
         self.returncode = code
+        self.stdout = ""   # the line-movement runner captures child output (Safeguard A markers)
+        self.stderr = ""
 
 
 def qc_vocabulary():
@@ -236,7 +238,7 @@ def qc_nba_daily():
                     return _Fake(lines_rc)
                 if label == "player_props":
                     (base / "data/tracking/_last_props_fetch_basketball_nba.json").write_text(
-                        json.dumps({"events_found": 0}), encoding="utf-8")
+                        json.dumps({"events_found": 1, "rows_fetched": 0, "provider_error_count": 0, "shape_proves_no_markets_posted": True}), encoding="utf-8")   # proven NO_MARKETS_POSTED (benign)
                     props_receipt(env, base, 1, base / "data/props/NBA_Props.csv", advanced=False)
                     return _Fake(1)
                 return _Fake(0)
@@ -302,13 +304,13 @@ def qc_line_movement():
             return rc, buf.getvalue()
 
         rc, text = drive({"baseball_mlb": (1, "SCHEDULE_UNAVAILABLE"), "basketball_wnba": (0, "UPDATED")})
-        check(rc == 1 and "outcome=SCHEDULE_UNAVAILABLE" in text and "All line-movement snapshots captured" not in text,
+        check(rc == 2 and "outcome=SCHEDULE_UNAVAILABLE" in text and "All line-movement snapshots captured" not in text,
               "line-movement: SCHEDULE_UNAVAILABLE -> FAILED, never 'All ... captured'")
         rc, text = drive({"baseball_mlb": (1, "NO_GAMES_SCHEDULED"), "basketball_wnba": (0, "UPDATED")})
-        check(rc == 1 and "SKIPPED (benign)" not in text,
+        check(rc == 2 and "SKIPPED (benign)" not in text,
               "line-movement: an UNGOVERNED NO_GAMES_SCHEDULED receipt -> FAILED (governed-only rule)")
         rc, text = drive({"baseball_mlb": (0, "VALIDATION_FAILED"), "basketball_wnba": (0, "UPDATED")})
-        check(rc == 1 and "All line-movement snapshots captured" not in text,
+        check(rc == 2 and "All line-movement snapshots captured" not in text,
               "line-movement: exit 0 with a fresh VALIDATION_FAILED receipt -> FAILED, never OK")
 
 

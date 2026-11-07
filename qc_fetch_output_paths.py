@@ -289,7 +289,8 @@ def check_positive_control():
     print("--- C. positive control: a configured sport writes ONLY its own files ---")
     for name, mod, sport, fake, own_prefixes in (
             ("fetch_game_lines", fgl, "basketball_wnba", fake_lines_json,
-             ("data/odds/WNBA_", "data/schedules/WNBA_", "data/tracking/WNBA_")),
+             ("data/odds/WNBA_", "data/schedules/WNBA_", "data/tracking/WNBA_",
+              "data/tracking/_last_game_lines_fetch_basketball_wnba")),   # v6: its own per-run lines receipt
             ("fetch_player_props", fpp, "basketball_wnba", fake_props_json,
              ("data/props/WNBA_", "data/tracking/WNBA_", "data/tracking/_last_props_fetch_basketball_wnba"))):
         with tempfile.TemporaryDirectory() as td:
@@ -365,14 +366,23 @@ def check_static():
         ok("require_configured_sport" in src and "report_unconfigured" in src,
            f"{path.name}: main/tokens route through the fail-closed guard")
         tree = ast.parse(src)
-        main = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main")
-        first = {}
-        for c in ast.walk(main):
-            if isinstance(c, ast.Call) and isinstance(c.func, ast.Name):
-                first[c.func.id] = min(first.get(c.func.id, c.lineno), c.lineno)
-        ok("resolve_sport_paths" in first and "get_api_key" in first
-           and first["resolve_sport_paths"] < first["get_api_key"],
-           f"{path.name}: main resolves the sport BEFORE reading the API key / any request")
+        # NBA v6 + Safeguard A: main() refuses an unconfigured sport FIRST (before the publisher lock, any
+        # request or write) and hands off to run_fetch(), which re-resolves the sport before reading the API key.
+        funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+
+        def _first_calls(fn):
+            first = {}
+            for c in ast.walk(fn):
+                name = c.func.id if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) else (
+                    c.func.attr if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute) else None)
+                if name:
+                    first[name] = min(first.get(name, c.lineno), c.lineno)
+            return first
+        m, r = _first_calls(funcs["main"]), _first_calls(funcs["run_fetch"])
+        ok("resolve_sport_paths" in m and all(m["resolve_sport_paths"] < m[k] for k in ("publish", "run_fetch", "get_api_key") if k in m),
+           f"{path.name}: main resolves the sport BEFORE the publisher, run_fetch or any API-key read")
+        ok("resolve_sport_paths" in r and "get_api_key" in r and r["resolve_sport_paths"] < r["get_api_key"],
+           f"{path.name}: run_fetch resolves the sport BEFORE reading the API key / any request")
     # scanner self-test: the exact pre-fix line and the props variant must be caught
     legacy = ("def main():\n    defaults = SPORT_OUTPUTS.get(sport, SPORT_OUTPUTS[DEFAULT_SPORT])\n"
               "    markets = SPORT_DEFAULT_MARKETS.get(sport, SPORT_DEFAULT_MARKETS[DEFAULT_SPORT])\n"

@@ -53,6 +53,8 @@ def check(cond, msg):
 class _R:
     def __init__(self, rc):
         self.returncode = rc
+        self.stdout = ""   # the line-movement runner captures child output (Safeguard A markers)
+        self.stderr = ""
 
 
 def _write(path: Path, payload: dict):
@@ -114,11 +116,11 @@ def main() -> int:
         seq = [
             ((0, "UPDATED", "own"), 0, "OK"),
             # governed-only rule: a zero-event provider answer / an ungoverned no-game claim is a FAILURE
-            ((1, "NO_ACTIVE_EVENTS", "own"), 1, "FAILED"),
-            ((1, "NO_GAMES_SCHEDULED", "own"), 1, "FAILED"),
-            ((0, "VALIDATION_FAILED", "own"), 1, "FAILED"),
-            ((1, "SCHEDULE_UNAVAILABLE", "own"), 1, "FAILED"),
-            ((1, "NO_ACTIVE_EVENTS", "own"), 1, "FAILED"),
+            ((1, "NO_ACTIVE_EVENTS", "own"), 2, "FAILED"),
+            ((1, "NO_GAMES_SCHEDULED", "own"), 2, "FAILED"),
+            ((0, "VALIDATION_FAILED", "own"), 2, "FAILED"),
+            ((1, "SCHEDULE_UNAVAILABLE", "own"), 2, "FAILED"),
+            ((1, "NO_ACTIVE_EVENTS", "own"), 2, "FAILED"),
             ((0, "UPDATED", "own"), 0, "OK"),
         ]
         for step, want_rc, want in seq:
@@ -129,15 +131,15 @@ def main() -> int:
         check(mt == FIXED_MTIME, "I1 every MLB receipt write had the SAME mtime (the old freshness test is blind)")
         # I2
         rc, mlb, _ = _drive(lm, base, {"baseball_mlb": (1, None, "own"), W[0]: W[1]})
-        check(rc == 1 and "RUN_RECEIPT_MISMATCH" in mlb and "SKIPPED" not in mlb,
+        check(rc == 2 and "RUN_RECEIPT_MISMATCH" in mlb and "SKIPPED" not in mlb,
               "I2 child wrote nothing, an older receipt (previous token) remains -> RUN_RECEIPT_MISMATCH, failure")
         (base / "data/tracking/_last_game_lines_fetch_baseball_mlb.json").unlink()
         rc, mlb, _ = _drive(lm, base, {"baseball_mlb": (0, None, "own"), W[0]: W[1]})
-        check(rc == 1 and "RUN_RECEIPT_MISSING" in mlb, "I2 no receipt at all, even with exit 0 -> RUN_RECEIPT_MISSING")
+        check(rc == 2 and "RUN_RECEIPT_MISSING" in mlb, "I2 no receipt at all, even with exit 0 -> RUN_RECEIPT_MISSING")
         rc, mlb, _ = _drive(lm, base, {"baseball_mlb": (1, "NO_ACTIVE_EVENTS", "other"), W[0]: W[1]})
-        check(rc == 1 and "RUN_RECEIPT_MISMATCH" in mlb, "I2 another writer's benign receipt is never adopted")
+        check(rc == 2 and "RUN_RECEIPT_MISMATCH" in mlb, "I2 another writer's benign receipt is never adopted")
         rc, mlb, _ = _drive(lm, base, {"baseball_mlb": (0, "UPDATED", "none"), W[0]: W[1]})
-        check(rc == 1 and "RUN_RECEIPT_MISMATCH" in mlb, "I2 a tokenless legacy receipt never decides the outcome")
+        check(rc == 2 and "RUN_RECEIPT_MISMATCH" in mlb, "I2 a tokenless legacy receipt never decides the outcome")
 
         # M -- the old mtime classifier on the same identical-mtime sequence misclassifies
         p = base / "data/tracking/_last_game_lines_fetch_baseball_mlb.json"

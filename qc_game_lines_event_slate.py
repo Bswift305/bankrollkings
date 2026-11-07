@@ -333,7 +333,7 @@ def qc_scope():
           "scope: GAME_LINES_SPEC unchanged (whole-file contract) for every non-NBA sport")
     import fetch_game_lines as fg
     check(fg.EVENT_AWARE_GAME_LINES_SPORTS == frozenset({"basketball_nba"})
-          and all(fg._event_spec_for(s) is None for s in fg.SPORT_OUTPUTS if s != "basketball_nba")
+          and all(fg._event_spec_for(s) is None for s in fg.SPORT_PATHS if s != "basketball_nba")
           and fg._event_spec_for("basketball_nba") is NBA_GAME_LINES_EVENT_SPEC,
           "scope: only basketball_nba is an event-aware game-lines consumer")
     cols = list(fg.build_dataframe([fg.parse_event_markets(_event("x", FUT), _event("x", FUT)["bookmakers"][0])]).columns)
@@ -344,6 +344,8 @@ def qc_scope():
 class _Fake:
     def __init__(self, code):
         self.returncode = code
+        self.stdout = ""   # the line-movement runner captures child output (Safeguard A markers)
+        self.stderr = ""
 
 
 def qc_orchestration():
@@ -378,8 +380,9 @@ def qc_orchestration():
                     return _Fake(lines_rc)
                 if label == "player_props":
                     (base / "data/tracking/_last_props_fetch_basketball_nba.json").write_text(json.dumps(
-                        {"events_found": 0}), encoding="utf-8")
-                    # a real NO_ACTIVE_EVENTS props child exits 1 (benign only by its receipt)
+                        PROPS_SHAPE[0]), encoding="utf-8")
+                    # the props child exits 1; only its shape receipt classifies it (NO_MARKETS_POSTED is benign,
+                    # NO_ACTIVE_EVENTS -- zero provider events -- is degraded under the frozen 2026-11-07 rule)
                     props_receipt(env, base, 1, nba.PROPS_ARTIFACT, advanced=False)
                     return _Fake(1)
                 return _Fake(0)
@@ -395,6 +398,7 @@ def qc_orchestration():
             side = json.loads(sc.read_text(encoding="utf-8")) if sc.exists() else {}
             return rc, ran, side, buf.getvalue()
 
+    PROPS_SHAPE = [{"events_found": 0}]
     rc, ran, side, text = drive(1)
     dependent = {l for l in labels if nba.STEP_LINES_DEPENDENCY[l][0]}
     independent = [l for l in labels if not nba.STEP_LINES_DEPENDENCY[l][0] and l != "game_lines"]
@@ -404,9 +408,15 @@ def qc_orchestration():
     check(all(outs.get(l) == "SKIPPED_BLOCKED_BY_LINES" for l in dependent) and outs.get("game_lines") == "VALIDATION_FAILED"
           and side.get("degraded") is True and "DEGRADED" in text,
           f"dependents report SKIPPED_BLOCKED_BY_LINES; run DEGRADED/non-zero ({outs})")
+    PROPS_SHAPE[0] = {"events_found": 1, "rows_fetched": 0, "provider_error_count": 0, "shape_proves_no_markets_posted": True}
     rc_ok, ran_ok, side_ok, _ = drive(0)
-    check(rc_ok == 0 and ran_ok == labels and side_ok.get("outcomes", {}).get("player_props") == "NO_ACTIVE_EVENTS",
-          "lines OK: full chain runs in order, props soft-outcome semantics unchanged (benign -> rc 0)")
+    check(rc_ok == 0 and ran_ok == labels and side_ok.get("outcomes", {}).get("player_props") == "NO_MARKETS_POSTED",
+          "lines OK: full chain runs in order; a PROVEN NO_MARKETS_POSTED props child is benign -> rc 0")
+    PROPS_SHAPE[0] = {"events_found": 0}
+    rc_z, ran_z, side_z, _ = drive(0)
+    check(rc_z >= 2 and ran_z == labels and side_z.get("outcomes", {}).get("player_props") == "NO_ACTIVE_EVENTS"
+          and side_z.get("degraded") is True,
+          f"lines OK + zero-event props (NO_ACTIVE_EVENTS) -> DEGRADED, hard exit >=2, never benign (rc={rc_z})")
 
 
 def qc_line_movement():
@@ -437,18 +447,18 @@ def qc_line_movement():
             return rc, buf.getvalue()
 
         rc, text = drive({"baseball_mlb": (1, None), "basketball_wnba": (0, "UPDATED")})
-        check(rc == 1 and "FAILED" in text.split("[MLB game lines]")[1].split("[WNBA")[0],
+        check(rc == 2 and "FAILED" in text.split("[MLB game lines]")[1].split("[WNBA")[0],
               "line-movement: exit 1 with no receipt proof -> FAILED, job non-zero (never OK)")
         rc, text = drive({"baseball_mlb": (1, "VALIDATION_FAILED"), "basketball_wnba": (0, "UPDATED")})
-        check(rc == 1 and "outcome=VALIDATION_FAILED" in text, "line-movement: validation reject -> FAILED, never OK")
+        check(rc == 2 and "outcome=VALIDATION_FAILED" in text, "line-movement: validation reject -> FAILED, never OK")
         rc, text = drive({"baseball_mlb": (1, "NO_ACTIVE_EVENTS"), "basketball_wnba": (0, "UPDATED")})
-        check(rc == 1 and "SKIPPED (benign)" not in text and "All line-movement snapshots captured" not in text,
+        check(rc == 2 and "SKIPPED (benign)" not in text and "All line-movement snapshots captured" not in text,
               "line-movement: NO_ACTIVE_EVENTS (zero-event provider answer) -> FAILED, never a benign skip")
         # a STALE NO_ACTIVE_EVENTS receipt from an earlier run must not excuse this run's failure
         rc, text = drive({"baseball_mlb": (1, None), "basketball_wnba": (0, "UPDATED")})
-        check(rc == 1, "line-movement: an old NO_ACTIVE_EVENTS receipt cannot excuse a new failure")
+        check(rc == 2, "line-movement: an old NO_ACTIVE_EVENTS receipt cannot excuse a new failure")
         rc, text = drive({"baseball_mlb": (2, "VALIDATION_FAILED"), "basketball_wnba": (0, "UPDATED")})
-        check(rc == 1, "line-movement: any other non-zero exit -> FAILED")
+        check(rc == 2, "line-movement: any other non-zero exit -> FAILED")
 
 
 # ------------------------------------------------------------------------------------------------ containment
