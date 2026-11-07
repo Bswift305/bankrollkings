@@ -158,6 +158,41 @@ CFBD allowance itself, King's Tickets draft storage.
    result from the 2026-11-08 `bk-daily` receipt (D5), and the missing `NFL_GameLines_History.csv` (D3). Until
    resolved they render as labelled Unavailable / stale with their true cause.
 
+## Part 4 — Proposed owner workflow (PROPOSED 2026-11-07; awaiting owner confirmation; no implementation until confirmed AND `b12eec3` closes)
+
+1. **Default = today's slate grouped by game**, each game's converging plays beneath it. Secondary **"Top Plays"**
+   view sorts plays by agreement count.
+2. **Lenses = governed factual evidence only.** Injuries, line movement, ATS trends, matchup history, usage and
+   milestone streaks may support or contradict a play **only when current, governed and directionally relevant**.
+   Weather is context unless a defined rule connects it to the market. **Missing or stale data never counts toward
+   agreement.**
+3. **Every play shows three categories:** Supporting · Contradicting · Missing/unknown.
+4. **Statuses:** an important unknown does not hide a play but caps it at **"Incomplete — Review Required"** (never
+   the strongest status). **Hard blockers ⇒ play unavailable:** started event, stale or unpriced quote, ruled-out
+   player, unresolved identity.
+5. **Price:** best governed quote first, FanDuel directly underneath; each with sportsbook, line, price, source time
+   and freshness from one offer — never a line from one book with another's price.
+6. **Play → ticket (eventually):** selecting a play places the exact governed offer into a ticket tray/editor. Release
+   1 stays research-only; the handoff belongs to Release 2 after ticket integrity and storage are ready. No silent
+   repricing or leg removal.
+7. **Sports:** NFL first; CFB (incl. game-level spreads/totals) only after its data is restored and proven current.
+8. **Agreement is a count with named evidence, never a confidence score** — e.g. "Supported by 4 of 6 available
+   lenses", listing each lens; no percentage, no composite.
+
+**Design notes for confirmation (not decisions):**
+- Item 2 expands what counts toward convergence (today: Opportunity, Matchup, Game Identity, Coaching; Concentration =
+  TD corroborator). Each newly counting lens needs a written lens contract — source, freshness budget, direction rule
+  (what makes it *support* vs *contradict* an over/under), governance status — before it may count. Until then it is
+  shown as context only. Changing what counts changes membership ⇒ `BOARD_VERSION` bump and a fresh attribution
+  series (old and new counts are not comparable).
+- "Of N available lenses": N = lenses that are current and applicable to that play's market; a missing lens appears
+  under Missing/unknown, never silently shrinks N without being listed.
+- "Important unknown" needs a defined list (proposed: injury feed stale, quote age near the freshness limit, line
+  movement unavailable for the game, lineup/role unresolved). Owner to confirm.
+- Fit with the release split: R1 (truth/integrity) already delivers the hard blockers, quote display and honest
+  unavailable states; the slate-by-game layout, Top Plays view, three-category evidence display, Incomplete status,
+  new counting lenses and ticket handoff fall in Release 2 (or a later release if the lens contracts are not ready).
+
 ### Open owner decisions (needed before BUILD) — RESOLVED 2026-11-07 (see Part 3)
 1. T7 per surface: hide, or show inside a labelled "unqualified model" container? And whether NFL Board / Game Board
    keep membership by model at all once quarantined (proposed: no — neutral kickoff order, all games listed).
