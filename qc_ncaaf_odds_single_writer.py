@@ -731,7 +731,8 @@ fgl_src = (REPO / FGL).read_text(encoding="utf-8")
 SECOND_IN_FGL = """
 
 def _second_writer(df):
-    atomic_write_csv_set([(df, SPORT_OUTPUTS["americanfootball_ncaaf"]["odds"], {"index": False})])
+    # Safeguard A: the path table is SPORT_PATHS (SPORT_OUTPUTS, with its NBA fallback, no longer exists)
+    atomic_write_csv_set([(df, SPORT_PATHS["americanfootball_ncaaf"]["odds"], {"index": False})])
 """
 mp, *_ = inventory(GROUPS["odds_api"]["names"], override={FGL: fgl_src + SECOND_IN_FGL})
 ok((FGL, "_second_writer") in mp and (FGL, "run_fetch") in mp,
