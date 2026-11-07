@@ -14,6 +14,8 @@ _Last updated: 2026-11-03 (slate-turnover correction PRODUCTION ACCEPTED @ `a5de
 = `3d7cda1d87e6ea490089e61a3c3a230cde1a7903`, whose tree is byte-identical to approved `17b5e69`; Wave cache
 repaired; RC OFF. See "Incident — unauthorized deploy + rollback" below.
 
+> **PROGRAM RESET 2026-11-07 (owner).** The authoritative program table — one stage per item, exact SHAs, remaining acceptance, file overlap, disposition — is [`PROGRAM_TABLE.md`](PROGRAM_TABLE.md). One release candidate at a time; the active candidate is `b12eec3` (awaiting owner review). All other implementation branches are PAUSED (not deleted, merged, rebased or advanced).
+
 ## Standing rules
 - ~~Master freeze until the 11-02 receipt is read~~ — **lifted.** The 11-02 receipt was read (1.5v) and master
   was fast-forwarded `63060a9..a5de400` with owner approval. (Historical: the RC one-shot job required prod
