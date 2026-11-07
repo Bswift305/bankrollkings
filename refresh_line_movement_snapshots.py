@@ -22,7 +22,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from services import run_receipts
+from services import linemove_status, run_receipts
 from services.run_outcomes import (BENIGN_LINES_NONPUBLISH, CONFIG_MISSING, EXIT_HARD_FAILURE, EXIT_OK,
                                    RUN_RECEIPT_MISMATCH, RUN_RECEIPT_MISSING, governed_lines_nonpublish,
                                    is_exact_int, typed_hard_failure)
@@ -102,26 +102,27 @@ def classify_step(returncode: int, sport: str, run_token: str, output: str = "")
     return "FAILED", f"exit {returncode}, this invocation's receipt proves no benign cause"
 
 
-SUMMARY_NAME = "Last_LineMovement_Summary.json"
-
-
-def _write_summary(step_rows: list[dict], exit_code: int) -> None:
-    """Machine-readable result of THIS run for Run Status (generate_run_status._linemove_signals). Gitignored
-    data/tracking/, atomic temp+replace. Best effort: a write failure is printed, never hides the exit code."""
-    path = BASE_DIR / "data" / "tracking" / SUMMARY_NAME
+def _publish_summary(invocation_id: str, step_rows: list[dict], exit_code: int) -> bool:
+    """Publish THIS invocation's summary through the governed, durable status store (services.linemove_status).
+    MANDATORY: returns False on ANY failure (location, permission, write, replace, fsync, read-back), and the
+    caller then exits 2 even when every child succeeded. A failure also tries to mark this invocation
+    PUBLICATION_FAILED so Run Status degrades at once (and never reports an older summary as current)."""
     payload = {
+        "invocation_id": invocation_id,
         "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "exit_code": int(exit_code),
         "steps": step_rows,
         "failed_steps": [r["label"] for r in step_rows if r["status"] != "OK" and not r["status"].startswith("SKIPPED_")],
     }
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(f".json.tmp-{os.getpid()}")
-        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        os.replace(tmp, path)
-    except OSError as exc:
-        print(f"[WARN] could not write {SUMMARY_NAME}: {exc}")
+        path = linemove_status.publish(linemove_status.SUMMARY_FILE, payload)
+    except Exception as exc:   # noqa: BLE001 -- ANY failure (incl. a non-OSError) is a publication failure
+        marked = linemove_status.mark_publication_failed(invocation_id, str(exc))
+        print(f"FAILED: line-movement summary NOT published ({exc}); invocation marked PUBLICATION_FAILED="
+              f"{marked}. Exiting 2 (no internal failure may be hidden).")
+        return False
+    print(f"Run summary published: {path.name} (invocation {invocation_id[:8]})")
+    return True
 
 
 def main() -> int:
@@ -130,6 +131,15 @@ def main() -> int:
     print("=" * 60)
     print("BANKROLL KINGS - LINE MOVEMENT SNAPSHOT CAPTURE")
     print("=" * 60)
+    invocation_id = linemove_status.new_invocation_id()
+    try:
+        # FIRST: bind Run Status to THIS invocation. If even the marker cannot be published durably and safely,
+        # refuse to run (no provider call) and exit 2 -- the run's result could never be reported honestly.
+        linemove_status.begin(invocation_id)
+    except Exception as exc:   # noqa: BLE001 -- ANY failure to bind this invocation refuses the run
+        print(f"FAILED: cannot publish the line-movement invocation marker ({exc}). No step run; exit 2.")
+        return EXIT_HARD_FAILURE
+    print(f"Invocation {invocation_id}")
     for label, command, timeout, sport in STEPS:
         print(f"\n[{label}]")
         run_token = run_receipts.new_token()          # identifies THIS invocation's receipt (never mtime)
@@ -172,12 +182,28 @@ def main() -> int:
         # Frozen 2026-11-07: this runner exits ONLY 0 (every step OK or a governed skip) or 2 (any failure).
         # It never returns 1, so prod bk-linemove.service's SuccessExitStatus=1 can never read a failure as
         # SUCCESS (a governed skip is reported as 0 with its reason printed above, not as a 1).
-        _write_summary(step_rows, EXIT_HARD_FAILURE)
+        _publish_summary(invocation_id, step_rows, EXIT_HARD_FAILURE)
         return EXIT_HARD_FAILURE
+    if not _publish_summary(invocation_id, step_rows, EXIT_OK):
+        return EXIT_HARD_FAILURE          # every child succeeded, but the result could not be published
     print("All line-movement snapshots captured.")
-    _write_summary(step_rows, EXIT_OK)
     return EXIT_OK
 
 
+
+
+def _entry() -> int:
+    """Process entry: an UNCAUGHT exception would make Python exit 1, which prod bk-linemove's
+    SuccessExitStatus=1 reads as SUCCESS. Any unexpected exception is therefore a hard failure, exit 2."""
+    try:
+        code = main()
+    except Exception:   # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        print("FAILED: unexpected exception in the line-movement runner; exit 2.")
+        return EXIT_HARD_FAILURE
+    return code if code in (EXIT_OK, EXIT_HARD_FAILURE) else EXIT_HARD_FAILURE
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_entry())

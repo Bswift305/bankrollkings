@@ -188,18 +188,32 @@ LINEMOVE_CASES = [
 ]
 
 
+def _status_dir() -> Path:
+    from services import linemove_status
+    return linemove_status.status_dir_spec()[0]
+
+
+def _read_summary() -> dict:
+    from services import linemove_status
+    p = _status_dir() / linemove_status.SUMMARY_FILE
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
 def run_linemove(root: Path, cmd: list[str], inject: bool, timeout: int = 60):
     tracking = root / "data" / "tracking"
-    for f in (tracking / f"_last_game_lines_fetch_{SPORT}.json", tracking / rlm.SUMMARY_NAME):
-        if f.exists():
+    rp = tracking / f"_last_game_lines_fetch_{SPORT}.json"
+    if rp.exists():
+        rp.unlink()
+    sd = _status_dir()                       # governed store under the QC-isolated BK_RUNTIME_DIR
+    if sd.exists():
+        for f in sd.iterdir():
             f.unlink()
     ctx = patched(ro, GOVERNED_SCHEDULE_CONTRACTS={QC_CONTRACT: "QC-only"}) if inject else contextlib.nullcontext()
     with ctx, patched(rlm, BASE_DIR=root, STEPS=[("WNBA game lines", cmd, timeout, SPORT)]):
         rc, out = quiet(rlm.main)
-    summary_path = tracking / rlm.SUMMARY_NAME
-    summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else {}
-    with patched(grs, LINEMOVE_SUMMARY_PATH=summary_path, _classify=lambda *a, **k: "FRESH",
-                 _odds_family_signals=lambda: ([], []), _operator_signals=lambda: ([], {})):
+    summary = _read_summary()
+    with patched(grs, _classify=lambda *a, **k: "FRESH", _odds_family_signals=lambda: ([], []),
+                 _operator_signals=lambda: ([], {})):
         reasons, _info = grs._linemove_signals()
         overall = grs.build_run_status()["overall"]
     step = (summary.get("steps") or [{}])[0]
@@ -255,6 +269,10 @@ def linemove_matrix(sink=None):
 def bk_daily_matrix(sink=None):
     """bk-daily: run_daily step -> exit -> systemd {0} -> Run Status, for the frozen typed failures."""
     import qc_fetch_exit_semantics as fes   # reuse Safeguard A's run_daily harness (no main() on import)
+    sd = _status_dir()      # isolate the bk-daily rows from the bk-linemove rows' governed status
+    if sd.exists():
+        for f in sd.iterdir():
+            f.unlink()
     specs = [
         ("CONFIG_MISSING child exit 2", 2, "OUTCOME: CONFIG_MISSING reason_code=CONFIG_MISSING key=ODDS_API_KEY",
          "FAIL", "CONFIG_MISSING"),

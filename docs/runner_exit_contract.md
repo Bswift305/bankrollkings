@@ -104,10 +104,29 @@ longer read a failure as success — the matrix models both the production unit 
 (`{0}`) and they agree on every row. The `SuccessExitStatus=1` line is now dead configuration; removing it is
 optional hardening that requires an SSM unit install (a production change, not part of this release).
 
-Run Status also no longer depends on systemd for this job: the runner writes
-`data/tracking/Last_LineMovement_Summary.json` (gitignored, atomic) and `generate_run_status._linemove_signals`
-reads it — any failed step, a non-zero runner exit, an unreadable summary, or a summary older than 8h →
-DEGRADED.
+Run Status also no longer depends on systemd for this job. The runner publishes its status through
+`services/linemove_status.py` (owner review of `d2187e5`, 2026-11-07):
+
+* **Location:** `<runtime root>/status/line_movement/` (`$BK_RUNTIME_DIR`, else the POSIX prod default; a QC
+  process is refused unless its runtime is isolated). Contained; the directory is created/verified 0700, never a
+  symlink, a loose mode repaired only when we own it, otherwise refused.
+* **Files:** `invocation.json` (published FIRST, state `RUNNING`, a fresh 32-hex `invocation_id`) and
+  `summary.json` (published LAST, same `invocation_id`). 0600, created `O_CREAT|O_EXCL|O_NOFOLLOW` under a unique
+  same-directory temp name, flushed + fsync'd, atomically replaced, parent directory fsync'd (POSIX), then read
+  back and verified. A target that is a symlink, not regular, hard-linked, foreign-owned or looser than 0600 is
+  refused, never written through.
+* **Mandatory:** if the marker cannot be published the runner exits 2 **before any child runs**; if the summary
+  cannot be published it exits 2 **even when every child succeeded** (and marks the invocation
+  `PUBLICATION_FAILED`, best effort). Any unexpected exception exits 2 — never Python's 1, which
+  `SuccessExitStatus=1` would read as success.
+* **Binding:** Run Status (`generate_run_status._linemove_signals` → `linemove_status.read_signals`) reads the
+  marker first. The summary describes the current run only when its `invocation_id` matches. A
+  `PUBLICATION_FAILED` marker is DEGRADED at once; a newer invocation with no summary is "in progress" for
+  `RUNNING_GRACE_SECONDS` (20 min) and DEGRADED after that. An older healthy summary is never reported as
+  current. An unsafe or unreadable status file, a bad invocation id, a failed step, a non-zero exit, or a run
+  older than 8h is also DEGRADED.
+
+Proven adversarially by `qc_linemove_status_persistence.py` (POSIX cases execute on Linux).
 
 Exit 1 survives only where it is fully governed and explicitly proven: a chain runner passes a child 1 through
 only when the child printed a GOVERNED claim (`runner_exit_for_child`); everything else maps to ≥2.

@@ -25,10 +25,9 @@ TRACKING_DIR = BASE_DIR / "data" / "tracking"
 JSON_PATH = TRACKING_DIR / "Run_Status.json"
 CSV_PATH = TRACKING_DIR / "Run_Status.csv"
 OPERATOR_SUMMARY_PATH = TRACKING_DIR / "Last_Operator_Summary.json"
-# bk-linemove (refresh_line_movement_snapshots.py) result of its last run. Its unit has SuccessExitStatus=1,
-# so systemd alone is not a trustworthy signal; Run Status reads the runner's own summary (frozen 2026-11-07).
-LINEMOVE_SUMMARY_PATH = TRACKING_DIR / "Last_LineMovement_Summary.json"
-LINEMOVE_MAX_AGE_HOURS = 8   # the timer runs every 4h; two missed runs is a missed refresh
+# bk-linemove (refresh_line_movement_snapshots.py): its unit has SuccessExitStatus=1, so systemd alone is not a
+# trustworthy signal. Run Status reads the runner's governed status store (services.linemove_status: invocation
+# marker + summary under the runtime root), bound to the LATEST invocation -- never an older summary by age.
 
 
 CHECKS = [
@@ -318,37 +317,11 @@ def _operator_signals() -> tuple[list[str], dict]:
 
 
 def _linemove_signals(now=None) -> tuple[list[str], dict]:
-    """DEGRADED reasons from the line-movement runner's own summary: any step that is not OK or a governed
-    SKIPPED_*, a non-zero runner exit, an unreadable summary, or a summary older than LINEMOVE_MAX_AGE_HOURS.
-    An absent summary (the job has never reported on this machine) is recorded, not invented as a failure."""
-    now = now or datetime.now(timezone.utc)
-    reasons: list[str] = []
-    if not LINEMOVE_SUMMARY_PATH.exists():
-        return reasons, {"reported": False}
-    try:
-        payload = json.loads(LINEMOVE_SUMMARY_PATH.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            raise ValueError("not an object")
-    except (OSError, ValueError) as exc:
-        return ["line-movement summary unreadable: " + type(exc).__name__], {"reported": True, "readable": False}
-    steps = payload.get("steps") or []
-    bad = [f"{r.get('label')}={r.get('status')}" for r in steps
-           if not (r.get("status") == "OK" or str(r.get("status") or "").startswith("SKIPPED_"))]
-    info = {"reported": True, "readable": True, "finished_at": payload.get("finished_at", ""),
-            "exit_code": payload.get("exit_code"), "failed_steps": bad}
-    if bad:
-        reasons.append("line-movement step(s) failed: " + ", ".join(bad))
-    if payload.get("exit_code") != 0 and not bad:
-        reasons.append(f"line-movement runner exit {payload.get('exit_code')!r} with no step detail")
-    try:
-        finished = datetime.fromisoformat(str(payload.get("finished_at")))
-        age_h = (now - finished).total_seconds() / 3600.0
-        info["age_hours"] = round(age_h, 2)
-        if age_h > LINEMOVE_MAX_AGE_HOURS:
-            reasons.append(f"line-movement job has not reported in {age_h:.1f}h (> {LINEMOVE_MAX_AGE_HOURS}h)")
-    except (TypeError, ValueError):
-        reasons.append("line-movement summary has no valid finished_at")
-    return reasons, info
+    """DEGRADED reasons for the line-movement job, bound to its latest invocation (services.linemove_status.
+    read_signals): a newer invocation without its own summary, a PUBLICATION_FAILED marker, an unsafe or
+    unreadable status file, a failed step, a non-zero exit, or a run older than the max age. Never raises."""
+    from services import linemove_status
+    return linemove_status.read_signals(now)
 
 
 def build_run_status() -> dict:
