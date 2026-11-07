@@ -125,7 +125,40 @@ restore + connections).** Data dependencies (D) run on their own tracks and gate
 New scoring, redesign, automatic picks, confidence numbers, Lens #8, NBA/NCAAB Green Light, weather licensing itself,
 CFBD allowance itself, King's Tickets draft storage.
 
-### Open owner decisions (needed before BUILD)
+## Part 3 — Owner decisions recorded 2026-11-07 (supersede Part 2 where they differ)
+
+**Still DESIGN. Nothing is built until the `b12eec3` production receipt closes.**
+
+1. **T7 = HIDE, not quarantine.** Every unregistered model output is removed from customer-facing factual and
+   play-finding surfaces. No customer-facing quarantine panel or label. Such outputs may appear **only** in an
+   owner-only research inventory that states, for each: *unregistered · discovery only · not validated · not used for
+   selection, ranking, Green Light, tickets or recommendations*. They must not select, rank, score, recommend or
+   influence Green Light (including the classic "Game Identity" certainty input if it is ever replaced by a model).
+2. **Visibility = facts only.** NFL Board and Game Board list **every eligible NFL game in kickoff order**; models
+   never decide visibility or order. Users apply factual filters themselves.
+3. **Prices = FanDuel + best governed-book quote.** Each quote shows sportsbook, line, price, source time
+   (`SourceUpdatedAtUTC`) and freshness, **bound to the same offer** (one row of one book). A line from one book is
+   never combined with a price from another. "Governed books" = the existing book policy (currently BetMGM,
+   DraftKings, FanDuel in the NFL feed) — confirm the list at BUILD.
+4. **Renames / removals:**
+   - Props "Model %" → **"Market-implied probability"** (if retained); "Fair" relabelled the same way or removed.
+   - Props **"Confidence" removed** (it is a rescaled market price, not independently governed) — including as a sort option.
+   - CFB "Model rates above / well below the line" → factual AP-poll wording (e.g. "AP poll: rising").
+   - **"opponent-adjusted" removed** wherever no opponent-adjustment dataset exists (CFB ATS tiers: `orank` is hard-coded).
+5. **Two releases, sequential:**
+   - **Release 1 — Truth & integrity:** T1 injury join, T2 line-move join/schema, T3 stale suppression, T4 honest
+     unavailable states, T5 "Validated" removal, T6 player-availability filtering, T7 hide ungoverned models +
+     model-free visibility (decision 2) + renames (decision 4), T8 all-overs warnings, C1/C2 sportsbook/time/freshness
+     attribution with FanDuel + best governed quote (decision 3), C3/C4 kickoff exclusion, C5/C6 fragile truth +
+     `BOARD_VERSION` bump. The convergence board stays at `?view=classic` during R1.
+   - **Release 2 — Restoration & usability (only after Release 1's production receipt):** D2 rebuild NFL Wave page
+     and Matchup Center ATS module on current factual (active-run) data; U1 convergence board becomes the default;
+     U2 connect Matchup Center, Player Check, Best Lines and Period Board; U3 proposed-ticket labelling.
+6. **Separate dependencies, never blockers of honest handling:** CFB quota (D4), weather licence (D6), the NBA
+   result from the 2026-11-08 `bk-daily` receipt (D5), and the missing `NFL_GameLines_History.csv` (D3). Until
+   resolved they render as labelled Unavailable / stale with their true cause.
+
+### Open owner decisions (needed before BUILD) — RESOLVED 2026-11-07 (see Part 3)
 1. T7 per surface: hide, or show inside a labelled "unqualified model" container? And whether NFL Board / Game Board
    keep membership by model at all once quarantined (proposed: no — neutral kickoff order, all games listed).
 2. C2: FanDuel-only price (current classic behaviour) vs FanDuel + best available book.
