@@ -67,9 +67,13 @@ def qc_vocabulary():
     check(ro.is_alerting("SOME_UNCLASSIFIED_OUTCOME") and ro.is_alerting(""),
           "an unknown / empty outcome string is alerting (fail closed)")
     check(not (ro.BENIGN & ro.ALERTING), "BENIGN and ALERTING are disjoint")
-    check(ro.BENIGN_LINES_NONPUBLISH == frozenset({ro.NO_ACTIVE_EVENTS, ro.NO_GAMES_SCHEDULED})
+    check(ro.BENIGN_LINES_NONPUBLISH == frozenset({ro.NO_GAMES_SCHEDULED})
+          and ro.NO_ACTIVE_EVENTS not in ro.BENIGN_LINES_NONPUBLISH
           and ro.SCHEDULE_UNAVAILABLE not in ro.BENIGN_LINES_NONPUBLISH,
-          "benign lines non-publish = {NO_ACTIVE_EVENTS, NO_GAMES_SCHEDULED}; SCHEDULE_UNAVAILABLE excluded")
+          "benign lines non-publish = {NO_GAMES_SCHEDULED} (governed-only); NO_ACTIVE_EVENTS + SCHEDULE_UNAVAILABLE excluded")
+    check(ro.GOVERNED_SCHEDULE_CONTRACTS == {} and not ro.governed_lines_nonpublish(
+              {"outcome": ro.NO_GAMES_SCHEDULED, "schedule_contract": "anything"}),
+          "no schedule contract is governed, so no lines no-game claim is benign on this branch")
     _, degraded = ro.aggregate_parent({"game_lines": ro.SCHEDULE_UNAVAILABLE})
     check(degraded, "a SCHEDULE_UNAVAILABLE child degrades its parent")
 
@@ -301,7 +305,8 @@ def qc_line_movement():
         check(rc == 1 and "outcome=SCHEDULE_UNAVAILABLE" in text and "All line-movement snapshots captured" not in text,
               "line-movement: SCHEDULE_UNAVAILABLE -> FAILED, never 'All ... captured'")
         rc, text = drive({"baseball_mlb": (1, "NO_GAMES_SCHEDULED"), "basketball_wnba": (0, "UPDATED")})
-        check(rc == 0 and "SKIPPED (benign)" in text, "line-movement: receipt-proven NO_GAMES_SCHEDULED -> benign skip")
+        check(rc == 1 and "SKIPPED (benign)" not in text,
+              "line-movement: an UNGOVERNED NO_GAMES_SCHEDULED receipt -> FAILED (governed-only rule)")
         rc, text = drive({"baseball_mlb": (0, "VALIDATION_FAILED"), "basketball_wnba": (0, "UPDATED")})
         check(rc == 1 and "All line-movement snapshots captured" not in text,
               "line-movement: exit 0 with a fresh VALIDATION_FAILED receipt -> FAILED, never OK")

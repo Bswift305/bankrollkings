@@ -10,7 +10,8 @@ prove "no markets" by themselves.
 
 The vocabulary (one honest state per child):
   UPDATED            artifact advanced with freshly fetched rows            benign
-  NO_ACTIVE_EVENTS   no events in the fetch window (off-season/between)      benign
+  NO_ACTIVE_EVENTS   no events in the fetch window (off-season/between)      benign for props children;
+                     a FAILURE for game lines (not a schedule contract -- see BENIGN_LINES_NONPUBLISH)
   NO_MARKETS_POSTED  events exist, PROVEN no requested market on any event   benign
   VALIDATION_FAILED  rows failed validation / 0 rows not proven benign       ALERTING
   PROVIDER_ERROR     the provider errored on one or more events              ALERTING
@@ -79,9 +80,29 @@ ALERTING = frozenset({VALIDATION_FAILED, PROVIDER_ERROR, STALE, SKIPPED_BLOCKED_
 # Lines-step outcomes that mean "a verified, current lines file is in place" (dependents may run).
 LINES_READY = frozenset({UPDATED, REUSED_FRESH, REUSED_FRESH_AFTER_LOCK})
 
-# Game-lines receipt outcomes that prove a benign NON-publish (nothing to fetch). Exit code alone can never
-# prove one; a receipt written by THIS run must. SCHEDULE_UNAVAILABLE is deliberately absent.
-BENIGN_LINES_NONPUBLISH = frozenset({NO_ACTIVE_EVENTS, NO_GAMES_SCHEDULED})
+# Game-lines receipt outcomes that can prove a benign NON-publish. Exit code alone can never prove one; a
+# receipt written by THIS run must, AND (owner governed-only rule, 2026-11-04) the no-game claim must come
+# from a GOVERNED schedule contract. NO_ACTIVE_EVENTS (the provider listed zero events) is deliberately
+# absent: a zero-event provider answer is not a schedule contract, so for game lines it is a FAILURE.
+# SCHEDULE_UNAVAILABLE is deliberately absent too. (Props-level NO_ACTIVE_EVENTS in BENIGN above is out of
+# this scope -- Safeguard A owns that vocabulary change.)
+BENIGN_LINES_NONPUBLISH = frozenset({NO_GAMES_SCHEDULED})
+
+# An authoritative schedule contract that may affirmatively say "no games" for game lines. NONE is governed
+# on this branch (services/nba_schedule_authority has no authoritative source; no writer emits
+# NO_GAMES_SCHEDULED). Same name/shape as Safeguard A's registry so the two branches reconcile onto one
+# table. A source is added here only after owner review.
+GOVERNED_SCHEDULE_CONTRACTS: dict[str, str] = {}
+
+
+def governed_lines_nonpublish(receipt: dict | None) -> bool:
+    """True only when a game-lines receipt claims a benign non-publish that is GOVERNED: outcome in
+    BENIGN_LINES_NONPUBLISH and its `schedule_contract` id listed in GOVERNED_SCHEDULE_CONTRACTS. Never true
+    for NO_ACTIVE_EVENTS; never true while no contract is governed."""
+    if not isinstance(receipt, dict):
+        return False
+    return (receipt.get("outcome") in BENIGN_LINES_NONPUBLISH
+            and str(receipt.get("schedule_contract") or "") in GOVERNED_SCHEDULE_CONTRACTS)
 
 
 def is_alerting(outcome: str) -> bool:

@@ -9,7 +9,8 @@ matching token (missing -> RUN_RECEIPT_MISSING, other/no token -> RUN_RECEIPT_MI
 
 Proves, offline (temp dirs; faked children; no network):
   I1 successive receipts with IDENTICAL mtimes (os.utime) classify exactly by content + token: UPDATED -> OK,
-     NO_ACTIVE_EVENTS / NO_GAMES_SCHEDULED (exit 1) -> benign skip, exit 0 + VALIDATION_FAILED -> FAILED,
+     only a GOVERNED NO_GAMES_SCHEDULED (exit 1) -> benign skip; NO_ACTIVE_EVENTS -> FAILED; exit 0 OK only on
+     outcome UPDATED + exit_code 0; exit 0 + VALIDATION_FAILED -> FAILED,
      SCHEDULE_UNAVAILABLE -> FAILED.
   I2 the child wrote nothing (an older receipt from a previous run is still there) -> RUN_RECEIPT_MISMATCH;
      no receipt at all -> RUN_RECEIPT_MISSING; a receipt carrying another writer's token -> MISMATCH; a
@@ -112,11 +113,12 @@ def main() -> int:
         # I1 -- one directory, successive drives, identical mtimes on every write
         seq = [
             ((0, "UPDATED", "own"), 0, "OK"),
-            ((1, "NO_ACTIVE_EVENTS", "own"), 0, "SKIPPED (benign)"),
-            ((1, "NO_GAMES_SCHEDULED", "own"), 0, "SKIPPED (benign)"),
+            # governed-only rule: a zero-event provider answer / an ungoverned no-game claim is a FAILURE
+            ((1, "NO_ACTIVE_EVENTS", "own"), 1, "FAILED"),
+            ((1, "NO_GAMES_SCHEDULED", "own"), 1, "FAILED"),
             ((0, "VALIDATION_FAILED", "own"), 1, "FAILED"),
             ((1, "SCHEDULE_UNAVAILABLE", "own"), 1, "FAILED"),
-            ((1, "NO_ACTIVE_EVENTS", "own"), 0, "SKIPPED (benign)"),
+            ((1, "NO_ACTIVE_EVENTS", "own"), 1, "FAILED"),
             ((0, "UPDATED", "own"), 0, "OK"),
         ]
         for step, want_rc, want in seq:
@@ -150,6 +152,52 @@ def main() -> int:
                 wrong += 1
         check(wrong == 3, f"M the previous mtime classifier misclassifies all 3 identical-mtime receipts ({wrong}/3) "
                           "-- this QC fails against it")
+
+    # I5 -- receipt-outcome contract (gate #2 finding #14) + governed-only no-game rule, classify_step direct
+    from services import run_outcomes as ro
+    check(ro.GOVERNED_SCHEDULE_CONTRACTS == {}, "I5 no schedule contract is governed on this branch (registry empty)")
+    check(ro.BENIGN_LINES_NONPUBLISH == frozenset({ro.NO_GAMES_SCHEDULED}),
+          "I5 benign lines non-publish = {NO_GAMES_SCHEDULED} only (NO_ACTIVE_EVENTS excluded)")
+    with tempfile.TemporaryDirectory(prefix="qc_linemove_outcome_") as td:
+        rp = Path(td) / "r.json"
+        saved_rp = lm._receipt_path
+        lm._receipt_path = lambda sport: rp
+        T = "t" * 32
+        try:
+            cases = [
+                ("exit 0, own receipt, outcome MISSING", 0, {"stage_run_id": T, "exit_code": 0}, "FAILED"),
+                ("exit 0, own receipt, outcome None", 0, {"stage_run_id": T, "outcome": None, "exit_code": 0}, "FAILED"),
+                ("exit 0, own receipt, UPDATED but exit_code MISSING", 0, {"stage_run_id": T, "outcome": "UPDATED"}, "FAILED"),
+                ("exit 0, own receipt, UPDATED but exit_code 1", 0, {"stage_run_id": T, "outcome": "UPDATED", "exit_code": 1}, "FAILED"),
+                ("exit 0, own receipt, UPDATED + exit_code 0", 0, {"stage_run_id": T, "outcome": "UPDATED", "exit_code": 0}, "OK"),
+                ("exit 1, own NO_ACTIVE_EVENTS", 1, {"stage_run_id": T, "outcome": "NO_ACTIVE_EVENTS", "exit_code": 1}, "FAILED"),
+                ("exit 1, own NO_GAMES_SCHEDULED, no contract", 1, {"stage_run_id": T, "outcome": "NO_GAMES_SCHEDULED", "exit_code": 1}, "FAILED"),
+                ("exit 1, own NO_GAMES_SCHEDULED, ungoverned contract", 1,
+                 {"stage_run_id": T, "outcome": "NO_GAMES_SCHEDULED", "exit_code": 1, "schedule_contract": "qc.fixture"}, "FAILED"),
+            ]
+            for name, rc_, rec, want in cases:
+                rp.write_text(json.dumps(rec), encoding="utf-8")
+                got = lm.classify_step(rc_, "baseball_mlb", T)[0]
+                check(got == want, f"I5 {name} -> {want} (got {got})")
+            # positive control: a GOVERNED contract (fixture-only registration) is the ONLY benign path
+            ro.GOVERNED_SCHEDULE_CONTRACTS["qc.fixture"] = "QC fixture only"
+            try:
+                rp.write_text(json.dumps({"stage_run_id": T, "outcome": "NO_GAMES_SCHEDULED", "exit_code": 1,
+                                          "schedule_contract": "qc.fixture"}), encoding="utf-8")
+                got = lm.classify_step(1, "baseball_mlb", T)[0]
+                check(got == "SKIPPED_NO_GAMES_SCHEDULED", f"I5 governed NO_GAMES_SCHEDULED -> benign skip (got {got})")
+                rp.write_text(json.dumps({"stage_run_id": T, "outcome": "NO_ACTIVE_EVENTS", "exit_code": 1,
+                                          "schedule_contract": "qc.fixture"}), encoding="utf-8")
+                got = lm.classify_step(1, "baseball_mlb", T)[0]
+                check(got == "FAILED", f"I5 NO_ACTIVE_EVENTS is never benign, even naming a governed contract (got {got})")
+                rp.write_text(json.dumps({"stage_run_id": T, "outcome": "NO_GAMES_SCHEDULED", "exit_code": 2,
+                                          "schedule_contract": "qc.fixture"}), encoding="utf-8")
+                got = lm.classify_step(2, "baseball_mlb", T)[0]
+                check(got == "FAILED", f"I5 a governed claim never launders exit 2 (got {got})")
+            finally:
+                ro.GOVERNED_SCHEDULE_CONTRACTS.pop("qc.fixture", None)
+        finally:
+            lm._receipt_path = saved_rp
 
     # I3 -- fetch_game_lines stamps the caller's token
     import fetch_game_lines as fg

@@ -321,7 +321,7 @@ def qc_fetcher():
               f"scope: WNBA still validates with GAME_LINES_SPEC and its schema has no new column ({len(wcols)} cols)")
         rcz, _, recz = _run_fetch(fg, base, "basketball_wnba", [], "wnba")
         check(rcz == 1 and recz.get("outcome") == "NO_ACTIVE_EVENTS",
-              "provider answered zero events -> exit 1 with receipt NO_ACTIVE_EVENTS (proof for the benign skip)")
+              "provider answered zero events -> exit 1 with receipt NO_ACTIVE_EVENTS (a failure for game lines)")
 
 
 def qc_scope():
@@ -442,7 +442,8 @@ def qc_line_movement():
         rc, text = drive({"baseball_mlb": (1, "VALIDATION_FAILED"), "basketball_wnba": (0, "UPDATED")})
         check(rc == 1 and "outcome=VALIDATION_FAILED" in text, "line-movement: validation reject -> FAILED, never OK")
         rc, text = drive({"baseball_mlb": (1, "NO_ACTIVE_EVENTS"), "basketball_wnba": (0, "UPDATED")})
-        check(rc == 0 and "SKIPPED (benign)" in text, "line-movement: receipt-proven NO_ACTIVE_EVENTS -> benign skip")
+        check(rc == 1 and "SKIPPED (benign)" not in text and "All line-movement snapshots captured" not in text,
+              "line-movement: NO_ACTIVE_EVENTS (zero-event provider answer) -> FAILED, never a benign skip")
         # a STALE NO_ACTIVE_EVENTS receipt from an earlier run must not excuse this run's failure
         rc, text = drive({"baseball_mlb": (1, None), "basketball_wnba": (0, "UPDATED")})
         check(rc == 1, "line-movement: an old NO_ACTIVE_EVENTS receipt cannot excuse a new failure")

@@ -22,7 +22,8 @@ import sys
 from pathlib import Path
 
 from services import run_receipts
-from services.run_outcomes import BENIGN_LINES_NONPUBLISH, RUN_RECEIPT_MISMATCH, RUN_RECEIPT_MISSING
+from services.run_outcomes import (BENIGN_LINES_NONPUBLISH, RUN_RECEIPT_MISMATCH, RUN_RECEIPT_MISSING,
+                                   governed_lines_nonpublish)
 
 BASE_DIR = Path(__file__).parent.resolve()
 
@@ -32,11 +33,13 @@ STEPS = [
     ("WNBA game lines", [sys.executable, "fetch_wnba_game_lines.py", "--days", "5"], 240, "basketball_wnba"),
 ]
 
-# The ONLY benign non-zero exits: a proven no-event / no-game window, proven by a receipt written by THIS
-# run (services.run_outcomes.BENIGN_LINES_NONPUBLISH = NO_ACTIVE_EVENTS, NO_GAMES_SCHEDULED). Exit code 1
-# alone cannot distinguish that from a provider error, a validation reject, a cost-receipt failure, a
-# publish failure or SCHEDULE_UNAVAILABLE (provider empty, no authoritative schedule) -- so without that
-# proof a non-zero exit is a FAILURE, never "OK" (2026-11 correction).
+# The ONLY benign non-zero exit: a GOVERNED no-game result (services.run_outcomes.BENIGN_LINES_NONPUBLISH =
+# NO_GAMES_SCHEDULED, honoured only when this run's receipt names a schedule contract listed in
+# GOVERNED_SCHEDULE_CONTRACTS -- none is governed today). NO_ACTIVE_EVENTS (the provider listed zero events)
+# is a FAILURE: a zero-event provider answer is not a schedule contract (owner governed-only rule). Exit
+# code 1 alone cannot distinguish a benign cause from a provider error, a validation reject, a cost-receipt
+# failure, a publish failure or SCHEDULE_UNAVAILABLE -- so without governed proof a non-zero exit is a
+# FAILURE, never "OK".
 BENIGN_RECEIPT_OUTCOMES = BENIGN_LINES_NONPUBLISH
 
 
@@ -64,12 +67,18 @@ def classify_step(returncode: int, sport: str, run_token: str) -> tuple[str, str
         return RUN_RECEIPT_MISMATCH, (f"exit {returncode}, the receipt carries token "
                                       f"{str(receipt.get('stage_run_id'))[:8]!r}, not this invocation's")
     if returncode == 0:
-        if receipt is not None and receipt.get("outcome") not in (None, "UPDATED"):
-            return "FAILED", f"exit 0 but this run's receipt says outcome={receipt.get('outcome')}"
-        return "OK", "published"
-    if returncode == 1 and receipt and receipt.get("exit_code") == 1 \
-            and receipt.get("outcome") in BENIGN_RECEIPT_OUTCOMES:
-        return f"SKIPPED_{receipt.get('outcome')}", (f"{receipt.get('outcome')} (proven by this run's receipt)")
+        # OK only on positive proof (gate #2 finding #14): this run's receipt must say outcome == UPDATED AND
+        # exit_code == 0. An absent / None / other outcome, or a missing or different exit_code, is FAILED --
+        # a malformed or partial receipt carrying this run's token never reads as a publish.
+        if receipt.get("outcome") == "UPDATED" and receipt.get("exit_code") == 0:
+            return "OK", "published"
+        return "FAILED", (f"exit 0 but this run's receipt does not prove a publish "
+                          f"(outcome={receipt.get('outcome')!r}, exit_code={receipt.get('exit_code')!r})")
+    if returncode == 1 and receipt.get("exit_code") == 1 \
+            and receipt.get("outcome") in BENIGN_RECEIPT_OUTCOMES \
+            and governed_lines_nonpublish(receipt):
+        return f"SKIPPED_{receipt.get('outcome')}", (f"{receipt.get('outcome')} (proven by this run's receipt, "
+                                                     f"schedule_contract={receipt.get('schedule_contract')})")
     if receipt:
         return "FAILED", f"exit {returncode}, outcome={receipt.get('outcome')}"
     return "FAILED", f"exit {returncode}, this invocation's receipt proves no benign cause"
