@@ -10,6 +10,33 @@ Paused branches are **not** deleted, merged, rebased or advanced.
 **Production today:** `origin/master` = prod = **`b12eec3`** (owner-approved FF deploy 2026-11-07 14:51:31 UTC; previous `3d7cda1`). Capture/Research Candidate OFF.
 **Active candidate:** `b12eec3` (row P1-1) — **PRODUCTION ACCEPTANCE**: awaiting the first ordinary `bk-linemove` (16:00 UTC 11-07) and `bk-daily` (13:00 UTC 11-08) receipts. Next candidate: P1-GL. Everything else waits.
 
+## CONTROLLING PROGRAM ORDER — approved and frozen by owner 2026-11-07
+This section governs. Rows below are the detailed ledger; where they differ, this section wins. Owner of every item
+= Darrel Copper (owner); executor = CTP.
+
+**Program invariant.** No implementation begins unless the item appears here with one owner, one stage, one ordered
+position, explicit scope, explicit exclusions and acceptance criteria. A production incident may interrupt the order
+only when recorded explicitly as an incident. No undocumented "while we are here" work. The roadmap is not reopened
+unless production evidence reveals a genuine dependency.
+
+| Pos | Item | Stage | Scope | Exclusions | Acceptance / exit |
+|---|---|---|---|---|---|
+| 1 ACTIVE | **`b12eec3` production acceptance** (P1-1) | PRODUCTION ACCEPTANCE (deployed 2026-11-07 14:51:31 UTC; `bk-linemove` 16:00 UTC observed — receipt part 1 `docs/b12eec3_production_receipt_20261107.md`) | Observe the normal 2026-11-08 13:00 UTC `bk-daily`; report separately: overall result; every failed/degraded step under frozen semantics; NBA lines + props publication, row/event counts, freshness, provider-credit attribution; CFBD quota result; missing-key and off-season outcomes; Run Status binding; site health, clean tree, Research Candidate OFF | No manual refresh, no other deploy; a defect found ⇒ remediate **only this release** | Receipt part 2 written; passes ⇒ CLOSED before any other implementation |
+| 2 NEXT | **Green Light Release 1A — Repair** (P1-GL). Sole question: *can the owner safely use Classic Green Light the way it was originally used?* | DESIGN (authorized to BUILD only after pos 1 closes) | (1) exclude started events via governed kickoff eligibility; (2) one shared availability rule — OUT, IR, PUP, suspended, otherwise unavailable; (3) repair NFL injury join; (4) repair line-movement join, exclude completed/non-current events; (5) bind sportsbook, line, price, timestamps to the same offer; (6) display both **Book updated** and **Observed by BK**, never merged or substituted; (7) retain the currently deployed NFL-props eligibility clock (L3 separate); (8) **before implementation**, a read-only count of offers eligible under each clock; (9) suppress stale evidence; distinguish unavailable / missing / no-result honestly; (10) hide all unregistered model output from customer pages — models never select or order visible games; (11) every eligible game in kickoff order; (12) `Model %` → Market-implied probability, remove unsupported Confidence, correct AP-poll wording, remove unsupported "opponent-adjusted"; (13) existing all-overs warning on the Green Light ticket-building path; (14) retain all valid legal, licensing, provenance, freshness and ticket-safety protections. Classic stays explicitly accessible | No new scoring/confidence; no automatic picks; no new lenses; no game-centric redesign; no new cross-page navigation; no ticket-storage expansion; no CFB restoration; no Green Light Next; **no default-route switch** | Built from post-`b12eec3` master; full offline + exact-SHA Linux gates; deployed as the only candidate; signed-in production receipt proving the repaired Classic view has no started events or unavailable players, truthful same-offer pricing + timestamps, current eligible evidence, and the owner's convergence workflow intact. **Stop for owner acceptance** |
+| 3 | **Green Light Release 1B — Activate** | DESIGN (authorized only after owner accepts 1A) | `/tools/green-light` renders repaired Classic; `?view=classic` compatible; `?view=workspace` keeps the workspace; navigation points to the supported default; bookmarks keep working; cache versioning prevents the old default persisting | Neither experience deleted; nothing else in the change | Exact activation change gated, deployed separately, final signed-in production verification. **Green Light Release 1 closes only after 1B passes** |
+| ∥ G | **Decision Integrity Constitution** — final owner review, version, freeze | DESIGN → owner review (non-build; no release lane) | Prepare the final review package | No Phase 2 implementation | Owner approval ⇒ versioned + frozen |
+| ∥ N | **NCAAB Foundation design + acceptance package** | DESIGN (non-build) | One implementation-ready package: registries, schedules, books, lines, prices, timestamps, forward capture, scores, per-book grading, movement, factual slate / matchup / team pages | No paid probe, no code branch, no models, predictions, confidence, simulations, props or Green Light integration | Package returned once for owner approval |
+| 4 | **NCAAB Foundation (build)** | queued | per the approved package | per the package's exclusions | gates + production receipt |
+| 5 | **Owner choice:** Green Light Release 2 **or** Decision Integrity Phase 2 | queued | — | — | owner decision after pos 4 |
+| — | **Everything else** (Safeguard B, D11, L1/L2/L3, visuals/entity/disclosure, `bk-daily` fixes, Research Candidate, runtime pilot, market-movement language, Decision Journal, …) | PARKED | — | — | rebuilt on current master when scheduled here |
+
+**Known dependency recorded for 1A item (6)/(8) — to be confirmed by the item-8 read-only count:** the prod
+`NFL_Props.csv` schema observed on 2026-11-07 carries `SourceUpdatedAtUTC` (Book updated) and the zone-less
+`LastUpdated` fetch stamp, but no explicit `FetchedAtUTC`. Under the quote-time authority rule (`17b5e69`)
+`LastUpdated` cannot serve as "Observed by BK". If the count confirms the column is absent, 1A must either have the
+props writer emit `FetchedAtUTC` (inside 1A scope as same-offer timestamp binding) or display "Observed by BK:
+unavailable" — an owner decision before BUILD, not an assumption.
+
 ## Phase 1 — Close production trust obligations (in order; one release at a time)
 | # | Item (consolidated) | Branch @ exact SHA | Stage | Remaining acceptance condition | File overlap with active candidate `b12eec3` | Disposition |
 |---|---|---|---|---|---|---|
@@ -59,7 +86,7 @@ master), `fix/bk-daily-f2-season-gate` `d2bf8b7` (by F2v2). Stale session branch
 1. ~~Finish and report the `b12eec3` gate~~ — **done, PASS** (receipt above).
 2. **Await review and deployment decision on `b12eec3`** ← current.
 3. If approved, deploy only `b12eec3` and obtain its production receipt.
-**Roadmap locked by owner 2026-11-07 (supersedes the order above where they differ):**
+**(Superseded by the CONTROLLING PROGRAM ORDER at the top of this file — kept for history.) Roadmap locked by owner 2026-11-07:**
 - **ACTIVE:** `b12eec3` production acceptance — wait for the 2026-11-08 `bk-daily` receipt; close or remediate. Nothing else enters build.
 - **NEXT:** **Green Light Release 1** — repair the classic convergence board (kickoff/started-event exclusion, OUT/IR/PUP
   availability, stale-evidence suppression, sportsbook + Book-updated/Observed-by-BK time attribution bound to one
