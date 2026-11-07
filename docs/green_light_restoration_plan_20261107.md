@@ -158,7 +158,7 @@ CFBD allowance itself, King's Tickets draft storage.
    result from the 2026-11-08 `bk-daily` receipt (D5), and the missing `NFL_GameLines_History.csv` (D3). Until
    resolved they render as labelled Unavailable / stale with their true cause.
 
-## Part 4 — Proposed owner workflow (PROPOSED 2026-11-07; awaiting owner confirmation; no implementation until confirmed AND `b12eec3` closes)
+## Part 4 — Owner workflow (**CONFIRMED by owner 2026-11-07**, as recorded below incl. the design notes; no implementation until `b12eec3` closes)
 
 1. **Default = today's slate grouped by game**, each game's converging plays beneath it. Secondary **"Top Plays"**
    view sorts plays by agreement count.
@@ -179,7 +179,7 @@ CFBD allowance itself, King's Tickets draft storage.
 8. **Agreement is a count with named evidence, never a confidence score** — e.g. "Supported by 4 of 6 available
    lenses", listing each lens; no percentage, no composite.
 
-**Design notes for confirmation (not decisions):**
+**Design notes (confirmed with the workflow; the "important unknown" list below is the confirmed default and may be edited by the owner before BUILD):**
 - Item 2 expands what counts toward convergence (today: Opportunity, Matchup, Game Identity, Coaching; Concentration =
   TD corroborator). Each newly counting lens needs a written lens contract — source, freshness budget, direction rule
   (what makes it *support* vs *contradict* an over/under), governance status — before it may count. Until then it is
