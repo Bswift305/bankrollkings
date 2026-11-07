@@ -53,15 +53,8 @@ def normalize(family, row, meta=None):
         m['threshold'] = _val(row.get('line'))
         m['direction'] = _val(row.get('side'))
         m['current_streak'] = _val(row.get('streak'))
-        # The graded record DOES carry the per-game events of the run (week, result value, that week's
-        # consensus line, over/under). Carry them verbatim; fall to unavailable only if the row has none.
-        events = row.get('events') or []
-        if events:
-            m['counted_events'] = [_event(week=e.get('week'), opponent=e.get('opponent'),
-                                          value=e.get('value'), line=e.get('line'), result=e.get('result'))
-                                   for e in events]
-        else:
-            m['counted_events'] = UNAVAILABLE
+        # this source gives the run's WEEKS (weeks_label) but not per-game values -> per-game events unavailable
+        m['counted_events'] = UNAVAILABLE
         m['membership_reason'] = _val(row.get('status_label')) if row.get('status_label') else \
             (f"{row.get('streak', '?')} straight {row.get('side', '')}").strip()
 
