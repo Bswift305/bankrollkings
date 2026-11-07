@@ -118,7 +118,10 @@ Run Status also no longer depends on systemd for this job. The runner publishes 
 * **Mandatory:** if the marker cannot be published the runner exits 2 **before any child runs**; if the summary
   cannot be published it exits 2 **even when every child succeeded** (and marks the invocation
   `PUBLICATION_FAILED`, best effort). Any unexpected exception exits 2 — never Python's 1, which
-  `SuccessExitStatus=1` would read as success.
+  `SuccessExitStatus=1` would read as success. SIGTERM (systemd stop, earlyoom) is turned into exit 2 as well:
+  systemd counts a SIGTERM death as a clean exit by default.
+* **Legacy file:** the old checkout file `data/tracking/Last_LineMovement_Summary.json` is no longer read or
+  written by any code; an existing copy is deliberately left untouched (and cannot mask a governed failure).
 * **Binding:** Run Status (`generate_run_status._linemove_signals` → `linemove_status.read_signals`) reads the
   marker first. The summary describes the current run only when its `invocation_id` matches. A
   `PUBLICATION_FAILED` marker is DEGRADED at once; a newer invocation with no summary is "in progress" for

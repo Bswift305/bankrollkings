@@ -20,6 +20,10 @@ successor's contract adversarially:
                    summary bound to another invocation.
   P  POSIX         symlinked status dir, symlinked / hard-linked / 0644 / foreign-owned summary -> refused,
                    never written through; Run Status DEGRADED on the unsafe file; a loose dir we own is repaired.
+  G  legacy        a planted HEALTHY data/tracking/Last_LineMovement_Summary.json is completely ignored (no runtime
+                   source names it; it cannot mask a governed failure) and is deliberately left untouched.
+  K  killed run    SIGKILL (and SIGTERM on POSIX) after the start marker, before the bound summary: Run Status is
+                   in-progress inside the grace window and DEGRADED after it -- never healthy from an older summary.
   X  crash         an unexpected exception in the runner exits 2 (never Python's 1 = SuccessExitStatus=1 success).
 Exit 0 on pass, 1 otherwise. POSIX-only cases are reported as skipped on Windows (skips are not passes).
 """
@@ -369,6 +373,81 @@ def main() -> int:
         check(rc == 0 and stat.S_IMODE(os.lstat(str(sdir())).st_mode) == 0o700, "P loose directory we own is repaired to 0700")
     else:
         skip("P POSIX symlink / hard-link / mode / owner / directory-symlink attacks")
+
+    # ---- G. planted legacy checkout summary is completely ignored (and left untouched) ----------------------
+    legacy_name = "Last_LineMovement_Summary.json"
+    for src in ("refresh_line_movement_snapshots.py", "generate_run_status.py", "services/linemove_status.py"):
+        check(legacy_name not in (REPO / src).read_text(encoding="utf-8"),
+              f"G {src} no longer references the legacy {legacy_name}")
+    legacy = root / "data" / "tracking" / legacy_name
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy_body = json.dumps({"finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                              "exit_code": 0, "steps": [{"label": "WNBA game lines", "status": "OK"}],
+                              "failed_steps": []})
+    legacy.write_text(legacy_body, encoding="utf-8")
+    os.utime(str(legacy), (1_700_000_000, 1_700_000_000))
+    with patched(grs, BASE_DIR=root, TRACKING_DIR=root / "data" / "tracking"):
+        clean()
+        r_empty, i_empty = signals()
+        check(r_empty == [] and i_empty.get("reported") is False,
+              "G empty governed store + healthy legacy file -> 'not reported' (the legacy file is not read)")
+        with patched(ls, publish=fail_summary):
+            rc, _ = run(root, ok_cmd)
+        r, _ = signals()
+        check(rc == 2 and r and "failed to publish" in r[0] and overall() == "DEGRADED",
+              f"G healthy legacy file cannot mask a governed publication failure ({r})")
+    check(legacy.read_text(encoding="utf-8") == legacy_body and int(os.stat(str(legacy)).st_mtime) == 1_700_000_000,
+          "G the legacy checkout summary is deliberately left untouched (bytes + mtime unchanged)")
+
+    # ---- K. forced termination after the start marker, before the bound summary -----------------------------
+    sleeper = root / "sleeper.py"
+    sleeper.write_text("import time\ntime.sleep(15)\n", encoding="utf-8")
+    wrapper = root / "runner_wrapper.py"
+    wrapper.write_text(
+        "import sys, pathlib\n"
+        f"sys.path.insert(0, {str(REPO)!r})\n"
+        "import refresh_line_movement_snapshots as rlm\n"
+        f"rlm.BASE_DIR = pathlib.Path({str(root)!r})\n"
+        f"rlm.STEPS = [('WNBA game lines', [sys.executable, {str(sleeper)!r}], 60, {SPORT!r})]\n"
+        "raise SystemExit(rlm._entry())\n", encoding="utf-8")
+    import subprocess
+    import time
+    kinds = [("SIGKILL", "kill")] + ([("SIGTERM", "terminate")] if POSIX else [])
+    for label, method in kinds:
+        clean()
+        run(root, ok_cmd)                                  # an older HEALTHY bound summary
+        healthy_id = read(ls.SUMMARY_FILE)["invocation_id"]
+        proc = subprocess.Popen([sys.executable, str(wrapper)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                env=dict(os.environ), **({"start_new_session": True} if POSIX else {}))
+        deadline = time.monotonic() + 30
+        inv = None
+        while time.monotonic() < deadline:
+            inv = read(ls.INVOCATION_FILE) if (sdir() / ls.INVOCATION_FILE).exists() else None
+            if inv and inv.get("invocation_id") != healthy_id:
+                break
+            time.sleep(0.1)
+        getattr(proc, method)()
+        rc = proc.wait(timeout=30)
+        if POSIX:
+            try:
+                os.killpg(proc.pid, 9)                     # the sleeping child too
+            except OSError:
+                pass
+        summ = read(ls.SUMMARY_FILE)
+        if label == "SIGTERM":
+            check(rc == 2, f"K SIGTERM: the runner exits 2 (systemd would count a SIGTERM death as clean) (rc={rc})")
+        check(inv is not None and inv.get("invocation_id") != healthy_id and inv.get("state") == ls.STATE_RUNNING
+              and summ["invocation_id"] == healthy_id,
+              f"K {label}: the killed run left its RUNNING marker and no bound summary (runner rc={rc})")
+        started = datetime.fromisoformat(inv["started_at"])
+        r_in, i_in = signals(started + timedelta(seconds=30))
+        r_late, i_late = signals(started + timedelta(seconds=ls.RUNNING_GRACE_SECONDS + 1))
+        check(r_in == [] and i_in.get("in_progress") and i_in.get("invocation_id") != healthy_id,
+              f"K {label}: inside the grace window it is 'in progress' -- the older healthy summary is not adopted")
+        check(r_late and "no published summary" in r_late[0] and i_late.get("invocation_id") == inv["invocation_id"],
+              f"K {label}: after the grace window Run Status is DEGRADED, never healthy from the older summary ({r_late})")
+    if not POSIX:
+        skip("K SIGTERM forced termination")
 
     # ---- X. crash ---------------------------------------------------------------------------------------------
     with patched(rlm, main=lambda: (_ for _ in ()).throw(RuntimeError("boom"))), contextlib.redirect_stdout(io.StringIO()), \

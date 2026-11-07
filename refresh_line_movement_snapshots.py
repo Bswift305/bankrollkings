@@ -194,7 +194,19 @@ def main() -> int:
 
 def _entry() -> int:
     """Process entry: an UNCAUGHT exception would make Python exit 1, which prod bk-linemove's
-    SuccessExitStatus=1 reads as SUCCESS. Any unexpected exception is therefore a hard failure, exit 2."""
+    SuccessExitStatus=1 reads as SUCCESS. Any unexpected exception is therefore a hard failure, exit 2.
+    SIGTERM (systemd stop, earlyoom) is turned into exit 2 too: systemd counts a main process killed by SIGTERM
+    as a CLEAN exit by default, which would hide an interrupted run (Run Status also degrades it, since the
+    interrupted invocation never publishes its bound summary)."""
+    import signal
+    if hasattr(signal, "SIGTERM"):
+        def _on_term(signum, frame):
+            print("FAILED: line-movement runner terminated by SIGTERM before completing; exit 2.")
+            raise SystemExit(EXIT_HARD_FAILURE)
+        try:
+            signal.signal(signal.SIGTERM, _on_term)
+        except (ValueError, OSError):   # not the main thread (e.g. an in-process QC harness)
+            pass
     try:
         code = main()
     except Exception:   # noqa: BLE001
