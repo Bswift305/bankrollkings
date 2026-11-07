@@ -865,7 +865,15 @@ def run_fetch(args) -> int:
             print("REFUSED: NBA player props must be fetched through services.nba_props_publisher "
                   "(props lock not held). No request made, nothing written.")
             return 1
-    api_key = get_api_key(args.api_key)
+    try:
+        api_key = get_api_key(args.api_key)
+    except ValueError as exc:
+        # Frozen 2026-11-07: a missing API key is a typed HARD failure (exit 2), never a skip; refused before
+        # any request or write.
+        print(f"ERROR: {exc}")
+        print(f"OUTCOME: CONFIG_MISSING reason_code=CONFIG_MISSING key=ODDS_API_KEY sport={sport} "
+              "network_requests=0 files_written=0")
+        return 2
     output_path = _output_path(args, sport_paths)
     # Default output -> the table's declared coverage path; an explicit --output keeps coverage beside it.
     coverage_path = None if args.output else sport_paths["coverage"]

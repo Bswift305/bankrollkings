@@ -74,3 +74,40 @@ recorded as `SKIP (PROVIDER_QUOTA_EXHAUSTED)` with exit 0 (Run Status shows it D
 lines and props are both stale; `run_prelaunch_scorecard` marks route failures for "off-season" sports N/A
 using props files; `services/injury_feed_qc` reports a stale injury feed with no games in the window as
 `NO_ACTIVE_EVENTS` WATCH; and `fetch_nfl_games --gate` uses its own Aug to Feb month window.
+
+## Frozen semantics (owner, 2026-11-07) — NBA v6 + Safeguard A combined
+
+Proven end to end by `qc_runner_exit_matrix.py` (child receipt → runner classification → process exit →
+systemd result → Run Status, with mutation proofs) and `qc_fetch_exit_semantics.py`.
+
+| Case | Runner status | Runner exit | systemd (bk-linemove, `SuccessExitStatus=1`) | Run Status |
+|---|---|---|---|---|
+| `UPDATED` + **integer** `exit_code` 0 (never `True`, `0.0`, `"0"`) | OK | 0 | SUCCESS | GREEN |
+| governed, independently sourced `NO_GAMES_SCHEDULED` (receipt `schedule_contract` in `GOVERNED_SCHEDULE_CONTRACTS`, child exit 1, receipt `exit_code` int 1) | `SKIPPED_NO_GAMES_SCHEDULED` | 0 | SUCCESS | GREEN |
+| `NO_ACTIVE_EVENTS` (zero provider events), even naming a governed contract | FAILED | 2 | FAILED | DEGRADED |
+| unconfigured sport | `UNCONFIGURED_SPORT` (child exit 2) | 2 | FAILED | DEGRADED |
+| missing API key | `CONFIG_MISSING` (child exit 2, own receipt, zero requests) | 2 | FAILED | DEGRADED |
+| quota exhausted (incl. a persisted latch) | `BLOCKED_QUOTA` — the latch stops calls, never a skip | 2 | FAILED | DEGRADED |
+| missing / blank / unknown / `None` / contradictory receipt outcome; missing or non-int `exit_code`; another run's token; no receipt | FAILED / `RUN_RECEIPT_*` | 2 | FAILED | DEGRADED |
+| exit ≥ 2, signal, timeout (a governed claim never launders it) | FAILED | 2 | FAILED | DEGRADED |
+
+bk-daily (`run_daily.py`, default systemd success `{0}`): `CONFIG_MISSING` and `BLOCKED_QUOTA` are `FAIL` with that
+`reason` (the old `SKIP (PROVIDER_QUOTA_EXHAUSTED)` is gone; Run Status treats a legacy one as ungoverned → DEGRADED).
+An exit-0 child that also prints a typed failure is contradictory → `FAIL`. Quota steps are still listed in
+`provider_exhausted_steps`.
+
+### `SuccessExitStatus=1`: decision — runner exit mapping (no unit change needed)
+
+The line-movement runner now exits **only 0 or 2**: every failure → 2; a governed skip → 0 with its reason
+printed and recorded. It never returns 1, so `SuccessExitStatus=1` on the production `bk-linemove.service` can no
+longer read a failure as success — the matrix models both the production unit (`{0,1}`) and a hardened unit
+(`{0}`) and they agree on every row. The `SuccessExitStatus=1` line is now dead configuration; removing it is
+optional hardening that requires an SSM unit install (a production change, not part of this release).
+
+Run Status also no longer depends on systemd for this job: the runner writes
+`data/tracking/Last_LineMovement_Summary.json` (gitignored, atomic) and `generate_run_status._linemove_signals`
+reads it — any failed step, a non-zero runner exit, an unreadable summary, or a summary older than 8h →
+DEGRADED.
+
+Exit 1 survives only where it is fully governed and explicitly proven: a chain runner passes a child 1 through
+only when the child printed a GOVERNED claim (`runner_exit_for_child`); everything else maps to ≥2.

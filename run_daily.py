@@ -9,8 +9,8 @@ from pathlib import Path
 
 from season_utils import governed_off_season_calendar, nfl_preseason_active
 from services.env_loader import load_local_env
-from services.run_outcomes import (EXIT_HARD_FAILURE, SKIPPED_OFF_SEASON, STEP_FAIL, STEP_PASS,
-                                   classify_step_exit, is_governed_benign_status)
+from services.run_outcomes import (BLOCKED_QUOTA, EXIT_HARD_FAILURE, SKIPPED_OFF_SEASON, STEP_FAIL, STEP_PASS,
+                                   classify_step_exit, is_governed_benign_status, typed_hard_failure)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -336,7 +336,9 @@ def main() -> int:
         print(f"[RUN] {label}")
         code, output = _run_step_code(label, command, timeout)
         reason = ""
-        if code == 0:
+        if code == 0 and not typed_hard_failure(output):
+            # exit 0 is PASS only when the child did not also print a typed hard failure (a contradictory
+            # "exit 0 + CONFIG_MISSING / BLOCKED_QUOTA / UNCONFIGURED_SPORT" falls through to the classifier: FAIL)
             status = STEP_PASS
         elif label == PRE_REFRESH_HEALTH_LABEL:
             # The pre-refresh Odds-feed health check runs FIRST, before this run's refresh steps, so a
@@ -351,12 +353,10 @@ def main() -> int:
             # empty rows / provider error / any unclassified exit -> FAIL. The old "SKIP (off-season)" -- a
             # failure laundered because the sport's props file was empty (active_sports) -- is GONE: an empty
             # props file is not a season calendar.
+            # Frozen 2026-11-07: CONFIG_MISSING and BLOCKED_QUOTA (a provider quota exhausted, e.g. CFBD 429 or
+            # its persisted latch) come back from the classifier as FAIL with that reason -- a DEGRADED FAILURE.
+            # The latch stops further provider calls; it never turns the step into a SKIP or a PASS.
             status, reason = classify_step_exit(EXIT_HARD_FAILURE if code is None else code, output)
-            if status == STEP_FAIL and reason != "UNCONFIGURED_SPORT" and "PROVIDER_QUOTA_EXHAUSTED" in (output or ""):
-                # A provider's monthly quota is exhausted (e.g. CFBD 429): a documented EXTERNAL outage with a
-                # persistent backoff. Recorded as SKIP (PROVIDER_QUOTA_EXHAUSTED); Run Status reads it DEGRADED
-                # via provider_exhausted_steps (never GREEN).
-                status = "SKIP (PROVIDER_QUOTA_EXHAUSTED)"
         print(f"[{status}] {label}" + (f" reason={reason}" if reason else ""))
         lines += [
             f"[{status}] {label}" + (f" reason={reason}" if reason else ""),
@@ -396,8 +396,7 @@ def main() -> int:
     print(f"Log saved: {log_path}")
 
     # Structured summary for Run Status + the incident diag (machine-readable; never parse the log text).
-    provider_exhausted = sorted({o["label"] for o in step_outcomes
-                                 if "PROVIDER_QUOTA_EXHAUSTED" in o["status"]})
+    provider_exhausted = sorted({o["label"] for o in step_outcomes if o.get("reason") == BLOCKED_QUOTA})
     failed_steps = [o["label"] for o in step_outcomes if o["status"] == STEP_FAIL]
     # Steps that did not publish for a GOVERNED reason (calendar / schedule contract) -- the ONLY non-publishes
     # that are not failures. Recorded so Run Status can show them; never inferred from an empty fetch.

@@ -87,6 +87,12 @@ NO_FRESH_AFTER_LOCK = "NO_FRESH_AFTER_LOCK"
 # receipt (services/run_receipts). No receipt -> RUN_RECEIPT_MISSING; another run's token -> RUN_RECEIPT_MISMATCH.
 RUN_RECEIPT_MISSING = "RUN_RECEIPT_MISSING"
 RUN_RECEIPT_MISMATCH = "RUN_RECEIPT_MISMATCH"
+# Frozen runner semantics (owner, 2026-11-07). Both are ALERTING, hard failures (exit >=2), never a skip:
+#   CONFIG_MISSING  a required API key / config is absent: refused before any request (exit 2)
+#   BLOCKED_QUOTA   a provider quota is exhausted; the latch prevents further calls but the step is a
+#                   DEGRADED FAILURE, never converted into a skip or a pass
+CONFIG_MISSING = "CONFIG_MISSING"
+BLOCKED_QUOTA = "BLOCKED_QUOTA"
 
 SKIPPED_OFF_SEASON = "SKIPPED_OFF_SEASON"
 
@@ -96,7 +102,7 @@ BENIGN = frozenset({UPDATED, NO_MARKETS_POSTED, SKIP, SKIPPED_OFF_SEASON, NO_GAM
                     REUSED_FRESH_AFTER_LOCK})
 ALERTING = frozenset({VALIDATION_FAILED, PROVIDER_ERROR, STALE, NO_ACTIVE_EVENTS, SKIPPED_BLOCKED_BY_LINES,
                       SCHEDULE_UNAVAILABLE, SKIPPED_LOCKED, NO_FRESH_AFTER_LOCK, RUN_RECEIPT_MISSING,
-                      RUN_RECEIPT_MISMATCH})
+                      RUN_RECEIPT_MISMATCH, CONFIG_MISSING, BLOCKED_QUOTA})
 
 # Lines-step outcomes that mean "a verified, current lines file is in place" (dependents may run).
 LINES_READY = frozenset({UPDATED, REUSED_FRESH, REUSED_FRESH_AFTER_LOCK})
@@ -179,15 +185,16 @@ def governed_benign_claim(output: str | None) -> tuple[str | None, str]:
 
 def classify_step_exit(code: int, output: str | None) -> tuple[str, str]:
     """ONE classifier for every runner (run_daily, bk-linemove, chain runners): (status, reason).
-      UNCONFIGURED_SPORT marker            -> FAIL  (hard failure, any exit code, any season)
+      UNCONFIGURED_SPORT / CONFIG_MISSING / BLOCKED_QUOTA marker -> FAIL (hard failure, any exit code, any season)
       exit 0                               -> PASS
       exit 1 + GOVERNED benign claim       -> SKIPPED_OFF_SEASON / NO_GAMES_SCHEDULED (benign)
       exit 1 without one                   -> FAIL  (empty rows / provider error / validation / unclassified)
       exit >=2, negative (signal)          -> FAIL  (a benign claim never launders a hard failure)
     Never consults a props file, an artifact age, or the sport's "active" state."""
     text = output or ""
-    if UNCONFIGURED_SPORT_MARKER in text:
-        return STEP_FAIL, UNCONFIGURED_SPORT_REASON
+    typed = typed_hard_failure(text)   # UNCONFIGURED_SPORT / CONFIG_MISSING / BLOCKED_QUOTA: FAIL at any exit code
+    if typed:
+        return STEP_FAIL, typed
     if code == EXIT_OK:
         return STEP_PASS, ""
     if code == EXIT_NO_NEW_ROWS:
@@ -207,6 +214,34 @@ def is_governed_benign_status(status: str) -> bool:
 UNCONFIGURED_SPORT_REASON = "UNCONFIGURED_SPORT"
 UNCONFIGURED_SPORT_MARKER = "reason_code=" + UNCONFIGURED_SPORT_REASON
 EXIT_UNCONFIGURED_SPORT = 2
+
+# Frozen 2026-11-07: a missing API key / config and an exhausted provider quota are typed HARD failures.
+# Children print `OUTCOME: CONFIG_MISSING reason_code=CONFIG_MISSING ...` (exit 2) or
+# `OUTCOME: BLOCKED_QUOTA reason_code=BLOCKED_QUOTA ...` (exit >=2). The legacy CFBD text
+# PROVIDER_QUOTA_EXHAUSTED is read as BLOCKED_QUOTA too. Neither is ever a skip, a pass or a benign 1.
+CONFIG_MISSING_MARKER = "reason_code=" + CONFIG_MISSING
+BLOCKED_QUOTA_MARKER = "reason_code=" + BLOCKED_QUOTA
+LEGACY_QUOTA_MARKER = "PROVIDER_QUOTA_EXHAUSTED"
+EXIT_CONFIG_MISSING = 2
+
+
+def is_exact_int(value, expected: int) -> bool:
+    """Strict receipt integer check: an int (never a bool, float or numeric string) equal to `expected`.
+    `True == 1` and `0.0 == 0` in Python, so a plain == would accept a malformed receipt."""
+    return type(value) is int and value == expected
+
+
+def typed_hard_failure(output: str | None) -> str | None:
+    """The typed hard-failure reason carried by a child's output, if any (checked BEFORE the exit code, so it
+    holds at any exit code and in any season): UNCONFIGURED_SPORT, CONFIG_MISSING or BLOCKED_QUOTA."""
+    text = output or ""
+    if UNCONFIGURED_SPORT_MARKER in text:
+        return UNCONFIGURED_SPORT_REASON
+    if CONFIG_MISSING_MARKER in text:
+        return CONFIG_MISSING
+    if BLOCKED_QUOTA_MARKER in text or LEGACY_QUOTA_MARKER in text:
+        return BLOCKED_QUOTA
+    return None
 
 # Portable RUNNER exit semantics (owner decision, Safeguard A). Production units differ -- bk-linemove has
 # SuccessExitStatus=1 -- so a runner must encode the verdict itself and the unit only propagates it:
@@ -254,8 +289,9 @@ def classify_props_child(exit_code: int, artifact_advanced: bool, receipt: dict 
     if exit_code == EXIT_UNCONFIGURED_SPORT:
         # The child refused before fetching or writing anything, so any receipt on disk is from an EARLIER
         # run and proves nothing about this one (a stale events_found=0 would otherwise read as benign).
-        return VALIDATION_FAILED, (f"{UNCONFIGURED_SPORT_REASON}: child refused an unconfigured sport "
-                                   f"(exit {EXIT_UNCONFIGURED_SPORT}); any shape receipt is from an earlier run")
+        return VALIDATION_FAILED, (f"child refused before fetching (exit {EXIT_UNCONFIGURED_SPORT}: "
+                                   f"{UNCONFIGURED_SPORT_REASON} or {CONFIG_MISSING}); any shape receipt is from an "
+                                   "earlier run")
     if receipt is None:
         # No evidence file. Do not invent a benign outcome.
         if exit_code == 0 and artifact_advanced:

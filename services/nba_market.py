@@ -48,7 +48,7 @@ from services.nba_lines_publisher import EXIT_LOCK_UNAVAILABLE, EXIT_LOCKED, LOC
 from services.run_outcomes import (
     LINES_READY, NO_ACTIVE_EVENTS, NO_FRESH_AFTER_LOCK, NO_MARKETS_POSTED, PROVIDER_ERROR, REUSED_FRESH,
     REUSED_FRESH_AFTER_LOCK, SCHEDULE_UNAVAILABLE, SKIPPED_BLOCKED_BY_LINES, SKIPPED_LOCKED, STALE, UPDATED,
-    VALIDATION_FAILED, is_alerting,
+    VALIDATION_FAILED, is_alerting, CONFIG_MISSING, BLOCKED_QUOTA,
 )
 
 SPORT = "basketball_nba"
@@ -66,10 +66,10 @@ LEDGER_REL = Path("data") / "tracking" / "odds_quota_ledger.jsonl"   # services/
 
 # Own-receipt outcomes accepted for a NON-zero exit, per stage; anything else is VALIDATION_FAILED.
 _LINES_FAILURE_OUTCOMES = frozenset({PROVIDER_ERROR, VALIDATION_FAILED, SCHEDULE_UNAVAILABLE, NO_FRESH_AFTER_LOCK,
-                                     SKIPPED_LOCKED, LOCK_UNAVAILABLE})
+                                     SKIPPED_LOCKED, LOCK_UNAVAILABLE, CONFIG_MISSING, BLOCKED_QUOTA})
 _PROPS_NONZERO_OUTCOMES = frozenset({PROVIDER_ERROR, VALIDATION_FAILED, STALE, NO_FRESH_AFTER_LOCK,
                                      SKIPPED_BLOCKED_BY_LINES, SKIPPED_LOCKED, LOCK_UNAVAILABLE,
-                                     NO_MARKETS_POSTED, NO_ACTIVE_EVENTS})
+                                     NO_MARKETS_POSTED, NO_ACTIVE_EVENTS, CONFIG_MISSING, BLOCKED_QUOTA})
 _ZERO_EXIT_OUTCOMES = {"lines": LINES_READY, "props": frozenset({UPDATED, REUSED_FRESH, REUSED_FRESH_AFTER_LOCK})}
 
 

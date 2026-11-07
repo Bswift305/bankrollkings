@@ -66,8 +66,10 @@ def main() -> int:
     print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     if not (os.getenv("ODDS_API_KEY") or "").strip():
-        print("refresh_football_props: ODDS_API_KEY not set - skipping football props refresh.")
-        return 0
+        # Frozen 2026-11-07: a missing API key is CONFIG_MISSING, a hard failure (exit 2) -- never a skip/exit 0.
+        print("refresh_football_props: ODDS_API_KEY not set - refusing (no request made).")
+        print("OUTCOME: CONFIG_MISSING reason_code=CONFIG_MISSING key=ODDS_API_KEY network_requests=0")
+        return 2
 
     print()
     outcomes: dict[str, str] = {}

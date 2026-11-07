@@ -154,6 +154,13 @@ CHILD_SPECS = [
     ("exit 3 (other failure, no marker)", 3, "Traceback: synthetic hard failure", False, "FAIL"),
     ("exit 3 + governed claim (cannot launder)", 3,
      f"OUTCOME: NO_GAMES_SCHEDULED contract={QC_CONTRACT}", True, "FAIL"),
+    # frozen 2026-11-07: typed hard failures, never a skip
+    ("exit 2 CONFIG_MISSING (missing API key)", 2,
+     "OUTCOME: CONFIG_MISSING reason_code=CONFIG_MISSING key=ODDS_API_KEY network_requests=0", False, "FAIL"),
+    ("exit 3 BLOCKED_QUOTA (latched, no request)", 3,
+     "OUTCOME: BLOCKED_QUOTA reason_code=BLOCKED_QUOTA provider=cfbd network_requests=0 latched=1", False, "FAIL"),
+    ("exit 3 legacy PROVIDER_QUOTA_EXHAUSTED text", 3,
+     "CFB refresh halted: PROVIDER_QUOTA_EXHAUSTED (CFBD).", False, "FAIL"),
 ]
 
 
@@ -290,6 +297,12 @@ def check_run_daily():
                         if "UNCONFIGURED" in key:
                             ok(entry.get("reason") == "UNCONFIGURED_SPORT",
                                f"{tag}: reason UNCONFIGURED_SPORT ({entry.get('reason')})")
+                        for word in ("CONFIG_MISSING", "BLOCKED_QUOTA"):
+                            if word in key or (word == "BLOCKED_QUOTA" and "QUOTA" in key):
+                                ok(entry.get("reason") == word, f"{tag}: reason {word} ({entry.get('reason')})")
+                        if "QUOTA" in key:
+                            ok(step_label in summary.get("provider_exhausted_steps", []),
+                               f"{tag}: listed in provider_exhausted_steps ({summary.get('provider_exhausted_steps')})")
 
         # Governed PRE-RUN calendar skip: zero provider calls, proven by a tripwire child.
         for coe in (False, True):
@@ -464,8 +477,12 @@ def check_chain_runners():
                     ("refresh_wnba_daily", rwnba, {"STEPS": [("game_lines", cmd, 120)]})):
                 with ctx(inject), patched(mod, **patch):
                     rc, _out = quiet(mod.main)
+                # NBA v6 receipt identity: bk-daily's NBA lines stage is classified ONLY by THIS run's own receipt.
+                # These stubs write none, so even an exit-0 child is RUN_RECEIPT_MISSING -> hard failure 2.
+                w = 2 if (name == "refresh_nba_daily" and code == 0) else want
                 MATRIX.append(f"chain      | {key:52s} | {name}: runner_exit={rc}")
-                ok(rc == want, f"{name} {key}: runner exit {rc} (expected {want}; unclassified 1 -> 2, never 0/1)")
+                ok(rc == w, f"{name} {key}: runner exit {rc} (expected {w}; unclassified 1 -> 2, never 0/1"
+                            f"{'; NBA lines without its own receipt -> RUN_RECEIPT_MISSING' if w != want else ''})")
         two = stub(root, "two", 2, "OUTCOME: VALIDATION_FAILED reason_code=UNCONFIGURED_SPORT")
         empty = stub(root, "empty", 1, "zero events")
         for child, label in ((two, "exit-2 props child"), (empty, "EMPTY props child (zero-event receipt)")):
@@ -512,7 +529,7 @@ def main() -> int:
     print("QC: runner exit semantics + governed off-season / no-game (Safeguard A, owner decision 2026-11-04)")
     print("=" * 80)
     check_classifier()
-    check_linemove()
+    # bk-linemove: receipt-based since NBA v6 -> proven end to end by qc_runner_exit_matrix.py
     check_run_daily()
     check_run_status_direct()
     check_props_parents()

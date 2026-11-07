@@ -580,7 +580,18 @@ def run_fetch(args) -> int:
             print("REFUSED: NBA game lines must be fetched through services.nba_lines_publisher "
                   "(shared lock not held). No request made, nothing written.")
             return 1
-    api_key = get_api_key(args.api_key)
+    try:
+        api_key = get_api_key(args.api_key)
+    except ValueError as exc:
+        # Frozen 2026-11-07: a missing API key is a typed HARD failure (exit 2), never a skip. Refused before
+        # any provider request or artifact write; this run's receipt records it so no runner can misread it.
+        print(f"ERROR: {exc}")
+        print(f"OUTCOME: CONFIG_MISSING reason_code=CONFIG_MISSING key=ODDS_API_KEY sport={sport} "
+              "network_requests=0 artifacts_written=0")
+        _write_lines_receipt(sport, {"sport": sport, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                     "outcome": "CONFIG_MISSING", "exit_code": 2, "published": False,
+                                     "published_rows": 0, "reason_code": "CONFIG_MISSING"})
+        return 2
     paths = _output_paths(args, sport_paths)
     output_path, schedules_output_path, schedule_alias_output_path = (
         paths["odds"], paths["schedules"], paths["schedule_alias"])

@@ -78,12 +78,13 @@ def run_qc():
         # (b) next scheduled run: BLOCKED -> SKIP, makes NO CFBD request (0 calls), exit 3
         calls["n"] = 0
         rc, out = _run_main()
-        if rc != 3 or "[SKIP]" not in out:
-            issues.append(f"blocked run did not SKIP (rc={rc})")
+        # frozen 2026-11-07: the latch prevents the call but the run is BLOCKED_QUOTA (degraded failure), never a SKIP
+        if rc != 3 or "reason_code=BLOCKED_QUOTA" not in out or "[SKIP]" in out:
+            issues.append(f"blocked run did not report BLOCKED_QUOTA (rc={rc})")
         elif calls["n"] != 0:
             issues.append(f"blocked run STILL made {calls['n']} CFBD request(s) (want 0)")
         else:
-            notes.append("persisted-exhausted -> next run SKIPs with ZERO CFBD requests")
+            notes.append("persisted-exhausted -> next run is BLOCKED_QUOTA (exit 3) with ZERO CFBD requests, never a SKIP")
 
         # (c) operator override (BK_CFBD_FORCE=1) ignores the backoff and attempts again
         os.environ["BK_CFBD_FORCE"] = "1"
@@ -139,10 +140,12 @@ def run_qc():
         # process 2: fresh interpreter -> must SKIP without any CFBD request
         p2 = _sp.run([sys.executable, "-c", "import refresh_cfb_data as r; raise SystemExit(r.main())"],
                      cwd=str(r.BASE_DIR), env=env, capture_output=True, text=True)
-        if p2.returncode != 3 or "[SKIP]" not in (p2.stdout + p2.stderr):
-            issues.append(f"cross-process: fresh interpreter did not SKIP persisted state (rc={p2.returncode})")
+        _o2 = p2.stdout + p2.stderr
+        if p2.returncode != 3 or "reason_code=BLOCKED_QUOTA" not in _o2 or "[SKIP]" in _o2:
+            issues.append(f"cross-process: fresh interpreter did not report BLOCKED_QUOTA for the persisted state "
+                          f"(rc={p2.returncode})")
         else:
-            notes.append("cross-process/restart: a fresh interpreter honors persisted backoff (SKIP, exit 3, no call)")
+            notes.append("cross-process/restart: a fresh interpreter honors persisted backoff (BLOCKED_QUOTA, exit 3, no call)")
     finally:
         with contextlib.suppress(Exception):
             import shutil

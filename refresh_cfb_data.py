@@ -165,12 +165,17 @@ def _is_provider_quota_exhausted(text: str) -> bool:
 
 def main() -> int:
     if not (os.getenv("CFBD_API_KEY") or "").strip():
-        print("refresh_cfb_data: CFBD_API_KEY not set - skipping CFB refresh.")
-        return 0
+        # Frozen 2026-11-07: a missing API key is CONFIG_MISSING, a hard failure (exit 2) -- never a skip/exit 0.
+        print("refresh_cfb_data: CFBD_API_KEY not set - refusing (no request made).")
+        print("OUTCOME: CONFIG_MISSING reason_code=CONFIG_MISSING key=CFBD_API_KEY network_requests=0")
+        return 2
 
     blocked, st = _cfbd_blocked()
     if blocked:
-        print(f"[SKIP] CFB refresh: CFBD quota EXHAUSTED state persisted (detected {st.get('detected_at')}, "
+        # Frozen 2026-11-07: the latch prevents further CFBD calls, but the step is BLOCKED_QUOTA -- a degraded
+        # FAILURE (exit 3), never a skip.
+        print("OUTCOME: BLOCKED_QUOTA reason_code=BLOCKED_QUOTA provider=cfbd network_requests=0 latched=1")
+        print(f"[BLOCKED_QUOTA] CFB refresh: CFBD quota EXHAUSTED state persisted (detected {st.get('detected_at')}, "
               f"reason '{st.get('reason')}', reset {st.get('reset_at') or 'unknown'}). Making NO CFBD "
               f"request until the quota resets or an operator override (set BK_CFBD_FORCE=1, configure "
               f"BK_CFBD_RESET_AT, or delete {_cfbd_state_path()}). Last-known-good CFB artifacts preserved.")
@@ -265,6 +270,7 @@ def main() -> int:
         # Distinct, documented external-outage signal. Exit 3 so the operator can classify it as a
         # provider outage (preserve last-known-good + mark CFB surfaces stale) rather than a code FAIL
         # to retry. The CFB current-data surfaces fail closed on their own freshness checks.
+        print("OUTCOME: BLOCKED_QUOTA reason_code=BLOCKED_QUOTA provider=cfbd latched=1")
         print("CFB refresh halted: PROVIDER_QUOTA_EXHAUSTED (CFBD). Documented external outage; do not "
               "retry until the monthly quota resets or the plan is upgraded.")
         return 3
