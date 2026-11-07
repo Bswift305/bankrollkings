@@ -59,7 +59,8 @@ master), `fix/bk-daily-f2-season-gate` `d2bf8b7` (by F2v2). Stale session branch
 1. ~~Finish and report the `b12eec3` gate~~ — **done, PASS** (receipt above).
 2. **Await review and deployment decision on `b12eec3`** ← current.
 3. If approved, deploy only `b12eec3` and obtain its production receipt.
-4. **Green Light Restoration P0** (owner re-order 2026-11-07; audit done read-only, plan awaiting review).
-5. One release at a time: Safeguard B → D11 → L1 → visuals/entity/disclosure → `bk-daily` (all PAUSED behind 4).
+4. **Green Light Release 1 — truth & integrity** (spec frozen v1, plan Parts 3–4) → its production receipt.
+5. **Green Light Release 2 — convergence restoration + navigation** → its production receipt.
+6. Then resume the paused obligations one release at a time: Safeguard B → D11 → L1 → visuals/entity/disclosure → `bk-daily`.
 6. Decision Integrity Constitution final approval + freeze.
 7. NCAAB Foundation Release design + acceptance plan (no NCAAB implementation until approved).

@@ -158,7 +158,7 @@ CFBD allowance itself, King's Tickets draft storage.
    result from the 2026-11-08 `bk-daily` receipt (D5), and the missing `NFL_GameLines_History.csv` (D3). Until
    resolved they render as labelled Unavailable / stale with their true cause.
 
-## Part 4 — Owner workflow (**CONFIRMED by owner 2026-11-07**, as recorded below incl. the design notes; no implementation until `b12eec3` closes)
+## Part 4 — Owner workflow — **FROZEN PRODUCT SPECIFICATION v1** (confirmed by owner 2026-11-07, as recorded below incl. the design notes; changes only by owner amendment; no implementation until `b12eec3` closes)
 
 1. **Default = today's slate grouped by game**, each game's converging plays beneath it. Secondary **"Top Plays"**
    view sorts plays by agreement count.
