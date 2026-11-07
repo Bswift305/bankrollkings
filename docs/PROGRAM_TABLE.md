@@ -37,6 +37,26 @@ unless production evidence reveals a genuine dependency.
 props writer emit `FetchedAtUTC` (inside 1A scope as same-offer timestamp binding) or display "Observed by BK:
 unavailable" — an owner decision before BUILD, not an assumption.
 
+**RESOLVED by owner 2026-11-07 — Observed-by-BK contract (inside 1A scope: timestamp + same-offer binding; not a
+separate release, not L3):**
+- **Field name: `FetchedAtUTC`** — the repository's existing canonical name (already used by
+  `fetch_ncaaf_slate_cfbd.py` and read at `app.py:18788`, and the name the approved L1 contract uses for "when BK
+  observed the quote"). `ObservedAtUTC` is not introduced. Customer label: "Observed by BK".
+- Value = timezone-aware UTC instant at which BK **successfully received the provider response containing that
+  quote**; bound to the exact same row as sportsbook, market, line, price and `SourceUpdatedAtUTC`.
+- **Never derived** from `LastUpdated`, file mtime, publish time, event time or `SourceUpdatedAtUTC`.
+- Preserved through normalization and atomic publication.
+- Every newly, successfully fetched props row must carry a valid value; existing rows without it display
+  "Observed by BK: unavailable". **No backfill, no manufactured historical times.**
+- 1A displays both clocks; **eligibility keeps the deployed `SourceUpdatedAtUTC` rule** — `FetchedAtUTC` is
+  informational until L3 is separately approved.
+- QCs: schema, provenance (not derived from any forbidden source), malformed / zone-less / future-time handling,
+  same-offer binding (no cross-row or cross-book carry).
+- Acceptance: synthetic fixtures + the **next normal scheduled fetch** on prod. No manual paid fetch to populate it.
+- The item-8 read-only baseline count runs first and documents the current state.
+- Note for BUILD: confirm the CFBD slate's existing `FetchedAtUTC` semantics match this definition (per-response
+  vs per-run); any difference is recorded, not silently changed (CFB is outside 1A).
+
 ## Phase 1 — Close production trust obligations (in order; one release at a time)
 | # | Item (consolidated) | Branch @ exact SHA | Stage | Remaining acceptance condition | File overlap with active candidate `b12eec3` | Disposition |
 |---|---|---|---|---|---|---|
