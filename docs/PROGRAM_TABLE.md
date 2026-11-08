@@ -44,6 +44,10 @@ separate release, not L3):**
   observed the quote"). `ObservedAtUTC` is not introduced. Customer label: "Observed by BK".
 - Value = timezone-aware UTC instant at which BK **successfully received the provider response containing that
   quote**; bound to the exact same row as sportsbook, market, line, price and `SourceUpdatedAtUTC`.
+- **Granularity (owner clarification 2026-11-08): one value per successful provider response, not per quote.** Rows
+  that arrived in the same response legitimately share the same `FetchedAtUTC`; the requirement is that every row
+  stays bound to the response in which BK observed it. QCs must not demand per-row uniqueness — they check that a
+  row's value is that of its own response, never another response's or a run-level stamp.
 - **Never derived** from `LastUpdated`, file mtime, publish time, event time or `SourceUpdatedAtUTC`.
 - Preserved through normalization and atomic publication.
 - Every newly, successfully fetched props row must carry a valid value; existing rows without it display
@@ -55,7 +59,9 @@ separate release, not L3):**
 - Acceptance: synthetic fixtures + the **next normal scheduled fetch** on prod. No manual paid fetch to populate it.
 - The item-8 read-only baseline count runs first and documents the current state.
 - Note for BUILD: confirm the CFBD slate's existing `FetchedAtUTC` semantics match this definition (per-response
-  vs per-run); any difference is recorded, not silently changed (CFB is outside 1A).
+  vs per-run); any difference is recorded, not silently changed (CFB is outside 1A). **CFB implementation stays
+  unchanged** unless the audit finds a direct shared-code conflict with the NFL props writer; a conflict is reported
+  to the owner before anything CFB is touched.
 
 ## Phase 1 — Close production trust obligations (in order; one release at a time)
 | # | Item (consolidated) | Branch @ exact SHA | Stage | Remaining acceptance condition | File overlap with active candidate `b12eec3` | Disposition |
