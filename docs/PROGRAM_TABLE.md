@@ -96,6 +96,19 @@ separate release, not L3):**
 | Decision Journal (dark), King's Tickets step 4 storage, SGP multi-leg handoff | DESIGN (held) | After Phase 3 — PAUSED |
 | Readiness reconciliation / Decision Support Readiness Audit (owner request 11-07) | DISCOVERY (not started) | After P1-7 under the reset order — PAUSED |
 
+## Recorded obligations from the 2026-11-08 RCAs (RECORDED ONLY — not ordered, not scoped for build, no branch)
+Source: `docs/nov7_cross_sport_landing_audit_20261108.md` (read-only RCAs at `b12eec3`). None introduced by
+`b12eec3`. No implementation, reordering or combining into a branch until the owner reviews the `b12eec3`
+production receipt and the program order. Legal/data-rights gates remain authoritative.
+
+| # | Obligation | Mechanism (evidence) | Overlap |
+|---|---|---|---|
+| O-1 | CFB Eastern-date grading repair + governed rebuild | `fetch_cfbd_game_scores.py:55` UTC date inner-joined to Eastern odds dates at `build_ncaaf_game_lines_history.py:168` → every kickoff ≥ 8 PM ET dropped from line history, graded results, ATS, streaks, Wave, O/U tendencies, calibration. `fetch_final_scores.py:65` same pattern (no consumer yet). Rebuild needs CFBD data → depends on O-5 | Consolidated `bk-daily`; CFB pages; F7 NCAAF single-writer |
+| O-2 | Prime-time live-score Eastern-date repair | `refresh_live_scores.py:91-93` "today" = `datetime.now()` (UTC on prod) → evening games stop matching after 8 PM ET | GL 1A item 1 (started-event exclusion depends on live state); consolidated `bk-daily` |
+| O-3 | Cross-page football freshness + completed-event eligibility | `_format_game_market_odds` drops `LastUpdated` (NBA restored in `b12eec3` by design) → 6h line gate dead for NFL/NCAAF/MLB/WNBA; no kickoff/final check on football surfaces; shared predicates (`_leg_quote_failures`, `_kickoff_gate_failure`) unused outside ticket/SGP legs; Slate Pulse unfiltered count; Best Lines keeps stale rows; Matchup Center line-move team-name + field-name mismatch | **GL 1A** covers only the Classic GL path + Matchup Center line-move join (item 4); **L1/L2** (shared stale gate); remainder is cross-surface |
+| O-4 | NBA results rights decision + current-season producer design | NBA data-rights gate (`services/nba_source_gate.py`, default OFF) blanks gamelog loading + NBA grading; no wired 2026-27 regular-season producer (`refresh_nba_daily.py` playoff-only, `"2025-26"`); only writer `floor_play_package/refresh_data.py` unwired / wrong path; no NBA finals writer | NBA season readiness; consolidated `bk-daily`; owner/legal decision first |
+| O-5 | CFBD allowance / reset / call-budget contract | `refresh_cfb_data.py`: `reset_at` only from `BK_CFBD_RESET_AT`, never derived → latch permanent; no allowance recorded; ~180–200+ requests/run (≈130 roster calls) | Consolidated `bk-daily`; prerequisite for O-1 rebuild |
+
 ## Superseded / already-in-master branches (no action; kept, not deleted)
 In master (patch-equivalent): `fix/props-quote-source-utc` `17b5e69`, `integration/integrity-d4-6bdb73f` `4afcab9`,
 `fix/d4-kickoff-gate-v2` `a086764`, `integration/integrity-group-a5de400` `672480d`, `integration/integrity-group`
