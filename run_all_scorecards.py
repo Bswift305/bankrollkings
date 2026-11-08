@@ -385,6 +385,7 @@ SCORECARDS = [
     # Prod hotfix 2026-11-04: an NFL prop quote's time is the zone-explicit SourceUpdatedAtUTC only (never the
     # zone-less LastUpdated); 5-minute skew tolerance; explicit America/New_York display.
     ("Props Quote Source Time QC", "qc_props_quote_source_time.py", 180),
+    ("Props Source-Time Freshness QC", "qc_props_source_time_freshness.py", 600),
     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),

@@ -126,9 +126,24 @@ def signals(now=None):
     return ls.read_signals(now)
 
 
+# Hermetic boundary (b12eec3 remediation 2026-11-08): generate_run_status binds LOG_DIR = <checkout>/logs at
+# import, so redirecting BASE_DIR alone let a real production operator log leak into the Run Status build (and
+# its relative_to(BASE_DIR) then raised). Every Run Status build in this QC reads an EMPTY, QC-owned log dir and
+# records every directory it searched, so a checkout logs/ directory can never be read.
+_EMPTY_LOG_DIR = Path(tempfile.mkdtemp(prefix="qc_lmstatus_logs_"))
+_LOG_DIRS_SEARCHED: list[Path] = []
+_REAL_LATEST_FILE = grs._latest_file
+
+
+def _recording_latest_file(patterns, base):
+    _LOG_DIRS_SEARCHED.append(Path(base))
+    return _REAL_LATEST_FILE(patterns, base)
+
+
 def overall():
     with patched(grs, _classify=lambda *a, **k: "FRESH", _odds_family_signals=lambda: ([], []),
-                 _operator_signals=lambda: ([], {})):
+                 _operator_signals=lambda: ([], {}), LOG_DIR=_EMPTY_LOG_DIR,
+                 _latest_file=_recording_latest_file):
         return grs.build_run_status()["overall"]
 
 
@@ -386,7 +401,7 @@ def main() -> int:
                               "failed_steps": []})
     legacy.write_text(legacy_body, encoding="utf-8")
     os.utime(str(legacy), (1_700_000_000, 1_700_000_000))
-    with patched(grs, BASE_DIR=root, TRACKING_DIR=root / "data" / "tracking"):
+    with patched(grs, BASE_DIR=root, TRACKING_DIR=root / "data" / "tracking", LOG_DIR=root / "logs"):
         clean()
         r_empty, i_empty = signals()
         check(r_empty == [] and i_empty.get("reported") is False,
@@ -457,6 +472,11 @@ def main() -> int:
     with patched(rlm, main=lambda: 1), contextlib.redirect_stdout(io.StringIO()):
         rc = rlm._entry()
     check(rc == 2, "X a stray 1 from main() is mapped to 2 at the process boundary")
+
+    real_logs = (REPO / "logs").resolve()
+    check(bool(_LOG_DIRS_SEARCHED) and all(Path(d).resolve() != real_logs for d in _LOG_DIRS_SEARCHED),
+          f"H hermetic: every Run Status build searched only QC-owned log dirs, never the checkout logs/ "
+          f"({len(_LOG_DIRS_SEARCHED)} searches)")
 
     print("=" * 72)
     print("QC: LINE-MOVEMENT STATUS PERSISTENCE (governed, durable, mandatory, bound)")

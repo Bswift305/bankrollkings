@@ -122,15 +122,35 @@ def receipt_child(root: Path, name: str, code: int, receipt, text: str = "") -> 
     return [PY, str(p)]
 
 
+NETWORK_TRIPWIRE = "QC_NETWORK_ATTEMPT_BLOCKED"
+
+
 def real_fetcher_child(root: Path, name: str, argv: list[str], drop_key: bool) -> list[str]:
-    """The REAL fetch_game_lines.main(), its BASE_DIR redirected to `root` (no repo / production writes)."""
+    """The REAL fetch_game_lines.main(), its BASE_DIR redirected to `root` (no repo / production writes).
+
+    b12eec3 remediation (2026-11-08): (1) ALL network access is blocked BEFORE the fetcher is imported -- any
+    attempt prints NETWORK_TRIPWIRE and raises, so a real or dummy API key can never reach the provider; (2) the
+    key is dropped AFTER the import, because importing fetch_game_lines runs load_local_env(<checkout>), which
+    re-read ODDS_API_KEY from the checkout's .env and silently undid an earlier drop (on prod the "missing key"
+    case therefore made a real WNBA request)."""
     p = root / f"{name}.py"
     p.write_text(
-        "import os, sys, pathlib\n"
+        "import os, sys, pathlib, socket, urllib.request\n"
+        "def _qc_deny(*a, **k):\n"
+        f"    print({NETWORK_TRIPWIRE!r}, flush=True)\n"
+        "    raise OSError('QC: network access is blocked in this child')\n"
+        "socket.create_connection = _qc_deny\n"
+        "socket.socket.connect = _qc_deny\n"
+        "socket.socket.connect_ex = _qc_deny\n"
+        "socket.getaddrinfo = _qc_deny\n"
+        "urllib.request.urlopen = _qc_deny\n"
         f"sys.path.insert(0, {str(REPO)!r})\n"
-        + ("for k in ('ODDS_API_KEY', 'THE_ODDS_API_KEY'): os.environ.pop(k, None)\n" if drop_key else "")
-        + "import fetch_game_lines as fg\n"
-        f"fg.BASE_DIR = pathlib.Path({str(root)!r})\n"
+        "import fetch_game_lines as fg\n"
+        "fg.urlopen = _qc_deny\n"
+        + ("for k in ('ODDS_API_KEY', 'THE_ODDS_API_KEY'): os.environ.pop(k, None)\n"
+           "assert not os.environ.get('ODDS_API_KEY') and not os.environ.get('THE_ODDS_API_KEY'), 'key not dropped'\n"
+           if drop_key else "")
+        + f"fg.BASE_DIR = pathlib.Path({str(root)!r})\n"
         f"sys.exit(fg.main({argv!r}))\n", encoding="utf-8")
     return [PY, str(p)]
 
@@ -261,6 +281,9 @@ def linemove_matrix(sink=None):
                 ok(rec.get("outcome") == "CONFIG_MISSING" and rec.get("exit_code") == 2 and rec.get("published") is False
                    and "network_requests=0" in out,
                    f"{tag}: REAL child exits 2 with its own CONFIG_MISSING receipt, zero requests ({rec})", sink)
+            if key.startswith("REAL fetch_game_lines"):
+                ok(NETWORK_TRIPWIRE not in out,
+                   f"{tag}: REAL child attempted no network access (tripwire silent)", sink)
             # global invariant: systemd(prod) SUCCESS implies the runner saw no failure
             ok(not (sd_prod == "SUCCESS" and not (status == "OK" or status.startswith("SKIPPED_"))),
                f"{tag}: INVARIANT no failure reads SUCCESS under SuccessExitStatus=1", sink)

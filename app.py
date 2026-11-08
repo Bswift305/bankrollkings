@@ -3845,12 +3845,35 @@ def props_executable_meta(raw_df, max_age_hours=None, now=None):
         pass
     now_utc = _instant_to_utc(now, naive_tz='UTC') if now is not None else _utc_now()
     meta = get_props_refresh_meta(raw_df, max_age_hours=limit, now=now_utc)
-    age = meta.get('age_hours')
-    skew_seconds = 0
-    freshest = _instant_to_utc(meta.get('last_updated_utc')) if meta.get('last_updated_utc') else None
-    if freshest is not None and freshest > now_utc:
-        skew_seconds = int(round((freshest - now_utc).total_seconds()))
     tolerance_seconds = int(round(PROPS_FUTURE_TOLERANCE_HOURS * 3600))
+    # b12eec3 remediation (2026-11-08): the executable verdict is governed ONLY by the provider's zone-explicit
+    # SourceUpdatedAtUTC. The zone-less LastUpdated fetch stamp is never a freshness authority -- no zone is
+    # guessed for it (it is UTC on prod but was read as Eastern, so a fresh feed looked ~5h in the future and
+    # every price was withheld). Missing / unparseable / zone-less source times -> no timestamp (fail closed).
+    freshest = None
+    src_instants = []
+    if raw_df is not None and not getattr(raw_df, 'empty', True) and 'SourceUpdatedAtUTC' in raw_df.columns:
+        src_instants = [d for d in (_canonical_kickoff_utc(v) for v in raw_df['SourceUpdatedAtUTC'].tolist())
+                        if d is not None]
+    if src_instants:
+        within = [d for d in src_instants if d <= now_utc + timedelta(seconds=tolerance_seconds)]
+        freshest = max(within) if within else min(src_instants)
+    age = None
+    skew_seconds = 0
+    if freshest is not None:
+        age = round(max((now_utc - freshest).total_seconds(), 0.0) / 3600.0, 2)
+        if freshest > now_utc:
+            skew_seconds = int(round((freshest - now_utc).total_seconds()))
+        meta['last_updated'] = _source_time_label(freshest)
+        meta['last_updated_utc'] = freshest.strftime('%Y-%m-%dT%H:%M:%SZ')
+    else:
+        meta['last_updated'] = 'Update time not recorded'
+        meta['last_updated_utc'] = None
+    meta['age_hours'] = age
+    meta['is_stale'] = bool(age is not None and age > limit)
+    meta['status'] = 'stale' if meta['is_stale'] else 'live'
+    meta['warning'] = ''   # recomputed below from the source-time verdict only (never a wall-clock leftover)
+    meta['freshness_source'] = 'SourceUpdatedAtUTC'
     if not meta.get('has_live_props'):
         reason = 'empty'
     elif age is None:
@@ -3889,19 +3912,22 @@ def props_executable_meta(raw_df, max_age_hours=None, now=None):
 
 
 def _drop_future_rows(df, now_utc):
-    """Rows whose OWN LastUpdated is beyond the clock-skew allowance are not executable (fail closed)."""
-    if df is None or getattr(df, 'empty', True) or 'LastUpdated' not in df.columns:
+    """Rows whose OWN zone-explicit SourceUpdatedAtUTC is beyond the clock-skew allowance -- or missing,
+    unparseable or zone-less -- are not executable (fail closed). The zone-less LastUpdated is never read."""
+    if df is None or getattr(df, 'empty', True):
         return df, 0
+    if 'SourceUpdatedAtUTC' not in df.columns:
+        return df.iloc[0:0], int(len(df))
     limit = now_utc + timedelta(hours=PROPS_FUTURE_TOLERANCE_HOURS)
-    bad = set()
-    for v in df['LastUpdated'].dropna().unique().tolist():
-        inst = _instant_to_utc(v)
-        if inst is not None and inst > limit:
-            bad.add(v)
-    if not bad:
+    keep = []
+    for v in df['SourceUpdatedAtUTC'].tolist():
+        inst = _canonical_kickoff_utc(v)
+        keep.append(inst is not None and inst <= limit)
+    mask = pd.Series(keep, index=df.index)
+    dropped = int((~mask).sum())
+    if not dropped:
         return df, 0
-    mask = df['LastUpdated'].isin(bad)
-    return df.loc[~mask], int(mask.sum())
+    return df.loc[mask], dropped
 
 
 def _executable_props_frame(sport, raw_df, max_age_hours=None, now=None):

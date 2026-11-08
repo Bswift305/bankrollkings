@@ -66,9 +66,22 @@ def _has_nested_anchor(html):
     return False
 
 
+def _fresh_raw(frame):
+    """The fixture as the central executable gate's RAW feed, carrying a zone-explicit provider source time
+    10 minutes old. b12eec3 remediation (2026-11-08): props_feed_status reads _load_*_props_raw, which the
+    original fixtures did not cover -- so on prod the QC graded the REAL feeds (stale WNBA, then-misread NBA)
+    instead of its fixtures. The QC is now hermetic: no production raw feed is ever read."""
+    from datetime import datetime, timedelta, timezone
+    out = frame.copy()
+    out['SourceUpdatedAtUTC'] = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%SZ')
+    return out
+
+
 def _install_fixtures():
     app.load_props = lambda: NBA_PROPS.copy()
     app.load_wnba_props = lambda: WNBA_PROPS.copy()
+    app._load_props_raw = lambda: _fresh_raw(NBA_PROPS)
+    app._load_wnba_props_raw = lambda: _fresh_raw(WNBA_PROPS)
     app.load_game_market_odds = lambda: NBA_ODDS.copy()
     app.get_current_user = _owner_user
     app._ENTITY_MARKET_KEYSET_CACHE.clear()
@@ -79,7 +92,7 @@ def run_qc():
     os.environ.pop('BK_NBA_STATS_ENABLED', None)  # ensure gated (default)
 
     orig = {k: getattr(app, k) for k in ('load_props', 'load_wnba_props', 'load_game_market_odds',
-                                         'get_current_user')}
+                                         'get_current_user', '_load_props_raw', '_load_wnba_props_raw')}
     try:
         _install_fixtures()
 
