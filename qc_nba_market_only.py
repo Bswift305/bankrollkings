@@ -70,12 +70,14 @@ def qc_source_parser_no_merge():
     z = lambda dt: dt.strftime('%Y-%m-%dT%H:%M:%SZ')  # noqa: E731
     event = {'id': 'evt1', 'home_team': 'Celtics', 'away_team': 'Lakers',
              'commence_time': z(now + timedelta(days=1))}
+    # b12eec3 remediation: the provider carries last_update at the MARKET level (raw diagnostic 2026-10-31:
+    # 23/23 market-level, 0/3 bookmaker-level); the parser maps it to SourceUpdatedAtUTC, the gate's only clock.
     book_a = {'key': 'draftkings', 'title': 'DraftKings', 'last_update': z(now - timedelta(minutes=60)),
-              'markets': [{'key': mk, 'outcomes': [
+              'markets': [{'key': mk, 'last_update': z(now - timedelta(minutes=60)), 'outcomes': [
                   {'name': 'Over', 'description': 'A. Player', 'point': 24.5, 'price': -110},  # synthetic-fixture
                   {'name': 'Under', 'description': 'A. Player', 'point': 24.5, 'price': -108}]}]}
     book_b = {'key': 'fanduel', 'title': 'FanDuel', 'last_update': z(now - timedelta(minutes=53)),
-              'markets': [{'key': mk, 'outcomes': [
+              'markets': [{'key': mk, 'last_update': z(now - timedelta(minutes=53)), 'outcomes': [
                   {'name': 'Over', 'description': 'A. Player', 'point': 25.5, 'price': -120}]}]}  # no Under
     src = fpp.parse_market_rows(event, book_a, [mk]) + fpp.parse_market_rows(event, book_b, [mk])
     feed = pd.DataFrame(src)
@@ -106,13 +108,18 @@ def _fixture(sport, age_hours=1.0):
     v3: relative times -- the old fixed 2099 stamps are future-dated, which the central gate now withholds."""
     now = datetime.now(timezone.utc).replace(microsecond=0)
     base = {c: '' for c in ['Player', 'Team', 'Stat', 'MarketKey', 'Line', 'Game', 'Book', 'LastUpdated',
-                            'OverOdds', 'UnderOdds']}
+                            'SourceUpdatedAtUTC', 'OverOdds', 'UnderOdds']}
+    # b12eec3 remediation: the executable gate reads ONLY the zone-explicit SourceUpdatedAtUTC (LastUpdated is
+    # a zone-less fetch stamp and is never a freshness authority)
+    src = lambda dt: dt.strftime('%Y-%m-%dT%H:%M:%SZ')  # noqa: E731
     r1 = dict(base, Player=f'{sport} PLAYER ONE', Team='LAL', Stat='Points', Line=24.5, Game='LAL @ BOS',
               Book='DraftKings', OverOdds=-110, UnderOdds=-110,  # synthetic-fixture
-              LastUpdated=_et(now - timedelta(hours=age_hours, minutes=5)))
+              LastUpdated=_et(now - timedelta(hours=age_hours, minutes=5)),
+              SourceUpdatedAtUTC=src(now - timedelta(hours=age_hours, minutes=5)))
     r2 = dict(base, Player=f'{sport} GUARD TWO', Team='MIA', Stat='Assists', Line=6.5, Game='MIA @ NYK',
               Book='FanDuel', OverOdds=-115, UnderOdds='',
-              LastUpdated=_et(now - timedelta(hours=age_hours)))  # missing under
+              LastUpdated=_et(now - timedelta(hours=age_hours)),
+              SourceUpdatedAtUTC=src(now - timedelta(hours=age_hours)))  # missing under
     return pd.DataFrame([r1, r2])
 
 
@@ -246,11 +253,11 @@ def qc_stale_props_board(issues, notes):
                         issues.append(f'{label} fresh props control did not render (stale proof vacuous): {st}')
         # future-dated / no-timestamp feeds are unverifiable -> withheld (never treated as current)
         fx = _fixture('NBA')
-        fx['LastUpdated'] = '2099-01-01 12:00'
+        fx['SourceUpdatedAtUTC'] = '2099-01-01T12:00:00Z'
         app._load_props_raw = lambda f=fx: f.copy()
         b_future = app.build_market_only_board(app.load_live_props_feed)
         fx2 = _fixture('NBA')
-        fx2['LastUpdated'] = ''
+        fx2['SourceUpdatedAtUTC'] = ''
         app._load_props_raw = lambda f=fx2: f.copy()
         b_none = app.build_market_only_board(app.load_live_props_feed)
         if b_future['rows'] or b_none['rows'] or b_future['props_status'].get('unavailable_reason') != 'future_timestamp' \

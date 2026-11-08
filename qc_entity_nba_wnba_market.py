@@ -92,7 +92,18 @@ def run_qc():
     os.environ.pop('BK_NBA_STATS_ENABLED', None)  # ensure gated (default)
 
     orig = {k: getattr(app, k) for k in ('load_props', 'load_wnba_props', 'load_game_market_odds',
-                                         'get_current_user', '_load_props_raw', '_load_wnba_props_raw')}
+                                         'get_current_user', '_load_props_raw', '_load_wnba_props_raw',
+                                         'ACTIVE_USER_HEARTBEAT_PATH')}
+    # b12eec3 remediation: this QC's signed-in test requests stamp the activity heartbeat (inject_globals ->
+    # record_active_user). Pointed at the REAL marker, a production scorecard run kept the paid live-score
+    # poller running. The marker is redirected into a QC-owned temp dir, and the real one is proven untouched.
+    import tempfile
+    from pathlib import Path
+    real_hb = Path(app.ACTIVE_USER_HEARTBEAT_PATH)
+    real_hb_before = (real_hb.stat().st_mtime_ns, real_hb.read_bytes()) if real_hb.exists() else None
+    hb_dir = tempfile.TemporaryDirectory(prefix='qc_entity_hb_')
+    app.ACTIVE_USER_HEARTBEAT_PATH = Path(hb_dir.name) / 'active_user_heartbeat.txt'
+    app._LAST_ACTIVITY_WRITE = 0.0
     try:
         _install_fixtures()
 
@@ -192,9 +203,18 @@ def run_qc():
         finally:
             os.environ.pop('BK_NBA_STATS_ENABLED', None)
     finally:
+        qc_hb_written = Path(app.ACTIVE_USER_HEARTBEAT_PATH).exists()
         for k, v in orig.items():
             setattr(app, k, v)
         app._ENTITY_MARKET_KEYSET_CACHE.clear()
+        hb_dir.cleanup()
+    real_hb_after = (real_hb.stat().st_mtime_ns, real_hb.read_bytes()) if real_hb.exists() else None
+    if real_hb_after != real_hb_before:
+        issues.append(f"the REAL activity heartbeat {real_hb} was written by this QC (isolation breach)")
+    elif not qc_hb_written:
+        issues.append("signed-in test requests did not stamp the QC-owned heartbeat (redirect proof vacuous)")
+    else:
+        notes.append("activity heartbeat: signed-in test requests stamped only the QC-owned marker; real marker untouched")
 
     if not issues:
         notes.append("Option A market-only destinations + gate-aware resolution verified")

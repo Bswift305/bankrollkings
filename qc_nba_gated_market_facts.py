@@ -52,6 +52,8 @@ def _feed(rows, meta=None):
         from datetime import datetime, timedelta, timezone
         from services.timeutils import DISPLAY_TZ
         df['LastUpdated'] = (datetime.now(timezone.utc) - timedelta(hours=1)).astimezone(DISPLAY_TZ).strftime('%Y-%m-%d %H:%M')
+        # b12eec3 remediation: the executable gate is governed ONLY by the zone-explicit provider source time
+        df['SourceUpdatedAtUTC'] = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
     return lambda require_fresh=False: (df, (meta or {}))
 
 

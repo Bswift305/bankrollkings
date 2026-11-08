@@ -74,7 +74,9 @@ def _write_props(sport, age_hours):
         rows.append({"Player": p, "Team": "QCA", "Stat": stat, "MarketKey": f"player_{stat.lower()}",
                      "Line": line, "CurrentLine": line, "OpenLine": line - 1.0, "Game": game, "Book": book,
                      "OverOdds": PRICE, "UnderOdds": -103, "OpenOverOdds": PRICE + 15, "OpenUnderOdds": -118,
-                     "LastUpdated": _et(now - timedelta(hours=age_hours, minutes=i))})
+                     "LastUpdated": _et(now - timedelta(hours=age_hours, minutes=i)),
+                     # b12eec3 remediation: freshness is governed ONLY by the zone-explicit provider source time
+                     "SourceUpdatedAtUTC": (now - timedelta(hours=age_hours, minutes=i)).strftime("%Y-%m-%dT%H:%M:%SZ")})
     path = Path(app.DATA_DIR) / "props" / ("NBA_Props.csv" if sport == "nba" else "WNBA_Props.csv")
     pd.DataFrame(rows).to_csv(path, index=False)
     _MTIME[0] += 10
@@ -312,17 +314,26 @@ def qc_no_props_input_surfaces():
 
 def qc_central_contract():
     now = datetime.now(timezone.utc)
-    mk = lambda lu: pd.DataFrame([{"Player": "x", "Book": "b", "LastUpdated": lu}, {"Player": "y", "Book": "b", "LastUpdated": lu}])  # noqa: E731
-    m_ok = app.props_executable_meta(mk(_et(now - timedelta(hours=5, minutes=59))))
-    m_st = app.props_executable_meta(mk(_et(now - timedelta(hours=6, minutes=1))))
-    m_loose = app.props_executable_meta(mk(_et(now - timedelta(hours=7))), max_age_hours=24)
-    m_utc = app.props_executable_meta(mk((now - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")))
+    iso = lambda dt: dt.strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
+    # b12eec3 remediation: the source time is SourceUpdatedAtUTC; the zone-less LastUpdated is a decoy that must
+    # never move the verdict (it carries the OLD, misread value: a UTC wall clock written zone-less).
+    mk = lambda src: pd.DataFrame([{"Player": "x", "Book": "b", "SourceUpdatedAtUTC": src,  # noqa: E731
+                                    "LastUpdated": now.strftime("%Y-%m-%d %H:%M")},
+                                   {"Player": "y", "Book": "b", "SourceUpdatedAtUTC": src,
+                                    "LastUpdated": now.strftime("%Y-%m-%d %H:%M")}])
+    m_ok = app.props_executable_meta(mk(iso(now - timedelta(hours=5, minutes=59))), now=now)
+    m_st = app.props_executable_meta(mk(iso(now - timedelta(hours=6, minutes=1))), now=now)
+    m_loose = app.props_executable_meta(mk(iso(now - timedelta(hours=7))), max_age_hours=24, now=now)
+    m_utc = app.props_executable_meta(mk(iso(now - timedelta(hours=2))), now=now)
+    m_naive = app.props_executable_meta(mk(_et(now - timedelta(hours=2))), now=now)
     check(m_ok["executable"] and not m_st["executable"] and m_st["unavailable_reason"] == "stale",
           "boundary: 5h59m executable, 6h01m withheld (CLOCK A, 6h)")
     check(not m_loose["executable"] and m_loose["max_age_hours"] == app.LIVE_LINES_MAX_AGE_HOURS,
           "a caller asking for 24h cannot loosen the 6h rule")
     check(m_utc["executable"] and 1.9 < m_utc["age_hours"] < 2.1,
-          "an aware UTC stamp and a naive Eastern stamp both age correctly (timezone-aware UTC instants)")
+          "an explicit-UTC source stamp ages correctly (timezone-aware UTC instants)")
+    check(not m_naive["executable"] and m_naive["unavailable_reason"] == "no_timestamp" and m_naive["prices_withheld"],
+          "a zone-less source stamp is unknown -> no_timestamp, prices withheld (no zone is ever guessed)")
     src = inspect.getsource(app.build_market_only_board)
     check("require_fresh=False" not in src and "props_executable_meta(df)" in src,
           "build_market_only_board no longer calls require_fresh=False and re-verifies the frame it receives")
@@ -512,7 +523,8 @@ def qc_skew_contract():
     row beyond the allowance is dropped from an otherwise executable feed."""
     now = datetime.now(timezone.utc).replace(microsecond=0)
     iso = lambda dt: dt.strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
-    mk = lambda *lus: pd.DataFrame([{"Player": f"p{i}", "Book": "b", "LastUpdated": lu} for i, lu in enumerate(lus)])  # noqa: E731
+    mk = lambda *lus: pd.DataFrame([{"Player": f"p{i}", "Book": "b", "SourceUpdatedAtUTC": lu,  # noqa: E731
+                                     "LastUpdated": now.strftime("%Y-%m-%d %H:%M")} for i, lu in enumerate(lus)])
     ok3 = app.props_executable_meta(mk(iso(now + timedelta(minutes=3))), now=now)
     edge = app.props_executable_meta(mk(iso(now + timedelta(minutes=5))), now=now)
     bad = app.props_executable_meta(mk(iso(now + timedelta(minutes=5, seconds=1))), now=now)

@@ -95,7 +95,9 @@ def _write_props(root: Path, sport: str, age_hours: float) -> None:
         rows.append({"Player": QC_PLAYER[sport], "Team": "QCX", "Stat": stat, "MarketKey": f"player_{stat.lower()}",
                      "Line": line, "CurrentLine": line, "OpenLine": line, "Game": "QCX @ QCY", "Book": book,
                      "OverOdds": QC_PRICE, "UnderOdds": -107, "OpenOverOdds": QC_PRICE, "OpenUnderOdds": -107,
-                     "LastUpdated": _et(now - timedelta(hours=age_hours, minutes=i))})
+                     "LastUpdated": _et(now - timedelta(hours=age_hours, minutes=i)),
+                     # b12eec3 remediation: freshness is governed ONLY by the zone-explicit provider source time
+                     "SourceUpdatedAtUTC": (now - timedelta(hours=age_hours, minutes=i)).strftime("%Y-%m-%dT%H:%M:%SZ")})
     path = root / "props" / ("NBA_Props.csv" if sport == "nba" else "WNBA_Props.csv")
     pd.DataFrame(rows).to_csv(path, index=False)
     _MTIME[0] += 10
