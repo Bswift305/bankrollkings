@@ -69,6 +69,19 @@ current Matchup Center card. Matchup Center injury module reads "Unavailable" de
 | Matchup evidence | weather stale, injuries not joined, line-move join null | stale | — |
 | Green Light lens inputs | NFL only; through Wk 8 | n/a | n/a |
 
+## Read-only RCAs (code traced at `b12eec3`; prod confirmation pending where noted)
+
+| # | RCA | Root cause (code) | Introduced | Classification | Owner |
+|---|---|---|---|---|---|
+| 1 | NBA results never land | No current-season regular-season gamelog producer in `run_daily`: `refresh_nba_daily.py` STEPS has only playoff steps (hardcoded `"2025-26"`); the only `NBA_GameLogs.csv` writer (`floor_play_package/refresh_data.py`) is unwired and writes under `floor_play_package/`. No NBA finals writer. AND the NBA data-rights gate (`services/nba_source_gate.py`, default OFF) blanks gamelog loading + NBA prop grading, so rows stay Pending even with a fresh file. | pre-existing | gate = **unsupported by design** (data-rights review); missing producer = **pre-existing** | consolidated `bk-daily` obligation / NBA season readiness |
+| 2 | CFBD latch | `refresh_cfb_data.py`: `reset_at` comes only from env `BK_CFBD_RESET_AT`; never derived (no Retry-After, no monthly rollover) → blocks forever. Cleared only by a fully clean run, `BK_CFBD_FORCE=1`, or deleting the file. No allowance recorded anywhere; ~180–200+ CFBD requests/run (≈130 roster calls). | `95d51da` (2026-10-23), before `3d7cda1` | **pre-existing, exposed by truthful semantics** (`b12eec3` only made it exit 3 / `BLOCKED_QUOTA` hard failure) | consolidated `bk-daily` obligation (owner decision on reset) |
+| 3 | UTC calendar dates | `fetch_final_scores.py:65` `date[:10]` of ESPN UTC (no code consumer yet). **Material:** `fetch_cfbd_game_scores.py:55` UTC date inner-joined at `build_ncaaf_game_lines_history.py:168` against Eastern odds dates → every CFB kickoff ≥ 8 PM ET silently dropped from line history / graded results / ATS / streaks / Wave / O-U tendencies / calibration. `refresh_live_scores.py:91-93` "today" = UTC → evening games stop polling after 8 PM ET. | `32e3f44` (09-26), `952385a`; before `3d7cda1` | **pre-existing** | consolidated `bk-daily` / data-integrity obligation (live ticker also feeds 1A started-event exclusion) |
+| 4 | Completed / stale games on live surfaces | (A) `_format_game_market_odds` drops `LastUpdated` → `get_lines_refresh_meta` age None → 6h line gate never fires for NFL/NCAAF/MLB/WNBA (b12eec3 restored it for NBA only, by design). (B) No completed-game / kickoff check on football surfaces; shared predicates `_leg_quote_failures` / `_kickoff_gate_failure` used only by ticket/SGP legs; NBA uses `_kickoff_is_current`. Slate Pulse counts distinct odds-file games unfiltered. Classic GL reads `NFL_Props.csv` directly (no freshness, no kickoff gate, sorted by lens count then game text). Matchup Center line-move: team-name join (`normalize_team_abbr` returns NFL full names) + field-name mismatch (`spread_first` vs `spread_open`). | pre-existing | **pre-existing**; 1A scope covers only the Classic GL path | **Green Light 1A** (GL freshness / started-event / kickoff order; Matchup Center line-move join = 1A item 4) + cross-surface obligation (A, Slate Pulse, Best Lines) |
+
+None of the four was introduced by `b12eec3`, and none violates a `b12eec3` acceptance requirement on the code
+evidence. Production confirmation (unit command line incl. `--continue-on-error`, `BK_NBA_STATS_ENABLED`,
+`_child_outcomes_nba_daily.json`) is collected with today's `bk-daily` observation.
+
 ## Remaining (after today's 13:00 UTC `bk-daily`)
 Re-run the inventory; reconcile each Saturday NCAAF and NBA event: final received, ML/spread/total graded at the
 exact captured book/line, push handling, props grading, removal from live surfaces, and the producer outcome.
