@@ -7,11 +7,11 @@ change any release's scope, gates, or acceptance criteria.
 
 | Field | Value |
 |---|---|
-| Platform Doctrine version reviewed against | e.g. `PLATFORM-DOCTRINE-1` (v1) |
+| Platform Doctrine version reviewed against | current: `PLATFORM-DOCTRINE-1.1` (v1.1) |
 | Doctrine file SHA-256 | from `docs/platform_doctrine_versions.md` |
 | Frozen constitution in force | `DIC-1.0` (separate; unchanged by the doctrine) |
 
-## Blind-spot classification (Platform Doctrine v1 §4)
+## Blind-spot classification (Platform Doctrine §4, version above)
 
 One row per question. Status is exactly one of **Addressed** · **Deferred with destination** · **Not applicable
 with reason** · **Open contradiction**. Any *Open contradiction* blocks acceptance until the owner rules.

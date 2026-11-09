@@ -122,6 +122,19 @@ reopens `d7fbefa`.
 | I-4 | **14 legacy QCs stamp the real heartbeat when run standalone** — contained only under the governed runners (`run_all_scorecards`, `qc_offline`) | 14/14 change marker standalone, 0/14 under `run_scorecard` (`be00c90`/`d7fbefa` evidence) | QC maintenance (P1-6 / D12 family); operator rule: standalone QC runs on prod-like data set `BK_ACTIVE_USER_HEARTBEAT_PATH` |
 | I-5 | **Signed-in prewarm path unverified** — `refresh_runtime_snapshots.prewarm_expensive_pages()` signs in a session; not exercised by the deploy prewarm on 11-09; its test-user id is in 0 user stores | receipt §3 | Performance / prewarm owner; verify read-only before any change |
 
+**Green Light 1A — A0.2 ACCEPTED (owner 2026-11-09) at `48b8b36`** (local `feat/green-light-1a`, not pushed): new NFL
+props rows cannot publish without a valid UTC `FetchedAtUTC`; an invalid observation clock fails as
+`INVALID_FETCHED_AT_UTC`, exit 2, canonical file preserved, paid usage still ledgered. The contaminated baseline suite
+run is not acceptance evidence; the clean exact-commit QC (97/97), mutations (M1–M9) and affected suites are. A1 may
+begin.
+
+Recorded at A0.2 acceptance (RECORDED ONLY; pre-existing in `fetch_player_props.py`, not changed by A0.2):
+
+| # | Obligation | Evidence | Attach to |
+|---|---|---|---|
+| I-6 | **Event-listing failure escapes governed exit handling** — an exception from the props `/events` request propagates out of `run_fetch` (traceback, no `OUTCOME` line) instead of a governed exit | A0.2 QC case "transport failure before any response": no ledger row, canonical unchanged, `run_fetch` raised (`48b8b36`) | Fetch exit semantics (Safeguard A family) |
+| I-7 | **"No new rows" path returns before quota attribution** — `error_count and df.empty` returns 1 before `_QUOTA.print_receipt`, so the completed `/events` response is never ledgered | `fetch_player_props.run_fetch` read at `48b8b36` | Quota ledger / cost attribution |
+
 ## Superseded / already-in-master branches (no action; kept, not deleted)
 In master (patch-equivalent): `fix/props-quote-source-utc` `17b5e69`, `integration/integrity-d4-6bdb73f` `4afcab9`,
 `fix/d4-kickoff-gate-v2` `a086764`, `integration/integrity-group-a5de400` `672480d`, `integration/integrity-group`
