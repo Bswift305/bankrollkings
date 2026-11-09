@@ -8,6 +8,9 @@
 3. `nov7_cross_sport_landing_audit_20261108.md` (recorded 1A acceptance requirements);
 4. `green_light_baseline_inventory_20261108.md`.
 
+**Reference only (owner 2026-11-09):** `platform_doctrine_v1.md` (Platform Doctrine v1). It adds **no** item,
+dependency or acceptance criterion to 1A. The 1A acceptance package carries its doctrine-reference field.
+
 The 1A question is unchanged: *can the owner safely use Classic Green Light the way it was originally used?*
 
 **Scope boundary:** 1A covers **only the Classic Green Light path** (`build_green_light`, its template, its lens
