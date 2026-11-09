@@ -135,6 +135,31 @@ Recorded at A0.2 acceptance (RECORDED ONLY; pre-existing in `fetch_player_props.
 | I-6 | **Event-listing failure escapes governed exit handling** — an exception from the props `/events` request propagates out of `run_fetch` (traceback, no `OUTCOME` line) instead of a governed exit | A0.2 QC case "transport failure before any response": no ledger row, canonical unchanged, `run_fetch` raised (`48b8b36`) | Fetch exit semantics (Safeguard A family) |
 | I-7 | **"No new rows" path returns before quota attribution** — `error_count and df.empty` returns 1 before `_QUOTA.print_receipt`, so the completed `/events` response is never ledgered | `fetch_player_props.run_fetch` read at `48b8b36` | Quota ledger / cost attribution |
 
+**Green Light 1A — A1 committed locally at `d79bc9d`** (`feat/green-light-1a`, not pushed; awaiting owner acceptance):
+identity before evidence — game scripts keyed `(EventId, team)`, offers keyed `(EventId, player, stat, book)`, EventId is the
+primary event join, conflicting `Game` text abstains, named abstentions. QC `qc_green_light_identity.py` 90/90; nine
+mutations caught; private Git-backed suite run 2: 26/26 + compile, real 1A worktree and main checkout `data/` unchanged.
+Before/after uses a **reconstruction** (real 11-08 event ids + constructed next-week events), not an archived production
+replay. **Real-world conflicting-identity case:** Marvin Harrison Jr. — three books place his offer in HOU@LAC
+(`39aeac43…`), retained usage says ARI; A1 abstains (`TEAM_NOT_IN_OFFER_EVENT`), pre-A1 rendered it with ARI's script.
+
+Recorded at A1 (RECORDED ONLY; inherited, not changed by A1):
+
+| # | Obligation | Evidence | Attach to |
+|---|---|---|---|
+| I-8 | **Accountability Layer: fixture result written to the real QC log** — `qc_freshness_contract` runs `qc_odds_feed` against its synthetic tree (lines 1h, props 39h); `qc_odds_feed` calls `append_qc_run_log("odds_feed", …)` on the REAL `data/tracking/QC_Run_Log.csv`. On prod, every scheduled `bk-daily` ("All scorecards" step) appends one fixture-derived `odds_feed` failure row; the authoritative post-refresh `qc_odds_feed` row is appended later in the same run. Effect: polluted audit history; no currently identified customer-visible or Run Status consumer of the `odds_feed` scope (code reading at `48b8b36`, not verified on prod data) | per-QC attribution, 1A worktree + private sandbox (2026-11-09) | QC maintenance / Accountability Layer |
+| I-9 | **QC cache side effects without isolation** — jinja template caches written by `qc_green_light_workspace`, `qc_quick_tools`, `qc_sgp_spread_price_containment`, `qc_unpriced_line_legs`; disk pkls (14 files incl. `disk_live_promotion_signal_context.pkl`) by `qc_nfl_board`; `qc_green_light_workspace` also writes `nfl_matchup_center_src2.pkl`. **Time-dependent:** `qc_nfl_board` rewrites `disk_live_promotion_signal_context.pkl` once its 15-min TTL lapses, so an unisolated suite is not repeatable. `qc_green_light_identity` writes nothing under `data/` | sandbox attribution from an empty cache; diagnostic real-worktree run | QC maintenance (isolation) |
+| I-10 | **LA / LAR identity-normalization gap** — usage board uses nflverse `LA`; game scripts resolve `LAR`; Rams players never receive Matchup / Game Identity lenses. A1 binds the Rams' event via the governed resolver but keeps the script lookup unchanged (no scoring change) | `qc_green_light_identity` case 11 | Abbreviation governance (owner decision; not A1) |
+
+**Incident (local repo metadata, 2026-11-09, during A1 verification cleanup):** a broad `git worktree prune` (intended
+only for the owned private verification worktree) removed the core metadata of seven stale worktree entries whose
+directories did not exist on this machine: `base-63060a9`, `base-check`, `bk-deploy-nba`, `dc-base2` (all at
+`63060a9` / `ed0bf37`, reachable from branches) and `dc-trial` (`0a07c04`), `dc-trial2` (`d826d68`), `trial-int`
+(`c6f383d`) — 2026-11-01 integration-trial merge commits **not reachable from any branch** (objects still present;
+`dc-trial2`'s parent chain includes `f21e474 "trial: resolve"`). No working-directory files, branches or pushed refs were
+touched. If any was a live worktree on another machine, `git worktree repair` there re-links it. Protecting the three
+unreachable commits (e.g. a ref) awaits owner decision.
+
 ## Superseded / already-in-master branches (no action; kept, not deleted)
 In master (patch-equivalent): `fix/props-quote-source-utc` `17b5e69`, `integration/integrity-d4-6bdb73f` `4afcab9`,
 `fix/d4-kickoff-gate-v2` `a086764`, `integration/integrity-group-a5de400` `672480d`, `integration/integrity-group`
