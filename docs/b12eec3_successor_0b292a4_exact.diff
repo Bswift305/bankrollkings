@@ -1,0 +1,784 @@
+diff --git a/app.py b/app.py
+index 8bb96e7..11bb97f 100644
+--- a/app.py
++++ b/app.py
+@@ -2752,7 +2752,13 @@ LIVE_SCORES_PATH = DATA_DIR / 'live_scores' / 'Live_Scores.csv'
+ # Heartbeat the live-scores poller reads so the paid scores API is only polled
+ # while a signed-in user is actually using the site (cost control). Stamped on
+ # every authenticated render and on each /api/live-ticker ping.
+-ACTIVE_USER_HEARTBEAT_PATH = DATA_DIR / 'live_scores' / 'active_user_heartbeat.txt'
++# QC containment (b12eec3 remediation, owner-approved Option A 2026-11-08): the QC runners (run_all_scorecards,
++# qc_offline) pass BK_ACTIVE_USER_HEARTBEAT_PATH -- an absolute path inside their own temp dir -- to every QC
++# process, so signed-in test requests can never stamp the live marker (which drives paid live-score polling).
++# It is a PROCESS environment variable: no request can set or influence it. Absent -> the existing live path.
++_HEARTBEAT_OVERRIDE = os.environ.get('BK_ACTIVE_USER_HEARTBEAT_PATH', '').strip()
++ACTIVE_USER_HEARTBEAT_PATH = (Path(_HEARTBEAT_OVERRIDE) if _HEARTBEAT_OVERRIDE and Path(_HEARTBEAT_OVERRIDE).is_absolute()
++                              else DATA_DIR / 'live_scores' / 'active_user_heartbeat.txt')
+ _LAST_ACTIVITY_WRITE = 0.0
+ 
+ 
+@@ -3845,12 +3851,35 @@ def props_executable_meta(raw_df, max_age_hours=None, now=None):
+         pass
+     now_utc = _instant_to_utc(now, naive_tz='UTC') if now is not None else _utc_now()
+     meta = get_props_refresh_meta(raw_df, max_age_hours=limit, now=now_utc)
+-    age = meta.get('age_hours')
+-    skew_seconds = 0
+-    freshest = _instant_to_utc(meta.get('last_updated_utc')) if meta.get('last_updated_utc') else None
+-    if freshest is not None and freshest > now_utc:
+-        skew_seconds = int(round((freshest - now_utc).total_seconds()))
+     tolerance_seconds = int(round(PROPS_FUTURE_TOLERANCE_HOURS * 3600))
++    # b12eec3 remediation (2026-11-08): the executable verdict is governed ONLY by the provider's zone-explicit
++    # SourceUpdatedAtUTC. The zone-less LastUpdated fetch stamp is never a freshness authority -- no zone is
++    # guessed for it (it is UTC on prod but was read as Eastern, so a fresh feed looked ~5h in the future and
++    # every price was withheld). Missing / unparseable / zone-less source times -> no timestamp (fail closed).
++    freshest = None
++    src_instants = []
++    if raw_df is not None and not getattr(raw_df, 'empty', True) and 'SourceUpdatedAtUTC' in raw_df.columns:
++        src_instants = [d for d in (_canonical_kickoff_utc(v) for v in raw_df['SourceUpdatedAtUTC'].tolist())
++                        if d is not None]
++    if src_instants:
++        within = [d for d in src_instants if d <= now_utc + timedelta(seconds=tolerance_seconds)]
++        freshest = max(within) if within else min(src_instants)
++    age = None
++    skew_seconds = 0
++    if freshest is not None:
++        age = round(max((now_utc - freshest).total_seconds(), 0.0) / 3600.0, 2)
++        if freshest > now_utc:
++            skew_seconds = int(round((freshest - now_utc).total_seconds()))
++        meta['last_updated'] = _source_time_label(freshest)
++        meta['last_updated_utc'] = freshest.strftime('%Y-%m-%dT%H:%M:%SZ')
++    else:
++        meta['last_updated'] = 'Update time not recorded'
++        meta['last_updated_utc'] = None
++    meta['age_hours'] = age
++    meta['is_stale'] = bool(age is not None and age > limit)
++    meta['status'] = 'stale' if meta['is_stale'] else 'live'
++    meta['warning'] = ''   # recomputed below from the source-time verdict only (never a wall-clock leftover)
++    meta['freshness_source'] = 'SourceUpdatedAtUTC'
+     if not meta.get('has_live_props'):
+         reason = 'empty'
+     elif age is None:
+@@ -3889,19 +3918,22 @@ def props_executable_meta(raw_df, max_age_hours=None, now=None):
+ 
+ 
+ def _drop_future_rows(df, now_utc):
+-    """Rows whose OWN LastUpdated is beyond the clock-skew allowance are not executable (fail closed)."""
+-    if df is None or getattr(df, 'empty', True) or 'LastUpdated' not in df.columns:
++    """Rows whose OWN zone-explicit SourceUpdatedAtUTC is beyond the clock-skew allowance -- or missing,
++    unparseable or zone-less -- are not executable (fail closed). The zone-less LastUpdated is never read."""
++    if df is None or getattr(df, 'empty', True):
+         return df, 0
++    if 'SourceUpdatedAtUTC' not in df.columns:
++        return df.iloc[0:0], int(len(df))
+     limit = now_utc + timedelta(hours=PROPS_FUTURE_TOLERANCE_HOURS)
+-    bad = set()
+-    for v in df['LastUpdated'].dropna().unique().tolist():
+-        inst = _instant_to_utc(v)
+-        if inst is not None and inst > limit:
+-            bad.add(v)
+-    if not bad:
++    keep = []
++    for v in df['SourceUpdatedAtUTC'].tolist():
++        inst = _canonical_kickoff_utc(v)
++        keep.append(inst is not None and inst <= limit)
++    mask = pd.Series(keep, index=df.index)
++    dropped = int((~mask).sum())
++    if not dropped:
+         return df, 0
+-    mask = df['LastUpdated'].isin(bad)
+-    return df.loc[~mask], int(mask.sum())
++    return df.loc[mask], dropped
+ 
+ 
+ def _executable_props_frame(sport, raw_df, max_age_hours=None, now=None):
+diff --git a/qc_entity_nba_wnba_market.py b/qc_entity_nba_wnba_market.py
+index bf94794..19bf198 100644
+--- a/qc_entity_nba_wnba_market.py
++++ b/qc_entity_nba_wnba_market.py
+@@ -66,9 +66,22 @@ def _has_nested_anchor(html):
+     return False
+ 
+ 
++def _fresh_raw(frame):
++    """The fixture as the central executable gate's RAW feed, carrying a zone-explicit provider source time
++    10 minutes old. b12eec3 remediation (2026-11-08): props_feed_status reads _load_*_props_raw, which the
++    original fixtures did not cover -- so on prod the QC graded the REAL feeds (stale WNBA, then-misread NBA)
++    instead of its fixtures. The QC is now hermetic: no production raw feed is ever read."""
++    from datetime import datetime, timedelta, timezone
++    out = frame.copy()
++    out['SourceUpdatedAtUTC'] = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%SZ')
++    return out
++
++
+ def _install_fixtures():
+     app.load_props = lambda: NBA_PROPS.copy()
+     app.load_wnba_props = lambda: WNBA_PROPS.copy()
++    app._load_props_raw = lambda: _fresh_raw(NBA_PROPS)
++    app._load_wnba_props_raw = lambda: _fresh_raw(WNBA_PROPS)
+     app.load_game_market_odds = lambda: NBA_ODDS.copy()
+     app.get_current_user = _owner_user
+     app._ENTITY_MARKET_KEYSET_CACHE.clear()
+@@ -79,7 +92,18 @@ def run_qc():
+     os.environ.pop('BK_NBA_STATS_ENABLED', None)  # ensure gated (default)
+ 
+     orig = {k: getattr(app, k) for k in ('load_props', 'load_wnba_props', 'load_game_market_odds',
+-                                         'get_current_user')}
++                                         'get_current_user', '_load_props_raw', '_load_wnba_props_raw',
++                                         'ACTIVE_USER_HEARTBEAT_PATH')}
++    # b12eec3 remediation: this QC's signed-in test requests stamp the activity heartbeat (inject_globals ->
++    # record_active_user). Pointed at the REAL marker, a production scorecard run kept the paid live-score
++    # poller running. The marker is redirected into a QC-owned temp dir, and the real one is proven untouched.
++    import tempfile
++    from pathlib import Path
++    real_hb = Path(app.ACTIVE_USER_HEARTBEAT_PATH)
++    real_hb_before = (real_hb.stat().st_mtime_ns, real_hb.read_bytes()) if real_hb.exists() else None
++    hb_dir = tempfile.TemporaryDirectory(prefix='qc_entity_hb_')
++    app.ACTIVE_USER_HEARTBEAT_PATH = Path(hb_dir.name) / 'active_user_heartbeat.txt'
++    app._LAST_ACTIVITY_WRITE = 0.0
+     try:
+         _install_fixtures()
+ 
+@@ -179,9 +203,18 @@ def run_qc():
+         finally:
+             os.environ.pop('BK_NBA_STATS_ENABLED', None)
+     finally:
++        qc_hb_written = Path(app.ACTIVE_USER_HEARTBEAT_PATH).exists()
+         for k, v in orig.items():
+             setattr(app, k, v)
+         app._ENTITY_MARKET_KEYSET_CACHE.clear()
++        hb_dir.cleanup()
++    real_hb_after = (real_hb.stat().st_mtime_ns, real_hb.read_bytes()) if real_hb.exists() else None
++    if real_hb_after != real_hb_before:
++        issues.append(f"the REAL activity heartbeat {real_hb} was written by this QC (isolation breach)")
++    elif not qc_hb_written:
++        issues.append("signed-in test requests did not stamp the QC-owned heartbeat (redirect proof vacuous)")
++    else:
++        notes.append("activity heartbeat: signed-in test requests stamped only the QC-owned marker; real marker untouched")
+ 
+     if not issues:
+         notes.append("Option A market-only destinations + gate-aware resolution verified")
+diff --git a/qc_linemove_status_persistence.py b/qc_linemove_status_persistence.py
+index cff0306..98a83ce 100644
+--- a/qc_linemove_status_persistence.py
++++ b/qc_linemove_status_persistence.py
+@@ -39,6 +39,8 @@ import contextlib
+ import io
+ import json
+ import os
++import shutil
++import signal
+ import stat
+ import sys
+ import tempfile
+@@ -126,9 +128,45 @@ def signals(now=None):
+     return ls.read_signals(now)
+ 
+ 
++# Hermetic boundary (b12eec3 remediation 2026-11-08): generate_run_status binds LOG_DIR = <checkout>/logs at
++# import, so redirecting BASE_DIR alone let a real production operator log leak into the Run Status build (and
++# its relative_to(BASE_DIR) then raised). Every Run Status build in this QC reads an EMPTY, QC-owned log dir and
++# records every directory it searched, so a checkout logs/ directory can never be read.
++# The empty log dir is OWNED per run: main() creates it through _owned_empty_log_dir() and removes it in a
++# guaranteed finally (pass, failed check, exception, KeyboardInterrupt, and SIGTERM on POSIX), so repeated
++# scorecard runs never accumulate qc_lmstatus_logs_* directories in the system temp dir. Only the exact
++# directory this run created is ever removed.
++_LOGS_PREFIX = "qc_lmstatus_logs_"
++_EMPTY_LOG_DIR: Path | None = None
++_LOG_DIRS_SEARCHED: list[Path] = []
++_REAL_LATEST_FILE = grs._latest_file
++
++
++@contextlib.contextmanager
++def _owned_empty_log_dir():
++    created = Path(tempfile.mkdtemp(prefix=_LOGS_PREFIX))
++    try:
++        yield created
++    finally:
++        # remove ONLY the directory this run created -- never a pre-existing, foreign, or symlinked path
++        if created.is_dir() and not created.is_symlink() and created.name.startswith(_LOGS_PREFIX):
++            shutil.rmtree(created, ignore_errors=True)
++
++
++def _logs_artifacts() -> set[str]:
++    return {p.name for p in Path(tempfile.gettempdir()).glob(_LOGS_PREFIX + "*")}
++
++
++def _recording_latest_file(patterns, base):
++    _LOG_DIRS_SEARCHED.append(Path(base))
++    return _REAL_LATEST_FILE(patterns, base)
++
++
+ def overall():
++    assert _EMPTY_LOG_DIR is not None, "overall() called outside main()'s owned log dir"
+     with patched(grs, _classify=lambda *a, **k: "FRESH", _odds_family_signals=lambda: ([], []),
+-                 _operator_signals=lambda: ([], {})):
++                 _operator_signals=lambda: ([], {}), LOG_DIR=_EMPTY_LOG_DIR,
++                 _latest_file=_recording_latest_file):
+         return grs.build_run_status()["overall"]
+ 
+ 
+@@ -142,7 +180,7 @@ def tmp_residue():
+     return [f.name for f in d.iterdir() if f.name.endswith(".tmp")] if d.exists() else []
+ 
+ 
+-def main() -> int:
++def _main_checks() -> None:
+     root = Path(tempfile.mkdtemp(prefix="qc_lmstatus_"))
+     ok_cmd = child(root, "ok_child")
+ 
+@@ -386,7 +424,7 @@ def main() -> int:
+                               "failed_steps": []})
+     legacy.write_text(legacy_body, encoding="utf-8")
+     os.utime(str(legacy), (1_700_000_000, 1_700_000_000))
+-    with patched(grs, BASE_DIR=root, TRACKING_DIR=root / "data" / "tracking"):
++    with patched(grs, BASE_DIR=root, TRACKING_DIR=root / "data" / "tracking", LOG_DIR=root / "logs"):
+         clean()
+         r_empty, i_empty = signals()
+         check(r_empty == [] and i_empty.get("reported") is False,
+@@ -458,6 +496,55 @@ def main() -> int:
+         rc = rlm._entry()
+     check(rc == 2, "X a stray 1 from main() is mapped to 2 at the process boundary")
+ 
++    real_logs = (REPO / "logs").resolve()
++    check(bool(_LOG_DIRS_SEARCHED) and all(Path(d).resolve() != real_logs for d in _LOG_DIRS_SEARCHED),
++          f"H hermetic: every Run Status build searched only QC-owned log dirs, never the checkout logs/ "
++          f"({len(_LOG_DIRS_SEARCHED)} searches)")
++
++    # ---- T. temp hygiene of the owned empty log dir (in-process cycles) --------------------------------------
++    with _owned_empty_log_dir() as d_pass:
++        existed = d_pass.is_dir()
++    check(existed and not d_pass.exists(), f"T pass path: the owned {_LOGS_PREFIX}* dir is removed on normal exit")
++    d_exc = None
++    try:
++        with _owned_empty_log_dir() as d_exc:
++            raise RuntimeError("QC: simulated failure inside the owned dir")
++    except RuntimeError:
++        pass
++    check(d_exc is not None and not d_exc.exists(), "T exception path: the owned dir is removed when an exception escapes")
++    foreign = Path(tempfile.mkdtemp(prefix=_LOGS_PREFIX))      # stands in for a directory this QC run did not create
++    try:
++        with _owned_empty_log_dir():
++            pass
++        check(foreign.is_dir(), "T a same-prefix directory the context did not create is never deleted")
++    finally:
++        shutil.rmtree(foreign, ignore_errors=True)             # created by this check, removed by this check
++    if POSIX:
++        probe = (
++            "import os, sys, time\n"
++            f"sys.path.insert(0, {str(REPO)!r})\n"
++            "import qc_linemove_status_persistence as q\n"
++            "import signal\n"
++            "signal.signal(signal.SIGTERM, q._sigterm_to_exit)\n"
++            "with q._owned_empty_log_dir() as d:\n"
++            "    print('OWNED_DIR', d, flush=True)\n"
++            "    time.sleep(60)\n")
++        p = subprocess.Popen([sys.executable, "-c", probe], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
++                             text=True, env=dict(os.environ))
++        line = ""
++        for raw in p.stdout:                                   # ends at EOF if the probe dies before printing
++            if raw.startswith("OWNED_DIR "):
++                line = raw[len("OWNED_DIR "):].strip()
++                break
++        p.terminate()
++        prc = p.wait(timeout=30)
++        check(bool(line) and not Path(line).exists() and prc == 128 + signal.SIGTERM,
++              f"T SIGTERM path: a terminated run removes its owned dir and exits {128 + signal.SIGTERM} (rc={prc})")
++    else:
++        skip("T SIGTERM cleanup of the owned dir")
++
++
++def _report() -> int:
+     print("=" * 72)
+     print("QC: LINE-MOVEMENT STATUS PERSISTENCE (governed, durable, mandatory, bound)")
+     print("=" * 72)
+@@ -472,5 +559,28 @@ def main() -> int:
+     return 1 if FAILED else 0
+ 
+ 
++def _sigterm_to_exit(signum, frame):
++    raise SystemExit(128 + signum)                             # unwinds through finally -> owned dir removed
++
++
++def main() -> int:
++    global _EMPTY_LOG_DIR
++    prev = signal.getsignal(signal.SIGTERM) if POSIX else None
++    if POSIX:
++        signal.signal(signal.SIGTERM, _sigterm_to_exit)
++    try:
++        with _owned_empty_log_dir() as owned:
++            _EMPTY_LOG_DIR = owned
++            try:
++                _main_checks()
++            finally:
++                _EMPTY_LOG_DIR = None
++    finally:
++        if POSIX:
++            signal.signal(signal.SIGTERM, prev)
++    check(not owned.exists(), f"T this run's own {_LOGS_PREFIX}* dir was removed before the report ({owned.name})")
++    return _report()
++
++
+ if __name__ == "__main__":
+     raise SystemExit(main())
+diff --git a/qc_nba_gated_market_facts.py b/qc_nba_gated_market_facts.py
+index d3ae3ab..93b5c2f 100644
+--- a/qc_nba_gated_market_facts.py
++++ b/qc_nba_gated_market_facts.py
+@@ -52,6 +52,8 @@ def _feed(rows, meta=None):
+         from datetime import datetime, timedelta, timezone
+         from services.timeutils import DISPLAY_TZ
+         df['LastUpdated'] = (datetime.now(timezone.utc) - timedelta(hours=1)).astimezone(DISPLAY_TZ).strftime('%Y-%m-%d %H:%M')
++        # b12eec3 remediation: the executable gate is governed ONLY by the zone-explicit provider source time
++        df['SourceUpdatedAtUTC'] = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+     return lambda require_fresh=False: (df, (meta or {}))
+ 
+ 
+diff --git a/qc_nba_market_only.py b/qc_nba_market_only.py
+index b34a58e..8621c98 100644
+--- a/qc_nba_market_only.py
++++ b/qc_nba_market_only.py
+@@ -70,12 +70,14 @@ def qc_source_parser_no_merge():
+     z = lambda dt: dt.strftime('%Y-%m-%dT%H:%M:%SZ')  # noqa: E731
+     event = {'id': 'evt1', 'home_team': 'Celtics', 'away_team': 'Lakers',
+              'commence_time': z(now + timedelta(days=1))}
++    # b12eec3 remediation: the provider carries last_update at the MARKET level (raw diagnostic 2026-10-31:
++    # 23/23 market-level, 0/3 bookmaker-level); the parser maps it to SourceUpdatedAtUTC, the gate's only clock.
+     book_a = {'key': 'draftkings', 'title': 'DraftKings', 'last_update': z(now - timedelta(minutes=60)),
+-              'markets': [{'key': mk, 'outcomes': [
++              'markets': [{'key': mk, 'last_update': z(now - timedelta(minutes=60)), 'outcomes': [
+                   {'name': 'Over', 'description': 'A. Player', 'point': 24.5, 'price': -110},  # synthetic-fixture
+                   {'name': 'Under', 'description': 'A. Player', 'point': 24.5, 'price': -108}]}]}
+     book_b = {'key': 'fanduel', 'title': 'FanDuel', 'last_update': z(now - timedelta(minutes=53)),
+-              'markets': [{'key': mk, 'outcomes': [
++              'markets': [{'key': mk, 'last_update': z(now - timedelta(minutes=53)), 'outcomes': [
+                   {'name': 'Over', 'description': 'A. Player', 'point': 25.5, 'price': -120}]}]}  # no Under
+     src = fpp.parse_market_rows(event, book_a, [mk]) + fpp.parse_market_rows(event, book_b, [mk])
+     feed = pd.DataFrame(src)
+@@ -106,13 +108,18 @@ def _fixture(sport, age_hours=1.0):
+     v3: relative times -- the old fixed 2099 stamps are future-dated, which the central gate now withholds."""
+     now = datetime.now(timezone.utc).replace(microsecond=0)
+     base = {c: '' for c in ['Player', 'Team', 'Stat', 'MarketKey', 'Line', 'Game', 'Book', 'LastUpdated',
+-                            'OverOdds', 'UnderOdds']}
++                            'SourceUpdatedAtUTC', 'OverOdds', 'UnderOdds']}
++    # b12eec3 remediation: the executable gate reads ONLY the zone-explicit SourceUpdatedAtUTC (LastUpdated is
++    # a zone-less fetch stamp and is never a freshness authority)
++    src = lambda dt: dt.strftime('%Y-%m-%dT%H:%M:%SZ')  # noqa: E731
+     r1 = dict(base, Player=f'{sport} PLAYER ONE', Team='LAL', Stat='Points', Line=24.5, Game='LAL @ BOS',
+               Book='DraftKings', OverOdds=-110, UnderOdds=-110,  # synthetic-fixture
+-              LastUpdated=_et(now - timedelta(hours=age_hours, minutes=5)))
++              LastUpdated=_et(now - timedelta(hours=age_hours, minutes=5)),
++              SourceUpdatedAtUTC=src(now - timedelta(hours=age_hours, minutes=5)))
+     r2 = dict(base, Player=f'{sport} GUARD TWO', Team='MIA', Stat='Assists', Line=6.5, Game='MIA @ NYK',
+               Book='FanDuel', OverOdds=-115, UnderOdds='',
+-              LastUpdated=_et(now - timedelta(hours=age_hours)))  # missing under
++              LastUpdated=_et(now - timedelta(hours=age_hours)),
++              SourceUpdatedAtUTC=src(now - timedelta(hours=age_hours)))  # missing under
+     return pd.DataFrame([r1, r2])
+ 
+ 
+@@ -246,11 +253,11 @@ def qc_stale_props_board(issues, notes):
+                         issues.append(f'{label} fresh props control did not render (stale proof vacuous): {st}')
+         # future-dated / no-timestamp feeds are unverifiable -> withheld (never treated as current)
+         fx = _fixture('NBA')
+-        fx['LastUpdated'] = '2099-01-01 12:00'
++        fx['SourceUpdatedAtUTC'] = '2099-01-01T12:00:00Z'
+         app._load_props_raw = lambda f=fx: f.copy()
+         b_future = app.build_market_only_board(app.load_live_props_feed)
+         fx2 = _fixture('NBA')
+-        fx2['LastUpdated'] = ''
++        fx2['SourceUpdatedAtUTC'] = ''
+         app._load_props_raw = lambda f=fx2: f.copy()
+         b_none = app.build_market_only_board(app.load_live_props_feed)
+         if b_future['rows'] or b_none['rows'] or b_future['props_status'].get('unavailable_reason') != 'future_timestamp' \
+diff --git a/qc_nba_wnba_props_stale.py b/qc_nba_wnba_props_stale.py
+index f4aa88f..53fba4e 100644
+--- a/qc_nba_wnba_props_stale.py
++++ b/qc_nba_wnba_props_stale.py
+@@ -74,7 +74,9 @@ def _write_props(sport, age_hours):
+         rows.append({"Player": p, "Team": "QCA", "Stat": stat, "MarketKey": f"player_{stat.lower()}",
+                      "Line": line, "CurrentLine": line, "OpenLine": line - 1.0, "Game": game, "Book": book,
+                      "OverOdds": PRICE, "UnderOdds": -103, "OpenOverOdds": PRICE + 15, "OpenUnderOdds": -118,
+-                     "LastUpdated": _et(now - timedelta(hours=age_hours, minutes=i))})
++                     "LastUpdated": _et(now - timedelta(hours=age_hours, minutes=i)),
++                     # b12eec3 remediation: freshness is governed ONLY by the zone-explicit provider source time
++                     "SourceUpdatedAtUTC": (now - timedelta(hours=age_hours, minutes=i)).strftime("%Y-%m-%dT%H:%M:%SZ")})
+     path = Path(app.DATA_DIR) / "props" / ("NBA_Props.csv" if sport == "nba" else "WNBA_Props.csv")
+     pd.DataFrame(rows).to_csv(path, index=False)
+     _MTIME[0] += 10
+@@ -312,17 +314,26 @@ def qc_no_props_input_surfaces():
+ 
+ def qc_central_contract():
+     now = datetime.now(timezone.utc)
+-    mk = lambda lu: pd.DataFrame([{"Player": "x", "Book": "b", "LastUpdated": lu}, {"Player": "y", "Book": "b", "LastUpdated": lu}])  # noqa: E731
+-    m_ok = app.props_executable_meta(mk(_et(now - timedelta(hours=5, minutes=59))))
+-    m_st = app.props_executable_meta(mk(_et(now - timedelta(hours=6, minutes=1))))
+-    m_loose = app.props_executable_meta(mk(_et(now - timedelta(hours=7))), max_age_hours=24)
+-    m_utc = app.props_executable_meta(mk((now - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")))
++    iso = lambda dt: dt.strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
++    # b12eec3 remediation: the source time is SourceUpdatedAtUTC; the zone-less LastUpdated is a decoy that must
++    # never move the verdict (it carries the OLD, misread value: a UTC wall clock written zone-less).
++    mk = lambda src: pd.DataFrame([{"Player": "x", "Book": "b", "SourceUpdatedAtUTC": src,  # noqa: E731
++                                    "LastUpdated": now.strftime("%Y-%m-%d %H:%M")},
++                                   {"Player": "y", "Book": "b", "SourceUpdatedAtUTC": src,
++                                    "LastUpdated": now.strftime("%Y-%m-%d %H:%M")}])
++    m_ok = app.props_executable_meta(mk(iso(now - timedelta(hours=5, minutes=59))), now=now)
++    m_st = app.props_executable_meta(mk(iso(now - timedelta(hours=6, minutes=1))), now=now)
++    m_loose = app.props_executable_meta(mk(iso(now - timedelta(hours=7))), max_age_hours=24, now=now)
++    m_utc = app.props_executable_meta(mk(iso(now - timedelta(hours=2))), now=now)
++    m_naive = app.props_executable_meta(mk(_et(now - timedelta(hours=2))), now=now)
+     check(m_ok["executable"] and not m_st["executable"] and m_st["unavailable_reason"] == "stale",
+           "boundary: 5h59m executable, 6h01m withheld (CLOCK A, 6h)")
+     check(not m_loose["executable"] and m_loose["max_age_hours"] == app.LIVE_LINES_MAX_AGE_HOURS,
+           "a caller asking for 24h cannot loosen the 6h rule")
+     check(m_utc["executable"] and 1.9 < m_utc["age_hours"] < 2.1,
+-          "an aware UTC stamp and a naive Eastern stamp both age correctly (timezone-aware UTC instants)")
++          "an explicit-UTC source stamp ages correctly (timezone-aware UTC instants)")
++    check(not m_naive["executable"] and m_naive["unavailable_reason"] == "no_timestamp" and m_naive["prices_withheld"],
++          "a zone-less source stamp is unknown -> no_timestamp, prices withheld (no zone is ever guessed)")
+     src = inspect.getsource(app.build_market_only_board)
+     check("require_fresh=False" not in src and "props_executable_meta(df)" in src,
+           "build_market_only_board no longer calls require_fresh=False and re-verifies the frame it receives")
+@@ -512,7 +523,8 @@ def qc_skew_contract():
+     row beyond the allowance is dropped from an otherwise executable feed."""
+     now = datetime.now(timezone.utc).replace(microsecond=0)
+     iso = lambda dt: dt.strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
+-    mk = lambda *lus: pd.DataFrame([{"Player": f"p{i}", "Book": "b", "LastUpdated": lu} for i, lu in enumerate(lus)])  # noqa: E731
++    mk = lambda *lus: pd.DataFrame([{"Player": f"p{i}", "Book": "b", "SourceUpdatedAtUTC": lu,  # noqa: E731
++                                     "LastUpdated": now.strftime("%Y-%m-%d %H:%M")} for i, lu in enumerate(lus)])
+     ok3 = app.props_executable_meta(mk(iso(now + timedelta(minutes=3))), now=now)
+     edge = app.props_executable_meta(mk(iso(now + timedelta(minutes=5))), now=now)
+     bad = app.props_executable_meta(mk(iso(now + timedelta(minutes=5, seconds=1))), now=now)
+diff --git a/qc_offline.py b/qc_offline.py
+index bbafaae..e47e54a 100644
+--- a/qc_offline.py
++++ b/qc_offline.py
+@@ -15,8 +15,10 @@ reaching the live Odds API while run as if offline) then fails closed instead of
+ from __future__ import annotations
+ 
+ import ast
++import shutil
+ import subprocess
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ from services.qc_no_network import child_env
+@@ -44,7 +46,15 @@ def main(argv) -> int:
+     if requires_network(script):
+         print(f'NOT RUN: {script.name} declares REQUIRES_NETWORK = True (not an offline QC)')
+         return NOT_RUN
+-    return subprocess.call([sys.executable, str(script), *argv[1:]], env=child_env())
++    # QC containment: the QC gets its OWN temp activity-heartbeat path, so a signed-in test request can never
++    # stamp the live marker that drives paid live-score polling (b12eec3 remediation).
++    hb_dir = tempfile.mkdtemp(prefix='qc_heartbeat_')
++    env = child_env()
++    env['BK_ACTIVE_USER_HEARTBEAT_PATH'] = str(Path(hb_dir) / 'active_user_heartbeat.txt')
++    try:
++        return subprocess.call([sys.executable, str(script), *argv[1:]], env=env)
++    finally:
++        shutil.rmtree(hb_dir, ignore_errors=True)
+ 
+ 
+ if __name__ == '__main__':
+diff --git a/qc_props_source_time_freshness.py b/qc_props_source_time_freshness.py
+new file mode 100644
+index 0000000..3e26d3b
+--- /dev/null
++++ b/qc_props_source_time_freshness.py
+@@ -0,0 +1,177 @@
++#!/usr/bin/env python3
++"""QC: NBA/WNBA executable-props freshness is governed ONLY by the zone-explicit SourceUpdatedAtUTC.
++
++b12eec3 remediation (2026-11-08). The central NBA/WNBA props gate (props_executable_meta / props_feed_status /
++_executable_props_frame) read the zone-less `LastUpdated` fetch stamp as an Eastern wall clock. On prod that
++stamp is written in UTC, so a fresh feed published at 13:08Z looked like 18:08Z -- ~5h in the future -- and
++every NBA prop price was withheld (unavailable_reason='future_timestamp') until ~18:03Z, after each publication.
++
++The contract proven here (synthetic fixtures; no data files, no network):
++  * freshness, age, label and skew come ONLY from SourceUpdatedAtUTC with an explicit offset;
++  * a zone-less, malformed or missing source time is unknown -> 'no_timestamp' (prices withheld, fail closed);
++  * a misleading LastUpdated never changes the verdict, in any process zone (UTC / New York / Los Angeles),
++    on DST and non-DST dates;
++  * a genuinely future source time beyond the 5-minute allowance -> 'future_timestamp'; within it -> executable
++    and labelled clock_skew_tolerated;
++  * older than 6h -> 'stale' (never future-dated); the 6h rule is never loosened;
++  * row level: rows without a valid source time, or beyond the allowance, are dropped from the executable frame;
++  * the gate makes no network access even with an API key present.
++Exits 0 when every check holds, 1 otherwise.
++"""
++from __future__ import annotations
++
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++REPO = Path(__file__).resolve().parent
++sys.path.insert(0, str(REPO))
++os.environ.setdefault("SECRET_KEY", "qc-props-source-time")
++
++PASSED: list[str] = []
++FAILED: list[str] = []
++
++
++def check(cond, msg):
++    (PASSED if cond else FAILED).append(msg)
++
++
++# ---- the probe: evaluated in a child process per process zone ---------------------------------------------
++PROBE = r'''
++import json, os, socket, sys, urllib.request
++os.environ.setdefault("SECRET_KEY", "qc-props-source-time")
++os.environ["ODDS_API_KEY"] = "qc-dummy-key-not-real"
++ATTEMPTS = []
++def _deny(*a, **k):
++    ATTEMPTS.append(1)
++    raise OSError("QC: network blocked")
++socket.create_connection = _deny
++socket.socket.connect = _deny
++socket.getaddrinfo = _deny
++urllib.request.urlopen = _deny
++sys.path.insert(0, sys.argv[1])
++import pandas as pd
++import app
++
++def frame(src, lu, n=3):
++    return pd.DataFrame([{"Player": f"P{i}", "Stat": "Points", "Line": 20.5, "OverOdds": -110, "UnderOdds": -110,
++                          "Book": "DraftKings", "Game": "A@B", "EventId": "ev", "EventCommenceAtUTC": "2026-11-09T02:00:00Z",
++                          "LastUpdated": lu, "SourceUpdatedAtUTC": (src[i] if isinstance(src, list) else src)}
++                         for i in range(n)])
++
++def verdict(df, now):
++    m = app.props_executable_meta(df, now=now)
++    fr, mm = app._executable_props_frame("nba", df, now=now)
++    return {k: m.get(k) for k in ("executable", "unavailable_reason", "prices_withheld", "last_updated_utc",
++                                  "age_hours", "clock_skew_tolerated", "freshness_source")} | {"rows": len(fr),
++            "dropped": mm.get("future_rows_dropped", 0), "warning": m.get("warning", "")}
++
++C = {}
++# prod shape 2026-11-08: zone-less UTC LastUpdated 13:08, explicit sources 13:06:41..13:08:05
++prod = frame(["2026-11-08T13:06:41Z", "2026-11-08T13:07:30Z", "2026-11-08T13:08:05Z"], "2026-11-08 13:08")
++C["prod_fresh_1310"] = verdict(prod, "2026-11-08T13:10:00Z")
++C["prod_fresh_1400"] = verdict(prod, "2026-11-08T14:00:00Z")
++C["prod_stale_1920"] = verdict(prod, "2026-11-08T19:20:00Z")
++# DST (EDT, July) and non-DST (EST, January) with a misleading zone-less LastUpdated equal to the UTC wall clock
++C["dst_fresh"] = verdict(frame("2026-07-15T17:00:00Z", "2026-07-15 17:00"), "2026-07-15T17:30:00Z")
++C["nodst_fresh"] = verdict(frame("2026-01-15T17:00:00Z", "2026-01-15 17:00"), "2026-01-15T17:30:00Z")
++# misleading LastUpdated far in the past must not make a fresh source stale
++C["lu_past_src_fresh"] = verdict(frame("2026-11-08T13:08:00Z", "2026-11-01 08:00"), "2026-11-08T13:20:00Z")
++# explicit offsets other than Z resolve to the same instant
++C["offset_equivalent"] = verdict(frame("2026-11-08T08:08:00-05:00", "x"), "2026-11-08T13:20:00Z")
++# unknown source times -> no_timestamp
++C["src_missing"] = verdict(frame("", "2026-11-08 13:08"), "2026-11-08T13:20:00Z")
++C["src_zoneless"] = verdict(frame("2026-11-08 13:08:00", "2026-11-08 13:08"), "2026-11-08T13:20:00Z")
++C["src_malformed"] = verdict(frame("not-a-time", "2026-11-08 13:08"), "2026-11-08T13:20:00Z")
++nocol = frame("2026-11-08T13:08:00Z", "2026-11-08 13:08").drop(columns=["SourceUpdatedAtUTC"])
++C["src_column_absent"] = verdict(nocol, "2026-11-08T13:20:00Z")
++# genuinely future vs clock-skew allowance
++C["future_30m"] = verdict(frame("2026-11-08T13:50:00Z", "2026-11-08 13:08"), "2026-11-08T13:20:00Z")
++C["skew_3m"] = verdict(frame("2026-11-08T13:23:00Z", "2026-11-08 13:08"), "2026-11-08T13:20:00Z")
++# row level: 1 valid, 1 missing, 1 future -> only the valid row is executable
++C["rows_mixed"] = verdict(frame(["2026-11-08T13:08:00Z", "", "2026-11-08T15:00:00Z"], "2026-11-08 13:08"),
++                          "2026-11-08T13:20:00Z")
++# WNBA-shaped stale feed with blank source times (prod 2026-11-08) -> withheld truthfully
++C["wnba_blank_sources"] = verdict(frame("", "2026-10-31 13:05"), "2026-11-08T13:20:00Z")
++C["stale_7h"] = verdict(frame("2026-11-08T06:00:00Z", "2026-11-08 13:08"), "2026-11-08T13:20:00Z")
++C["_network_attempts"] = len(ATTEMPTS)
++print("QCJSON" + json.dumps(C, sort_keys=True))
++'''
++
++
++def run_probe(tz: str) -> dict:
++    env = dict(os.environ)
++    env["TZ"] = tz
++    env["PYTHONIOENCODING"] = "utf-8"
++    p = subprocess.run([sys.executable, "-c", PROBE, str(REPO)], capture_output=True, text=True, env=env,
++                       timeout=600, cwd=str(REPO))
++    line = next((l for l in p.stdout.splitlines() if l.startswith("QCJSON")), None)
++    if line is None:
++        return {"_error": (p.stderr or p.stdout)[-800:]}
++    return json.loads(line[len("QCJSON"):])
++
++
++def main() -> int:
++    zones = ["UTC", "America/New_York", "America/Los_Angeles"]
++    results = {z: run_probe(z) for z in zones}
++    for z, r in results.items():
++        check("_error" not in r, f"probe ran under TZ={z} ({r.get('_error', 'ok')[:200] if '_error' in r else 'ok'})")
++    base = results["UTC"]
++    if "_error" in base:
++        return report()
++    for z in zones[1:]:
++        if "_error" not in results[z]:
++            check(results[z] == base, f"identical verdicts under TZ={z} as under UTC (no process-zone dependence)")
++
++    c = base
++    f = c["prod_fresh_1310"]
++    check(f["executable"] and f["rows"] == 3 and f["last_updated_utc"] == "2026-11-08T13:08:05Z"
++          and f["freshness_source"] == "SourceUpdatedAtUTC",
++          f"fresh NBA feed is executable immediately after publication, aged from its source time ({f})")
++    check(c["prod_fresh_1400"]["executable"] and c["prod_fresh_1400"]["age_hours"] == 0.87,
++          f"same feed at 14:00Z: executable, age 0.87h from 13:08:05Z ({c['prod_fresh_1400']})")
++    s = c["prod_stale_1920"]
++    check(not s["executable"] and s["unavailable_reason"] == "stale" and s["prices_withheld"] and s["rows"] == 0,
++          f"same feed at 19:20Z becomes STALE normally, never future-dated ({s})")
++    for k in ("dst_fresh", "nodst_fresh", "lu_past_src_fresh", "offset_equivalent"):
++        check(c[k]["executable"] and c[k]["rows"] == 3 and c[k]["warning"] == "",
++              f"{k}: explicit source time governs; misleading LastUpdated ignored; no stale warning ({c[k]})")
++    check(c["offset_equivalent"]["last_updated_utc"] == "2026-11-08T13:08:00Z",
++          "an explicit -05:00 offset canonicalizes to the same UTC instant")
++    for k in ("src_missing", "src_zoneless", "src_malformed", "src_column_absent", "wnba_blank_sources"):
++        v = c[k]
++        check(not v["executable"] and v["unavailable_reason"] == "no_timestamp" and v["prices_withheld"]
++              and v["rows"] == 0 and v["last_updated_utc"] is None,
++              f"{k}: unknown source time -> no_timestamp, prices withheld, no zone guessed ({v})")
++    fu = c["future_30m"]
++    check(not fu["executable"] and fu["unavailable_reason"] == "future_timestamp" and fu["prices_withheld"],
++          f"a genuinely future source time (+30 min) fails closed as future_timestamp ({fu})")
++    sk = c["skew_3m"]
++    check(sk["executable"] and sk["clock_skew_tolerated"] is True and sk["rows"] == 3,
++          f"+3 min is within the 5-minute allowance: executable and labelled ({sk})")
++    rm = c["rows_mixed"]
++    check(rm["executable"] and rm["rows"] == 1 and rm["dropped"] == 2,
++          f"row level: missing-source and future-source rows are dropped, the valid row stays ({rm})")
++    st = c["stale_7h"]
++    check(not st["executable"] and st["unavailable_reason"] == "stale" and "7.3h ago" in st["warning"]
++          and "ET" in st["warning"], f"7h-old source -> stale, withheld, warning shows the real source time ({st})")
++    check(c["_network_attempts"] == 0, "the gate attempted no network access with an API key present")
++    return report()
++
++
++def report() -> int:
++    print("=" * 72)
++    print("QC: PROPS FRESHNESS = SourceUpdatedAtUTC ONLY (no zone guessed for LastUpdated)")
++    print("=" * 72)
++    for m in PASSED:
++        print(f"[OK]   {m}")
++    for m in FAILED:
++        print(f"[FAIL] {m}")
++    print(f"\n{len(PASSED)} passed, {len(FAILED)} failed")
++    return 1 if FAILED else 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/qc_quick_tools.py b/qc_quick_tools.py
+index 7f3af8d..3cb59b9 100644
+--- a/qc_quick_tools.py
++++ b/qc_quick_tools.py
+@@ -95,7 +95,9 @@ def _write_props(root: Path, sport: str, age_hours: float) -> None:
+         rows.append({"Player": QC_PLAYER[sport], "Team": "QCX", "Stat": stat, "MarketKey": f"player_{stat.lower()}",
+                      "Line": line, "CurrentLine": line, "OpenLine": line, "Game": "QCX @ QCY", "Book": book,
+                      "OverOdds": QC_PRICE, "UnderOdds": -107, "OpenOverOdds": QC_PRICE, "OpenUnderOdds": -107,
+-                     "LastUpdated": _et(now - timedelta(hours=age_hours, minutes=i))})
++                     "LastUpdated": _et(now - timedelta(hours=age_hours, minutes=i)),
++                     # b12eec3 remediation: freshness is governed ONLY by the zone-explicit provider source time
++                     "SourceUpdatedAtUTC": (now - timedelta(hours=age_hours, minutes=i)).strftime("%Y-%m-%dT%H:%M:%SZ")})
+     path = root / "props" / ("NBA_Props.csv" if sport == "nba" else "WNBA_Props.csv")
+     pd.DataFrame(rows).to_csv(path, index=False)
+     _MTIME[0] += 10
+diff --git a/qc_runner_exit_matrix.py b/qc_runner_exit_matrix.py
+index 3815aec..1795a88 100644
+--- a/qc_runner_exit_matrix.py
++++ b/qc_runner_exit_matrix.py
+@@ -122,15 +122,35 @@ def receipt_child(root: Path, name: str, code: int, receipt, text: str = "") ->
+     return [PY, str(p)]
+ 
+ 
++NETWORK_TRIPWIRE = "QC_NETWORK_ATTEMPT_BLOCKED"
++
++
+ def real_fetcher_child(root: Path, name: str, argv: list[str], drop_key: bool) -> list[str]:
+-    """The REAL fetch_game_lines.main(), its BASE_DIR redirected to `root` (no repo / production writes)."""
++    """The REAL fetch_game_lines.main(), its BASE_DIR redirected to `root` (no repo / production writes).
++
++    b12eec3 remediation (2026-11-08): (1) ALL network access is blocked BEFORE the fetcher is imported -- any
++    attempt prints NETWORK_TRIPWIRE and raises, so a real or dummy API key can never reach the provider; (2) the
++    key is dropped AFTER the import, because importing fetch_game_lines runs load_local_env(<checkout>), which
++    re-read ODDS_API_KEY from the checkout's .env and silently undid an earlier drop (on prod the "missing key"
++    case therefore made a real WNBA request)."""
+     p = root / f"{name}.py"
+     p.write_text(
+-        "import os, sys, pathlib\n"
++        "import os, sys, pathlib, socket, urllib.request\n"
++        "def _qc_deny(*a, **k):\n"
++        f"    print({NETWORK_TRIPWIRE!r}, flush=True)\n"
++        "    raise OSError('QC: network access is blocked in this child')\n"
++        "socket.create_connection = _qc_deny\n"
++        "socket.socket.connect = _qc_deny\n"
++        "socket.socket.connect_ex = _qc_deny\n"
++        "socket.getaddrinfo = _qc_deny\n"
++        "urllib.request.urlopen = _qc_deny\n"
+         f"sys.path.insert(0, {str(REPO)!r})\n"
+-        + ("for k in ('ODDS_API_KEY', 'THE_ODDS_API_KEY'): os.environ.pop(k, None)\n" if drop_key else "")
+-        + "import fetch_game_lines as fg\n"
+-        f"fg.BASE_DIR = pathlib.Path({str(root)!r})\n"
++        "import fetch_game_lines as fg\n"
++        "fg.urlopen = _qc_deny\n"
++        + ("for k in ('ODDS_API_KEY', 'THE_ODDS_API_KEY'): os.environ.pop(k, None)\n"
++           "assert not os.environ.get('ODDS_API_KEY') and not os.environ.get('THE_ODDS_API_KEY'), 'key not dropped'\n"
++           if drop_key else "")
++        + f"fg.BASE_DIR = pathlib.Path({str(root)!r})\n"
+         f"sys.exit(fg.main({argv!r}))\n", encoding="utf-8")
+     return [PY, str(p)]
+ 
+@@ -261,6 +281,9 @@ def linemove_matrix(sink=None):
+                 ok(rec.get("outcome") == "CONFIG_MISSING" and rec.get("exit_code") == 2 and rec.get("published") is False
+                    and "network_requests=0" in out,
+                    f"{tag}: REAL child exits 2 with its own CONFIG_MISSING receipt, zero requests ({rec})", sink)
++            if key.startswith("REAL fetch_game_lines"):
++                ok(NETWORK_TRIPWIRE not in out,
++                   f"{tag}: REAL child attempted no network access (tripwire silent)", sink)
+             # global invariant: systemd(prod) SUCCESS implies the runner saw no failure
+             ok(not (sd_prod == "SUCCESS" and not (status == "OK" or status.startswith("SKIPPED_"))),
+                f"{tag}: INVARIANT no failure reads SUCCESS under SuccessExitStatus=1", sink)
+diff --git a/run_all_scorecards.py b/run_all_scorecards.py
+index fb01753..0667d8f 100644
+--- a/run_all_scorecards.py
++++ b/run_all_scorecards.py
+@@ -1,8 +1,11 @@
+ from __future__ import annotations
+ 
++import os
+ import re
++import shutil
+ import subprocess
+ import sys
++import tempfile
+ from datetime import datetime
+ from pathlib import Path
+ 
+@@ -385,6 +388,7 @@ SCORECARDS = [
+     # Prod hotfix 2026-11-04: an NFL prop quote's time is the zone-explicit SourceUpdatedAtUTC only (never the
+     # zone-less LastUpdated); 5-minute skew tolerance; explicit America/New_York display.
+     ("Props Quote Source Time QC", "qc_props_quote_source_time.py", 180),
++    ("Props Source-Time Freshness QC", "qc_props_source_time_freshness.py", 600),
+     ("NBA 99 Scorecard", "run_nba_99_scorecard.py", 360),
+     ("WNBA 99 Scorecard", "run_wnba_99_scorecard.py", 420),
+     ("MLB 99 Scorecard", "run_mlb_99_scorecard.py", 480),
+@@ -399,6 +403,10 @@ def run_scorecard(label: str, script: str, timeout: int) -> tuple[bool, str]:
+     path = BASE_DIR / script
+     if not path.exists():
+         return False, f"Missing scorecard script: {path}"
++    # QC containment: every scorecard process gets its OWN temp activity-heartbeat path, so a signed-in test
++    # request can never stamp the live marker that drives paid live-score polling (b12eec3 remediation).
++    hb_dir = tempfile.mkdtemp(prefix="qc_heartbeat_")
++    env = dict(os.environ, BK_ACTIVE_USER_HEARTBEAT_PATH=str(Path(hb_dir) / "active_user_heartbeat.txt"))
+     try:
+         proc = subprocess.run(
+             [sys.executable, str(path)],
+@@ -406,10 +414,13 @@ def run_scorecard(label: str, script: str, timeout: int) -> tuple[bool, str]:
+             capture_output=True,
+             text=True,
+             timeout=timeout,
++            env=env,
+         )
+     except subprocess.TimeoutExpired:
+         # Don't let one slow scorecard crash the whole step — report and move on.
+         return False, f"{TIMEOUT_MARK} {script} exceeded {timeout}s"
++    finally:
++        shutil.rmtree(hb_dir, ignore_errors=True)
+     parts = []
+     if proc.stdout:
+         parts.append(proc.stdout.strip())
