@@ -44,6 +44,7 @@ import signal
 import stat
 import sys
 import tempfile
+import time as _time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -132,29 +133,51 @@ def signals(now=None):
 # import, so redirecting BASE_DIR alone let a real production operator log leak into the Run Status build (and
 # its relative_to(BASE_DIR) then raised). Every Run Status build in this QC reads an EMPTY, QC-owned log dir and
 # records every directory it searched, so a checkout logs/ directory can never be read.
-# The empty log dir is OWNED per run: main() creates it through _owned_empty_log_dir() and removes it in a
-# guaranteed finally (pass, failed check, exception, KeyboardInterrupt, and SIGTERM on POSIX), so repeated
-# scorecard runs never accumulate qc_lmstatus_logs_* directories in the system temp dir. Only the exact
-# directory this run created is ever removed.
+# Temp lifecycle: ONE owned per-run root. main() creates qc_lmstatus_<random> through _owned_run_root(); the
+# empty Run Status log dir lives INSIDE it (qc_lmstatus_logs_<random>), as do every child script and fixture
+# this QC writes. The whole root is removed in one guaranteed finally -- pass, failed check, exception,
+# KeyboardInterrupt, and SIGTERM on POSIX (converted to SystemExit) -- so repeated scorecard runs never
+# accumulate qc_lmstatus_* or qc_lmstatus_logs_* entries in the system temp dir. Only a root THIS process
+# created (recorded in _CREATED_ROOTS) is ever removed: never a pre-existing, foreign, sibling, or symlinked path.
+_ROOT_PREFIX = "qc_lmstatus_"
 _LOGS_PREFIX = "qc_lmstatus_logs_"
 _EMPTY_LOG_DIR: Path | None = None
+_CREATED_ROOTS: set[str] = set()
 _LOG_DIRS_SEARCHED: list[Path] = []
 _REAL_LATEST_FILE = grs._latest_file
 
 
+def _remove_owned_root(path: Path) -> bool:
+    """Remove `path` only if this process created it as a run root. Returns True when it was removed."""
+    path = Path(path)
+    if str(path) not in _CREATED_ROOTS or path.is_symlink() or not path.is_dir() \
+            or not path.name.startswith(_ROOT_PREFIX) or path.parent.resolve() != Path(tempfile.gettempdir()).resolve():
+        return False
+    # Bounded retry: on Windows a killed runner's orphaned grandchild (K section; POSIX kills the whole group)
+    # can briefly hold a handle, so a single rmtree may leave the directory behind.
+    deadline = _time.monotonic() + 30
+    while True:
+        shutil.rmtree(path, ignore_errors=True)
+        if not path.exists() or _time.monotonic() > deadline:
+            break
+        _time.sleep(0.5)
+    return not path.exists()
+
+
 @contextlib.contextmanager
-def _owned_empty_log_dir():
-    created = Path(tempfile.mkdtemp(prefix=_LOGS_PREFIX))
+def _owned_run_root():
+    root = Path(tempfile.mkdtemp(prefix=_ROOT_PREFIX))
+    _CREATED_ROOTS.add(str(root))
     try:
-        yield created
+        logs = Path(tempfile.mkdtemp(prefix=_LOGS_PREFIX, dir=str(root)))
+        yield root, logs
     finally:
-        # remove ONLY the directory this run created -- never a pre-existing, foreign, or symlinked path
-        if created.is_dir() and not created.is_symlink() and created.name.startswith(_LOGS_PREFIX):
-            shutil.rmtree(created, ignore_errors=True)
+        _remove_owned_root(root)
 
 
-def _logs_artifacts() -> set[str]:
-    return {p.name for p in Path(tempfile.gettempdir()).glob(_LOGS_PREFIX + "*")}
+def _temp_artifacts() -> set[str]:
+    """Top-level system-temp entries matching either pattern (qc_lmstatus_* also covers qc_lmstatus_logs_*)."""
+    return {p.name for p in Path(tempfile.gettempdir()).glob(_ROOT_PREFIX + "*")}
 
 
 def _recording_latest_file(patterns, base):
@@ -180,8 +203,7 @@ def tmp_residue():
     return [f.name for f in d.iterdir() if f.name.endswith(".tmp")] if d.exists() else []
 
 
-def _main_checks() -> None:
-    root = Path(tempfile.mkdtemp(prefix="qc_lmstatus_"))
+def _main_checks(root: Path) -> None:
     ok_cmd = child(root, "ok_child")
 
     # ---- L. location ----------------------------------------------------------------------------------
@@ -501,24 +523,38 @@ def _main_checks() -> None:
           f"H hermetic: every Run Status build searched only QC-owned log dirs, never the checkout logs/ "
           f"({len(_LOG_DIRS_SEARCHED)} searches)")
 
-    # ---- T. temp hygiene of the owned empty log dir (in-process cycles) --------------------------------------
-    with _owned_empty_log_dir() as d_pass:
-        existed = d_pass.is_dir()
-    check(existed and not d_pass.exists(), f"T pass path: the owned {_LOGS_PREFIX}* dir is removed on normal exit")
-    d_exc = None
+    # ---- T. temp hygiene of the owned per-run root (in-process cycles) ----------------------------------------
+    def cycle(exc):
+        seen = {}
+        try:
+            with _owned_run_root() as (r, lg):
+                seen = {"root": r, "logs": lg, "ok": r.is_dir() and lg.is_dir() and lg.parent == r}
+                (r / "fixture.txt").write_text("x", encoding="utf-8")
+                if exc is not None:
+                    raise exc
+        except BaseException as e:                             # noqa: BLE001 -- the simulated failure itself
+            if exc is None or e is not exc:
+                raise
+        return seen
+    for label, exc in (("pass", None), ("assertion failure", AssertionError("QC: simulated failed assertion")),
+                       ("exception", RuntimeError("QC: simulated crash")), ("SystemExit", SystemExit(3))):
+        s = cycle(exc)
+        check(s.get("ok") and not s["root"].exists() and not s["logs"].exists(),
+              f"T {label} path: the whole owned {_ROOT_PREFIX}* root (with its {_LOGS_PREFIX}* dir) is removed")
+    tmp = Path(tempfile.gettempdir())
+    foreign_root = Path(tempfile.mkdtemp(prefix=_ROOT_PREFIX))     # stand-ins for directories this run did NOT create:
+    foreign_logs = Path(tempfile.mkdtemp(prefix=_LOGS_PREFIX))     # a pre-existing/historical root, a stray logs dir,
+    sibling = Path(tempfile.mkdtemp(prefix=_ROOT_PREFIX))          # and a concurrent sibling run holding a file
+    (sibling / "in_use.txt").write_text("sibling", encoding="utf-8")
     try:
-        with _owned_empty_log_dir() as d_exc:
-            raise RuntimeError("QC: simulated failure inside the owned dir")
-    except RuntimeError:
-        pass
-    check(d_exc is not None and not d_exc.exists(), "T exception path: the owned dir is removed when an exception escapes")
-    foreign = Path(tempfile.mkdtemp(prefix=_LOGS_PREFIX))      # stands in for a directory this QC run did not create
-    try:
-        with _owned_empty_log_dir():
-            pass
-        check(foreign.is_dir(), "T a same-prefix directory the context did not create is never deleted")
+        cycle(None)
+        refused = not _remove_owned_root(foreign_root) and not _remove_owned_root(sibling) \
+            and not _remove_owned_root(tmp / "qc_lmstatus_not_mine")
+        check(foreign_root.is_dir() and foreign_logs.is_dir() and (sibling / "in_use.txt").exists() and refused,
+              "T foreign / historical / sibling-run directories with the same prefixes are never deleted")
     finally:
-        shutil.rmtree(foreign, ignore_errors=True)             # created by this check, removed by this check
+        for d in (foreign_root, foreign_logs, sibling):            # created by this check, removed by this check
+            shutil.rmtree(d, ignore_errors=True)
     if POSIX:
         probe = (
             "import os, sys, time\n"
@@ -526,7 +562,7 @@ def _main_checks() -> None:
             "import qc_linemove_status_persistence as q\n"
             "import signal\n"
             "signal.signal(signal.SIGTERM, q._sigterm_to_exit)\n"
-            "with q._owned_empty_log_dir() as d:\n"
+            "with q._owned_run_root() as (d, lg):\n"
             "    print('OWNED_DIR', d, flush=True)\n"
             "    time.sleep(60)\n")
         p = subprocess.Popen([sys.executable, "-c", probe], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -539,9 +575,9 @@ def _main_checks() -> None:
         p.terminate()
         prc = p.wait(timeout=30)
         check(bool(line) and not Path(line).exists() and prc == 128 + signal.SIGTERM,
-              f"T SIGTERM path: a terminated run removes its owned dir and exits {128 + signal.SIGTERM} (rc={prc})")
+              f"T SIGTERM path: a terminated run removes its whole owned root and exits {128 + signal.SIGTERM} (rc={prc})")
     else:
-        skip("T SIGTERM cleanup of the owned dir")
+        skip("T SIGTERM cleanup of the owned root")
 
 
 def _report() -> int:
@@ -565,20 +601,28 @@ def _sigterm_to_exit(signum, frame):
 
 def main() -> int:
     global _EMPTY_LOG_DIR
+    before = _temp_artifacts()                                 # historical leftovers are recorded, never touched
     prev = signal.getsignal(signal.SIGTERM) if POSIX else None
     if POSIX:
         signal.signal(signal.SIGTERM, _sigterm_to_exit)
     try:
-        with _owned_empty_log_dir() as owned:
-            _EMPTY_LOG_DIR = owned
+        with _owned_run_root() as (root, logs):
+            _EMPTY_LOG_DIR = logs
             try:
-                _main_checks()
+                _main_checks(root)
             finally:
                 _EMPTY_LOG_DIR = None
     finally:
         if POSIX:
             signal.signal(signal.SIGTERM, prev)
-    check(not owned.exists(), f"T this run's own {_LOGS_PREFIX}* dir was removed before the report ({owned.name})")
+    new = sorted(_temp_artifacts() - before)
+    left_roots = [n for n in new if not n.startswith(_LOGS_PREFIX)]
+    left_logs = [n for n in new if n.startswith(_LOGS_PREFIX)]
+    still = [p for p in _CREATED_ROOTS if Path(p).exists()]
+    check(not root.exists() and not still and not left_roots and not left_logs,
+          f"T this run left zero new {_ROOT_PREFIX}* ({len(left_roots)}) and zero new {_LOGS_PREFIX}* ({len(left_logs)}) "
+          f"temp entries; every root it created is gone ({len(_CREATED_ROOTS)} created, {len(still)} remaining; "
+          f"{len(before)} pre-existing entries left untouched)")
     return _report()
 
 
