@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -400,6 +403,10 @@ def run_scorecard(label: str, script: str, timeout: int) -> tuple[bool, str]:
     path = BASE_DIR / script
     if not path.exists():
         return False, f"Missing scorecard script: {path}"
+    # QC containment: every scorecard process gets its OWN temp activity-heartbeat path, so a signed-in test
+    # request can never stamp the live marker that drives paid live-score polling (b12eec3 remediation).
+    hb_dir = tempfile.mkdtemp(prefix="qc_heartbeat_")
+    env = dict(os.environ, BK_ACTIVE_USER_HEARTBEAT_PATH=str(Path(hb_dir) / "active_user_heartbeat.txt"))
     try:
         proc = subprocess.run(
             [sys.executable, str(path)],
@@ -407,10 +414,13 @@ def run_scorecard(label: str, script: str, timeout: int) -> tuple[bool, str]:
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         # Don't let one slow scorecard crash the whole step — report and move on.
         return False, f"{TIMEOUT_MARK} {script} exceeded {timeout}s"
+    finally:
+        shutil.rmtree(hb_dir, ignore_errors=True)
     parts = []
     if proc.stdout:
         parts.append(proc.stdout.strip())

@@ -2752,7 +2752,13 @@ LIVE_SCORES_PATH = DATA_DIR / 'live_scores' / 'Live_Scores.csv'
 # Heartbeat the live-scores poller reads so the paid scores API is only polled
 # while a signed-in user is actually using the site (cost control). Stamped on
 # every authenticated render and on each /api/live-ticker ping.
-ACTIVE_USER_HEARTBEAT_PATH = DATA_DIR / 'live_scores' / 'active_user_heartbeat.txt'
+# QC containment (b12eec3 remediation, owner-approved Option A 2026-11-08): the QC runners (run_all_scorecards,
+# qc_offline) pass BK_ACTIVE_USER_HEARTBEAT_PATH -- an absolute path inside their own temp dir -- to every QC
+# process, so signed-in test requests can never stamp the live marker (which drives paid live-score polling).
+# It is a PROCESS environment variable: no request can set or influence it. Absent -> the existing live path.
+_HEARTBEAT_OVERRIDE = os.environ.get('BK_ACTIVE_USER_HEARTBEAT_PATH', '').strip()
+ACTIVE_USER_HEARTBEAT_PATH = (Path(_HEARTBEAT_OVERRIDE) if _HEARTBEAT_OVERRIDE and Path(_HEARTBEAT_OVERRIDE).is_absolute()
+                              else DATA_DIR / 'live_scores' / 'active_user_heartbeat.txt')
 _LAST_ACTIVITY_WRITE = 0.0
 
 

@@ -15,8 +15,10 @@ reaching the live Odds API while run as if offline) then fails closed instead of
 from __future__ import annotations
 
 import ast
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from services.qc_no_network import child_env
@@ -44,7 +46,15 @@ def main(argv) -> int:
     if requires_network(script):
         print(f'NOT RUN: {script.name} declares REQUIRES_NETWORK = True (not an offline QC)')
         return NOT_RUN
-    return subprocess.call([sys.executable, str(script), *argv[1:]], env=child_env())
+    # QC containment: the QC gets its OWN temp activity-heartbeat path, so a signed-in test request can never
+    # stamp the live marker that drives paid live-score polling (b12eec3 remediation).
+    hb_dir = tempfile.mkdtemp(prefix='qc_heartbeat_')
+    env = child_env()
+    env['BK_ACTIVE_USER_HEARTBEAT_PATH'] = str(Path(hb_dir) / 'active_user_heartbeat.txt')
+    try:
+        return subprocess.call([sys.executable, str(script), *argv[1:]], env=env)
+    finally:
+        shutil.rmtree(hb_dir, ignore_errors=True)
 
 
 if __name__ == '__main__':
