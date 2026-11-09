@@ -157,8 +157,19 @@ directories did not exist on this machine: `base-63060a9`, `base-check`, `bk-dep
 `63060a9` / `ed0bf37`, reachable from branches) and `dc-trial` (`0a07c04`), `dc-trial2` (`d826d68`), `trial-int`
 (`c6f383d`) — 2026-11-01 integration-trial merge commits **not reachable from any branch** (objects still present;
 `dc-trial2`'s parent chain includes `f21e474 "trial: resolve"`). No working-directory files, branches or pushed refs were
-touched. If any was a live worktree on another machine, `git worktree repair` there re-links it. Protecting the three
-unreachable commits (e.g. a ref) awaits owner decision.
+touched. If any was a live worktree on another machine, `git worktree repair` there re-links it.
+
+**Preserved (owner 2026-11-09) — local, non-branch safety refs, NOT pushed:**
+- `refs/safety/worktree-prune-20261109/dc-trial` → `0a07c0485717a176a5ba07e949da72888ae50058`
+- `refs/safety/worktree-prune-20261109/dc-trial2` → `d826d6868df7863c338679b03e36ec4300882efd`
+- `refs/safety/worktree-prune-20261109/trial-int` → `c6f383d3c06e65ffda6a4b6e30ddd0c82af042af`
+- `f21e474bbcaf5215e3b35e5eb2d47a8309052c78` ("trial: resolve") is an ancestor of `dc-trial2` and preserved by that ref
+  (no separate ref needed).
+
+Verified: each ref resolves to the full SHA above; all four objects reachable; branches, tags, HEAD, index and working
+files unchanged (ref diff = exactly these three). Standing rules: no `git gc`, no broad `git worktree prune`, no worktree
+removal or metadata reconstruction on this machine; on the laptop/tablet, inspect any surviving worktree first and use
+targeted `git worktree repair` there — never prune.
 
 ## Superseded / already-in-master branches (no action; kept, not deleted)
 In master (patch-equivalent): `fix/props-quote-source-utc` `17b5e69`, `integration/integrity-d4-6bdb73f` `4afcab9`,
