@@ -34,7 +34,7 @@ dependencies in §A0. Anything not in §A is **not 1A**.
 
 | # | Requirement | Source | Acceptance evidence (QC / fixture / receipt) |
 |---|---|---|---|
-| A0.1 | Land `2e2adc6` exactly (home spread leg unpriced; QC 15/15) **before** any 1A change gives game-line legs an event/kickoff identity | audit P0 spread-price; "mandatory inclusion" | `qc_sgp_spread_price_containment.py` on the 1A branch; order-reversal + mutation |
+| A0.1 | Integrate the `2e2adc6` patch **equivalently** onto `d7fbefa` (home spread leg unpriced; QC 15/15) **before** any 1A change gives game-line legs an event/kickoff identity. This is a **new integration commit** on the current base; the old SHA is never claimed to have landed unchanged | audit P0 spread-price; "mandatory inclusion"; owner 2026-11-09 | `git patch-id` equivalence to `2e2adc6`; `qc_sgp_spread_price_containment.py` on the 1A branch with the same behaviour (15/15, order reversal, mutation) |
 | A0.2 | NFL props writer emits **`FetchedAtUTC`** = UTC instant of the successful provider response containing the row; one value per response; never derived; preserved through normalization and atomic publish | `FetchedAtUTC` contract (owner 2026-11-07/08) | Schema / provenance / malformed / zone-less / future / same-response QCs; acceptance on the **next normal scheduled fetch** (no paid manual fetch) |
 | A1 | **Identity before evidence (cross-event overwrite P0):** game scripts keyed `(EventId, team)`; opponent from the same event; prop lookup `(EventId, player, market, book)`; mismatch makes the lens **abstain**, never fall back | audit P0, requirements 1–6; doctrine 1 | Adversarial QC: same team today and next week, file orders reversed, results identical; rendered opponent/spread/kickoff/player/offer round-trip to one `EventId`; 11-of-28 replay fixed |
 | A2 | Concentration name-key collision (St. Brown ↔ A.J. Brown): resolve by canonical player identity or **abstain** | audit Coaching/Concentration; doctrine 1 | Fixture: St. Brown no longer shows A.J. Brown's data; ambiguous `F.Last` keys abstain |
@@ -48,14 +48,31 @@ dependencies in §A0. Anything not in §A is **not 1A**.
 | A10 | Least-restrictive truthful states: each item gets research visibility / lens eligibility / offer executability / handoff eligibility as **AVAILABLE · CONTEXT ONLY · REVIEW REQUIRED · UNAVAILABLE**. Suppress only what missing evidence invalidates. Hard suppression only for legal/data-rights, unresolved identity, or unsafe/dishonest actions | item 9; 1A acceptance requirement; doctrine 8 | The **14-condition behavior matrix** (stale quote … started event) implemented as a table-driven QC: one fixture per condition and column |
 | A11 | Stale/invalid evidence suppressed as support but kept as dated context: static Coaching (2023–25 staff, INVALID for changed staff), static "locked role" text (10-09 file), unverified Concentration notes, each with as-of/provenance | item 9; audit provenance | Fixtures: ATL Coaching = CONTEXT ONLY/not counted; Bijan count reproduces 2 |
 | A12 | No unregistered model output on Classic; models never select or order visible games | item 10; DIC-1.0 R7 | Static scan + render QC |
-| A13 | **Visibility independent of candidate selection, within the GL universe:** every eligible game in kickoff order; players with props whom the generator skips stay discoverable as context | item 11; doctrine §3b.2 (bounded to the GL universe — **not** a site-wide explorer) | Fixture: full slate in `EventCommenceAtUTC` order; skipped-player rows present as context |
-| A14 | **Direction symmetry** for every market Classic displays: over, under and push history, plus the active streak in either direction; no over-only gate on what is shown | doctrine §3b.1 | **Bijan fixture:** line 96.5; last five 145/86/61/63/76; under 4 of 5; active under streak 4 — shown symmetrically |
+| A13 | **Visibility independent of candidate selection (owner-approved 2026-11-09):** every eligible game in kickoff order. **Every identity-resolved player-market row in the NFL props data Classic consumes stays discoverable**, including rows the candidate generator skips. **No popularity, value, model, lens-count or recommendation gate may control visibility.** "Classic universe" means the governed data Classic already receives. It is not a candidate filter | item 11; doctrine §3b.2; owner clarification 2026-11-09 | **Coverage reconciliation:** identity-resolved player-market rows available to Classic → rows rendered or discoverable → every exclusion with its exact reason → **zero** exclusions based only on popularity, value, model output or generator selection |
+| A14 | **Direction symmetry (owner-approved 2026-11-09):** every displayed player-market threshold shows **over, under and push history**, including the active directional streak. **Missing under odds affects executability only, never trend visibility.** Trend calculations exist without an executable price | doctrine §3b.1; owner clarification 2026-11-09 | Fixtures: **Bijan** (96.5; 145/86/61/63/76; under 4/5; active under streak 4); a lesser-known player; an active over streak; an active under streak; a whole-number push; short history; bye/missing game; multiple books with different lines |
 | A15 | Wording: `Model %` → **Market-implied probability** (a price translation); remove unsupported Confidence; correct AP-poll wording; Matchup label says **opponent-adjusted** | item 12 | Copy QC (forbidden-term list) |
 | A16 | Evidence vocabulary on the lens/evidence panel: Supporting / Contradicting / Missing / Unknown / Conflicting / Disqualifying / Not applicable, never collapsed | doctrine §3b.3 | Render fixture per term |
 | A17 | All-overs warning on the Green Light ticket-building path | item 13 | Existing `analyze_saved_parlay` warning appears on the GL path |
 | A18 | All existing legal, licensing, provenance, freshness and ticket-safety protections retained (D4 kickoff gate, quote contracts, `17b5e69` quote-time authority) | item 14 | Existing QC suite unchanged and green |
 | A19 | Classic stays explicitly accessible (`?view=classic`); **no default-route switch** in 1A | item 14 / exclusions | Route QC |
 | A20 | Doctrine-conformance matrix in the 1A acceptance package (identity, visibility, evidence, eligibility, actionability, user decision) | doctrine §3b.4 / §4 | Matrix document plus the QC references above |
+
+**Evidence vs offer (owner 2026-11-09):**
+- Trend calculations may exist without an executable price.
+- An executable offer requires the exact book, market, selection, side, line, price and both timestamps.
+- No inferred under prices. No reconstructed spread prices.
+
+**What 1A does NOT yet provide (owner 2026-11-09).** 1A restores a complete, direction-neutral view of the governed
+data Classic already receives. Later releases expand the threshold and market universe. 1A does not provide:
+- arbitrary user thresholds;
+- BK Milestones;
+- new or unsupported market families;
+- a universal cross-sport explorer;
+- Green Light Specials;
+- automated recommendations.
+
+**No paid manual fetches.** `FetchedAtUTC` is validated with synthetic fixtures and the next normal scheduled
+publication.
 
 **1A exclusions (unchanged from `PROGRAM_TABLE`):**
 - no new scoring or confidence; no automatic picks; no new lenses;
